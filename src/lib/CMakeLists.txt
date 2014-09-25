@@ -1,0 +1,79 @@
+project(Pececillo-Lib)
+
+include_directories(${Pececillo_SOURCE_DIR}/src/lib)
+include_directories(${Pececillo_MODULE_DIR} ${Petaca_MODULE_DIR})
+include_directories(${HYPRE_INCLUDE_DIRS})
+
+set(Pececillo_SOURCE_FILES
+# General utilities
+    f90_assert.F90
+    kinds.F90
+    string_utilities.F90
+    bitfield_type.F90
+    permutations.F90
+    graph_type.F90
+    logging_services.F90
+    data_layout_type.F90
+    
+# Mesh modules
+    unstr_mesh_type.F90
+    unstr_mesh_factory.F90
+    cell_topology.F90
+    cell_geometry.F90
+    unstr_mesh_tools.F90
+    facet_hash_type.F90
+    facet_table_type.F90
+    exodus_c_binding.F90
+    exodus_file_type.F90
+
+# Function modules
+    scalar_func_class.F90
+    scalar_func_factories.F90
+    scalar_func_containers.F90
+    const_scalar_func_type.F90
+    poly_scalar_func_type.F90
+    mpoly_scalar_func_type.F90
+    tabular_scalar_func_type.F90
+    fptr_scalar_func_type.F90
+
+# Mesh function modules
+    bndry_func_class.F90
+    bc_factory_type.F90
+    bndry_face_func_type.F90
+    unstr_mesh_func.F90
+
+# Linear algebra modules
+    csr_matrix_type.F90
+    csr_precon_class.F90
+    csr_precon_ssor_type.F90
+    csr_precon_boomer_type.F90
+    hypre_c_binding.F90
+    hypre_ext.c
+    fhypre.F90
+    hypre_pcg_type.F90
+    hypre_fgmres_type.F90
+    hypre_hybrid_type.F90
+    upper_packed_matrix.F90
+
+# Mimetic discretization modules
+    mfd_disc_type.F90
+    mfd_diff_matrix_type.F90
+    mfd_diff_precon_type.F90
+
+# DAE integrator modules
+    idaesol_type.F90
+    nka_type.F90
+
+# Output modules
+    gmvwrite.c
+    gmvwrite_fortran_binding.F90
+    unstr_mesh_gmv.F90
+    )
+    
+add_library(pececillo ${Pececillo_SOURCE_FILES})
+add_dependencies(pececillo hypre)
+target_link_libraries(pececillo petaca ${HYPRE_LIBRARIES} exodus hdf5_hl hdf5 m z)
+install(TARGETS pececillo DESTINATION lib)
+
+add_subdirectory(test)
+

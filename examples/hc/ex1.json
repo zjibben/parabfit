@@ -1,0 +1,75 @@
+// Linear heat equation on a unit ball with small off-center ball excluded.
+// Exploit symmetry and solve on quarter domain y,z >= 0.  Sinusoidal time-
+// dependent Dirichlet BC on outside surface.  Constant Dirichlet condition
+// on inside surface.  Solve through two periods of the sinusoidal BC.
+// Uniform initial temperature is not consistent with the inside Dirichlet
+// BC, and so there is short initial transient.
+
+{
+
+"mesh": { "mesh-file": "mesh2.exo" },
+
+"sim-control": {
+    "initial-time": 0.0,
+    "initial-time-step": 1.0e-6,
+    "min-time-step": 1.0e-8,
+    "output-times": [0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1.0,
+                     1.125, 1.25, 1.375, 1.5, 1.625, 1.75, 1.875, 2.0]
+    },
+
+"hc-model": {
+    "density": 2.0,
+    "specific-heat": 0.25,
+    "conductivity": 0.5,
+    "source": 0.0,
+    "bc": {
+        "inside": {
+            "condition": "dirichlet",
+            "face-sets": [2],
+            //"data-constant": 2.0
+            "data-function": {
+              "type": "polynomial",
+              "poly-coef": [2.0, 15.0],
+              "poly-powers":  [[0,0,0,0],[0,0,0,2]]
+              }
+            },
+        "outside": {
+            "condition": "dirichlet",
+            "face-sets": [3],
+            "data-function": {
+                "type": "sinusoidal",
+                "mean-value": 2.0,
+                "amplitude": 1.0,
+                "frequency": 1.0
+                }
+            },
+        "symmetry-planes": {
+            "condition": "flux",
+            "face-sets": [1],
+            "data-constant": 0.0
+            }
+        }
+    },
+
+"hc-solver": {
+    "preconditioner": {
+        "method": "BoomerAMG",
+        "parameters": { "num-cycles": 2 }
+        },
+    "error-norm": {
+        "temp-rel-tol": 1.0e-3,
+        "enth-rel-tol": 1.0e-3
+        },
+    "integrator": {
+        "nlk-max-iter": 5,
+        "nlk-tol": 0.01
+        }
+    },
+
+"initial-temperature": {
+    "all": {
+        "cell-blocks": [1],
+        "constant": 2.0
+        }
+    }
+}
