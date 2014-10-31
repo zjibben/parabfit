@@ -72,7 +72,7 @@ set(Pececillo_SOURCE_FILES
     
 add_library(pececillo ${Pececillo_SOURCE_FILES})
 add_dependencies(pececillo hypre)
-target_link_libraries(pececillo petaca ${HYPRE_LIBRARIES} exodus hdf5_hl hdf5 m z)
+target_link_libraries(pececillo petaca ${HYPRE_LIBRARIES} exodus)
 install(TARGETS pececillo DESTINATION lib)
 
 add_subdirectory(test)

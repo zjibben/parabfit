@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8.12)
+cmake_minimum_required(VERSION 2.8.11)
 
 set(CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH}"
                       "${CMAKE_SOURCE_DIR}/cmake/Modules"
@@ -37,14 +37,14 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 message(STATUS "CMAKE_Fortran_COMPILER_ID=${CMAKE_Fortran_COMPILER_ID}")
-if (CMAKE_Fortran_COMPILER_ID STREQUAL "NAG")
-  set (CMAKE_Fortran_FLAGS_RELEASE "-u -O3 -w=uda -DNDEBUG")
-  set (CMAKE_Fortran_FLAGS_DEBUG   "-u -g90")
-elseif (CMAKE_Fortran_COMPILER_ID STREQUAL "Intel")
-  set (CMAKE_Fortran_FLAGS_RELEASE "-O3 -xhost -DNDEBUG -assume realloc_lhs")
-  set (CMAKE_Fortran_FLAGS_DEBUG   "-g -assume realloc_lhs")
-  message(STATUS "${CMAKE_Fortran_COMPILER_VERSION}")
-endif()
+#if (CMAKE_Fortran_COMPILER_ID STREQUAL "NAG")
+#  set (CMAKE_Fortran_FLAGS_RELEASE "-u -O3 -w=uda -DNDEBUG")
+#  set (CMAKE_Fortran_FLAGS_DEBUG   "-u -g90")
+#elseif (CMAKE_Fortran_COMPILER_ID STREQUAL "Intel")
+#  set (CMAKE_Fortran_FLAGS_RELEASE "-O3 -xhost -DNDEBUG -assume realloc_lhs")
+#  set (CMAKE_Fortran_FLAGS_DEBUG   "-g -assume realloc_lhs")
+#  message(STATUS "${CMAKE_Fortran_COMPILER_VERSION}")
+#endif()
 
 #-------------------------------------------------------------------------------
 # TPLs

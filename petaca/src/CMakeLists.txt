@@ -3,6 +3,7 @@ set(Petaca_SOURCE_FILES
       fortran_dynamic_loader.F90
       map_any_type.F90
       yajl_fort.F90
+      yajl_ext.c
       parameter_entry_class.F90
       parameter_list_type.F90
       parameter_list_json.F90
@@ -16,6 +17,7 @@ set(Petaca_SOURCE_FILES
                             
 include_directories(${Petaca_INCLUDE_DIR})
 include_directories(${Petaca_MODULE_DIR})
+include_directories(${YAJL_INCLUDE_DIR}) # for yajl_ext.c
 
 add_library(petaca ${Petaca_SOURCE_FILES})
 
