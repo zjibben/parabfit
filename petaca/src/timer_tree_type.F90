@@ -124,11 +124,25 @@
 !! with a particular key, wherever it occurs in the tree, would be a simple
 !! post-processing step.
 !!
-!! For portability the Fortran intrinsic subroutine CPU_TIME is used to
-!! acquire the processor time, and thus the resolution of the timers is
-!! limited by the resolution of this subroutine, which varies from one
-!! system to another but is typically not very fine.  As a result, these
-!! timers are not well suited to timing computationally short bits of code.
+!! For portability the Fortran intrinsic subroutine CPU_TIME is used
+!! by default to acquire the processor time, and thus the resolution
+!! of the timers is limited by the resolution of this subroutine,
+!! which varies from one system to another but is typically not very
+!! fine.  As a result, these timers are not well suited to timing
+!! computationally short bits of code.
+!!
+!! There are circumstances when the CPU_TIME intrinsic is not
+!! appropriate or desired.  For example, when using OpenMP, this
+!! intrinsic will return the total cpu time of all the threads in
+!! flight, which is much higher than the wall-clock time.  As an
+!! alternative, one may change the module scoped variable
+!! timing_method from the default value of cpu_timing to
+!! realtime_timing, which uses a call to system_clock to get the time.
+!! Note that system_clock takes integers as arguments, and, depending
+!! on the size of the integer, it is possible to overflow the integer,
+!! and the enclosing code that uses the result does not detect this.
+!! This feature is provided as an option for those that need
+!! wall-clock time in a multi-threaded code.
 !!
 
 #include "f90_assert.fpp"
@@ -168,6 +182,13 @@ module timer_tree_type
   public :: start_timer, stop_timer, write_timer_tree
   public :: reset_timer_tree, read_timer
   public :: serialize_timer_tree, deserialize_timer_tree
+  
+  !! A way to specify what timing routine we would like to use. 
+  enum, bind(c) 
+     enumerator cpu_timing
+     enumerator realtime_timing
+  end enum
+  integer :: timing_method = cpu_timing
 
 contains
 
@@ -182,7 +203,7 @@ contains
     end if
     ASSERT(associated(this%current))
     this%current => sibling_with_name(this%current%child)
-    call cpu_time (this%current%cpu_start)
+    call get_time (this%current%cpu_start)
     if (present(handle)) handle = this%current%handle
     this%max_name_len = max(len(name), this%max_name_len)
   contains
@@ -217,7 +238,7 @@ contains
       return
     end if
     if (present(stat)) stat = 0
-    call cpu_time (cpu_stop)
+    call get_time (cpu_stop)
     this%current%cpu_elapsed = this%current%cpu_elapsed + (cpu_stop - this%current%cpu_start)
     this%current => this%current%parent
   end subroutine timer_tree_stop
@@ -385,12 +406,28 @@ contains
     ASSERT(associated(timer))
     cpu = timer%cpu_elapsed
     if (running(this, timer)) then  ! add the time since it was started
-      call cpu_time (cpu_now)
+      call get_time (cpu_now)
       cpu = cpu + (cpu_now - timer%cpu_start)
     end if
   end subroutine timer_tree_read
 
 !!!! AUXILIARY PROCEDURES !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+  subroutine get_time (t) 
+    !! Arguments
+    real, intent(out) :: t
+    !! Local variables
+    integer :: numcycles, rate
+    if (realtime_timing.eq.timing_method) then
+       !! Note that there is a latent bug here in that, if numcycles
+       !! wraps around, the calling code doesn't handle this
+       !! correctly.
+       call system_clock (numcycles, rate)
+       t = (1.d0*numcycles)/(1.d0*rate)
+    else 
+       call cpu_time (t)
+    end if
+  end subroutine get_time
 
   !! Accumulate the elapsed time for all running timers, which are precisely
   !! those starting with the current one and walking back the parent link to
@@ -400,7 +437,7 @@ contains
     type(node), pointer :: timer
     real :: cpu_now
     ASSERT(associated(this%current))
-    call cpu_time (cpu_now)
+    call get_time (cpu_now)
     timer => this%current
     do while (associated(timer%parent))
       timer%cpu_elapsed = timer%cpu_elapsed + (cpu_now - timer%cpu_start)
