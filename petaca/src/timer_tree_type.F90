@@ -179,18 +179,31 @@ module timer_tree_type
 
   !! Single-instance global timer and associated procedures.
   type(timer_tree), save :: global
+  public :: set_timer_type
   public :: start_timer, stop_timer, write_timer_tree
   public :: reset_timer_tree, read_timer
   public :: serialize_timer_tree, deserialize_timer_tree
   
   !! A way to specify what timing routine we would like to use. 
-  enum, bind(c) 
-     enumerator cpu_timing
-     enumerator realtime_timing
-  end enum
+  public cpu_timing,realtime_timing
+  integer, parameter :: cpu_timing = 1
+  integer, parameter :: realtime_timing = 2
+
   integer :: timing_method = cpu_timing
 
 contains
+
+  subroutine set_timer_type(t)
+    integer, intent(in) :: t
+
+    if (cpu_timing.eq.t) then
+       timing_method = cpu_timing
+    else if (realtime_timing.eq.t) then
+       timing_method = realtime_timing
+    else 
+       write(*,*) "Warning, unrecognized timer type in timer_tree_type:set_timer_type"
+    end if
+  end subroutine set_timer_type
 
   subroutine timer_tree_start (this, name, handle)
     class(timer_tree), intent(inout) :: this

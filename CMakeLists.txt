@@ -37,14 +37,23 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 message(STATUS "CMAKE_Fortran_COMPILER_ID=${CMAKE_Fortran_COMPILER_ID}")
-#if (CMAKE_Fortran_COMPILER_ID STREQUAL "NAG")
-#  set (CMAKE_Fortran_FLAGS_RELEASE "-u -O3 -w=uda -DNDEBUG")
-#  set (CMAKE_Fortran_FLAGS_DEBUG   "-u -g90")
-#elseif (CMAKE_Fortran_COMPILER_ID STREQUAL "Intel")
-#  set (CMAKE_Fortran_FLAGS_RELEASE "-O3 -xhost -DNDEBUG -assume realloc_lhs")
-#  set (CMAKE_Fortran_FLAGS_DEBUG   "-g -assume realloc_lhs")
-#  message(STATUS "${CMAKE_Fortran_COMPILER_VERSION}")
-#endif()
+if (CMAKE_Fortran_COMPILER_ID STREQUAL "NAG")
+ set (CMAKE_Fortran_FLAGS_RELEASE "$-u -O3 -w=uda -DNDEBUG")
+ set (CMAKE_Fortran_FLAGS_DEBUG   "-u -g90")
+elseif (CMAKE_Fortran_COMPILER_ID STREQUAL "Intel")
+ set (CMAKE_Fortran_FLAGS_RELEASE "-O3 -DNDEBUG -assume realloc_lhs")
+ set (CMAKE_Fortran_FLAGS_DEBUG   "-g -assume realloc_lhs -fp-stack-check -ftrapuv -check bounds -check uninit")
+ message(STATUS "${CMAKE_Fortran_COMPILER_VERSION}")
+endif()
+
+find_package(OpenMP)
+if (OPENMP_FOUND)
+  set (CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
+  set (CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+
+  set (CMAKE_Fortran_FLAGS_RELEASE "${CMAKE_Fortran_FLAGS_RELEASE} ${OpenMP_C_FLAGS}")
+  set (CMAKE_Fortran_FLAGS_DEBUG "${CMAKE_Fortran_FLAGS_DEBUG} ${OpenMP_C_FLAGS}")
+endif (OPENMP_FOUND)
 
 #-------------------------------------------------------------------------------
 # TPLs

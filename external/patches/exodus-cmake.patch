@@ -1,0 +1,65 @@
+diff -ru exodus-6.02.orig/exodus/CMakeLists.txt exodus-6.02/exodus/CMakeLists.txt
+--- exodus-6.02.orig/exodus/CMakeLists.txt	2013-12-06 14:47:05.000000000 -0700
++++ exodus-6.02/exodus/CMakeLists.txt	2014-10-22 09:29:37.548573838 -0600
+@@ -15,7 +15,10 @@
+   SET(EXODUS_LIBRARY_TYPE STATIC)
+ ENDIF(BUILD_SHARED)
+ 
+-SUBDIRS(cbind forbind)
++ADD_DEFINITIONS(-DNOT_NETCDF4)
++
++#SUBDIRS(cbind forbind)
++SUBDIRS(cbind)
+ 
+ find_path( NETCDF_INCLUDE_DIR netcdf.h
+    $ENV{ACCESS}/inc
+@@ -37,26 +40,26 @@
+    $ENV{NETCDF_DIR}/ncdump
+ )
+ 
+-# Hack for HDF5
+-find_library( HDF5_LIBRARY hdf5
+-  $ENV{ACCESS}/lib/shared
+-  $ENV{ACCESS}/lib
+-  $ENV{NETCDF_DIR}/lib
+-  $ENV{NETCDF_DIR}/libsrc/.libs
+-  /usr/local/hdf5/lib
+-  )
+-find_library( HDF5HL_LIBRARY hdf5_hl
+-  $ENV{ACCESS}/lib/shared
+-  $ENV{ACCESS}/lib
+-  $ENV{NETCDF_DIR}/lib
+-  $ENV{NETCDF_DIR}/libsrc/.libs
+-  /usr/local/hdf5/lib
+-  )
+-
+-# Check for ZLib, but only if using HDF5.
+-FIND_PACKAGE(ZLIB)
+-IF(NOT ZLIB_LIBRARY)
+-   MESSAGE(FATAL_ERROR "HDF5 Support specified, cannot find ZLib.")
+-ENDIF()
+-SET(USE_ZLIB ON)
+-INCLUDE_DIRECTORIES(${ZLIB_INCLUDE_DIRS})
++## Hack for HDF5
++#find_library( HDF5_LIBRARY hdf5
++#  $ENV{ACCESS}/lib/shared
++#  $ENV{ACCESS}/lib
++#  $ENV{NETCDF_DIR}/lib
++#  $ENV{NETCDF_DIR}/libsrc/.libs
++#  /usr/local/hdf5/lib
++#  )
++#find_library( HDF5HL_LIBRARY hdf5_hl
++#  $ENV{ACCESS}/lib/shared
++#  $ENV{ACCESS}/lib
++#  $ENV{NETCDF_DIR}/lib
++#  $ENV{NETCDF_DIR}/libsrc/.libs
++#  /usr/local/hdf5/lib
++#  )
++#
++## Check for ZLib, but only if using HDF5.
++#FIND_PACKAGE(ZLIB)
++#IF(NOT ZLIB_LIBRARY)
++#   MESSAGE(FATAL_ERROR "HDF5 Support specified, cannot find ZLib.")
++#ENDIF()
++#SET(USE_ZLIB ON)
++#INCLUDE_DIRECTORIES(${ZLIB_INCLUDE_DIRS})

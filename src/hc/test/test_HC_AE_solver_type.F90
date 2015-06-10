@@ -4,6 +4,7 @@ program test_HC_AE_solver_type
   use unstr_mesh_type
   use unstr_mesh_factory
   use unstr_mesh_gmv
+  use unstr_mesh_partition_type
   use mfd_disc_type
   use HC_model_type
   use HC_AE_solver_type
@@ -31,6 +32,8 @@ contains
   subroutine test1
 
     type(unstr_mesh), pointer :: mesh
+    type(unstr_mesh_partition), pointer :: partition
+
     type(mfd_disc),   target :: disc
     type(HC_model),   target :: model
     type(HC_AE_solver) :: solver
@@ -42,7 +45,13 @@ contains
 
     !! 2D mesh on [0,1]^2 (one cell thick in z)
     mesh => new_unstr_mesh([0.0_r8, 0.0_r8, 0.0_r8], [1.0_r8, 1.0_r8, 0.1_r8], [5,8,1])
-    call disc%init (mesh)
+
+    !! Create a way to partition the mesh in chunks of size 64
+    allocate(partition)
+    call partition%init(mesh,64)
+
+    !! Initialize the discretization
+    call disc%init (mesh, partition)
 
     !! Instantiate the HC model...
     !! First define the HC parameter list.  Only conductivity and the BC are
@@ -129,6 +138,7 @@ contains
   subroutine test2
 
     type(unstr_mesh), pointer :: mesh
+    type(unstr_mesh_partition), pointer :: partition
     type(mfd_disc),   target :: disc
     type(HC_model),   target :: model
     type(HC_AE_solver) :: solver
@@ -140,7 +150,12 @@ contains
 
     !! 3D mesh on [0,1]^3
     mesh => new_unstr_mesh([real(r8)::0,0,0], [real(r8)::1,1,1], [17,15,16], eps=0.001_r8)
-    call disc%init (mesh)
+
+    !! Create a way to partition the mesh in chunks of size 64
+    allocate(partition)
+    call partition%init(mesh,64)
+
+    call disc%init (mesh, partition)
 
     !! Instantiate the HC model...
     !! First define the HC parameter list.  Only conductivity and the BC are

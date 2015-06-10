@@ -18,6 +18,7 @@ set(Pececillo_SOURCE_FILES
 # Mesh modules
     unstr_mesh_type.F90
     unstr_mesh_factory.F90
+    unstr_mesh_partition_type.F90
     cell_topology.F90
     cell_geometry.F90
     unstr_mesh_tools.F90

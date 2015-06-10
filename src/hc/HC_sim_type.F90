@@ -14,6 +14,7 @@ module HC_sim_type
 
   use kinds, only: r8
   use unstr_mesh_type
+  use unstr_mesh_partition_type
   use mfd_disc_type
   use HC_model_type
   use HC_solver_type
@@ -24,6 +25,7 @@ module HC_sim_type
 
   type, public :: HC_sim
     type(unstr_mesh), pointer :: mesh => null()
+    type(unstr_mesh_partition), pointer :: partition => null()
     type(mfd_disc), pointer :: disc => null()
     type(HC_model), pointer :: model => null()
     type(HC_solver), pointer :: solver => null()
@@ -46,6 +48,7 @@ contains
   subroutine HC_sim_delete (this)
     type(HC_sim), intent(inout) :: this
     if (associated(this%mesh)) deallocate(this%mesh)
+    if (associated(this%partition)) deallocate(this%partition)
     if (associated(this%disc)) deallocate(this%disc)
     if (associated(this%model)) deallocate(this%model)
     if (associated(this%solver)) deallocate(this%solver)
@@ -66,10 +69,13 @@ contains
     real(r8), allocatable :: temp(:)
     real(r8) :: t_init
 
+    ! Enable wall-clock timing.
+    call set_timer_type(realtime_timing)
+
     call start_timer ('initialization')
     call LS_info ('Initializing the simulation', LS_VERB_NOISY)
 
-    !! Create the mesh and discretization object.
+    !! Create the mesh
     call start_timer ('mesh')
     if (params%is_sublist('mesh')) then
       plist => params%sublist('mesh')
@@ -78,9 +84,22 @@ contains
       call LS_fatal ('missing "mesh" sublist parameter')
     end if
     call stop_timer ('mesh')
+
+    !! Create the partition type
+    call start_timer ('partition')
+    if (params%is_sublist('partition-layout')) then
+      plist => params%sublist('partition-layout')
+      allocate(this%partition)
+      call this%partition%init (this%mesh, plist)
+    else
+      call LS_fatal ('missing "partition-layout" sublist parameter')
+    end if
+    call stop_timer ('partition')
+
+    !! Create the discretization object.
     call start_timer ('mfd-discretization')
     allocate(this%disc)
-    call this%disc%init (this%mesh)
+    call this%disc%init (this%mesh, this%partition)
     call stop_timer ('mfd-discretization')
 
     !! Create the heat conduction model.
