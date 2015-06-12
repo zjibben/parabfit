@@ -15,7 +15,6 @@ module NS_solver_type
 
   use kinds, only: r8
   use unstr_mesh_type
-  use vof_tools, only: cell_materials
   use logging_services
   implicit none
   private
@@ -28,7 +27,7 @@ module NS_solver_type
      !! Pending/current state
      real(r8) :: t, dt
      real(r8), public, pointer :: velocity(:,:) => null()             ! potentially a target
-     type(cell_materials), pointer :: cell_matls(:) => null() ! reference only -- do not own
+     real(r8), pointer :: vof(:,:) ! reference only -- do not own
    contains
      procedure :: init
      procedure :: init_matls
@@ -105,11 +104,11 @@ contains
     
   end subroutine init
 
-  subroutine init_matls(this, cell_matls)
+  subroutine init_matls(this, vof)
     class(NS_solver_t), intent(inout) :: this
-    type(cell_materials), dimension(:), intent(in), target :: cell_matls
+    real(r8), dimension(:,:), intent(in), target :: vof
     
-    this%cell_matls => cell_matls
+    this%vof => vof
   end subroutine init_matls
 
   ! subroutine set_initial_state (this, t, temp, dt)

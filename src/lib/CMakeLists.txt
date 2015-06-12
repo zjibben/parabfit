@@ -65,7 +65,6 @@ set(Pececillo_SOURCE_FILES
     nka_type.F90
 
     # Vof modules
-    vof_tools.F90
     material_geometry_type.F90
     vof_init.F90
 

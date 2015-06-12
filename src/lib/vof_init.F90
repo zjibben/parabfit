@@ -9,7 +9,6 @@
 
 module vof_init
   use kinds, only: r8
-  use vof_tools, only: cell_materials,distinct_matls,distinct_entries,index_of
   use material_geometry_type
   use logging_services
   implicit none
@@ -18,7 +17,7 @@ module vof_init
   ! hex type to make divide and conquer algorithm simpler
   type, public :: hex_cell
      real(r8) :: node(3,8)
-    integer  :: depth
+     integer  :: depth
    contains
      procedure         :: divide
      procedure         :: volume
@@ -35,7 +34,7 @@ module vof_init
   integer, parameter :: cell_vof_recursion_limit = 4 ! should be made user-specified parameter
 contains
 
-  subroutine vof_initialize (mesh, plist, cell_matls)
+  subroutine vof_initialize (mesh, plist, vof, matl_ids, nmat) !cell_matls)
     use unstr_mesh_type
     
     ! this subroutine initializes the vof values in all cells
@@ -43,8 +42,10 @@ contains
     ! to calculate the volume fractions given an interface
     type(unstr_mesh), pointer, intent(in)             :: mesh
     type(parameter_list), intent(in)                  :: plist
-    type(cell_materials), dimension(:), intent(inout) :: cell_matls
-
+    integer, intent(in) :: nmat
+    integer, dimension(:), intent(in) :: matl_ids
+    real(r8), dimension(:,:), intent(inout) :: vof
+    
     ! local variables
     integer :: i
     type(hex_cell) :: hex
@@ -52,7 +53,7 @@ contains
     
     ! first, determine the initial state provided by the user, and assign
     ! the function which will determine what points are inside the materials
-    call matl_init_geometry%init(plist)
+    call matl_init_geometry%init(plist, matl_ids)
     
     ! next, loop though every cell and check if all verteces lie within a single material
     ! if so, set the Vof for that material to 1.0.
@@ -65,21 +66,22 @@ contains
        hex%depth = 0
 
        ! calculate the vof
-       cell_matls(i) = hex%vof(matl_init_geometry)
+       vof(:,i) = hex%vof(matl_init_geometry, nmat)
     end do
     
   end subroutine vof_initialize
 
-  recursive function vof(this, matl_geometry) result(hex_vof)
+  recursive function vof(this, matl_geometry, nmat) result(hex_vof)
     ! calculates the volume fractions of materials in a cell
     class(hex_cell), intent(in) :: this
     type(material_geometry), intent(in) :: matl_geometry
-    type(cell_materials)              :: hex_vof
+    integer, intent(in) :: nmat
+    real(r8), dimension(nmat) :: hex_vof
+    !type(cell_materials)              :: hex_vof
 
-    integer :: i,m,hm
+    integer :: i !,m,hm
     type(hex_cell)      , dimension(8) :: subhex
-    type(cell_materials), dimension(8) :: subhex_vof
-
+    
     ! if the cell contains an interface (and therefore has at least two materials
     ! and we haven't yet hit our recursion limit, divide the hex and repeat
     if (this%contains_interface(matl_geometry) .and. this%depth < cell_vof_recursion_limit) then
@@ -87,26 +89,16 @@ contains
        ! divide into 8 smaller hexes
        subhex = this%divide()
        
-       ! calculate the vof in the subhexes
+       ! tally the vof from subhexes
+       hex_vof = 0.0_r8
        do i = 1,8
-          subhex_vof(i) = subhex(i)%vof(matl_geometry)
+          hex_vof = hex_vof + subhex(i)%vof(matl_geometry,nmat) * 0.125_r8
        end do
        
-       ! get distinct materials and number of distinct materials from subhexes
-       call distinct_matls(hex_vof%nmat, hex_vof%matl, subhex_vof)
-       
-       ! build up current hex's vof from information given by subhexes
-       hex_vof%matl(:)%vof = 0.0_r8
-       do i = 1,8
-          do m = 1,subhex_vof(i)%nmat
-             hm = index_of(subhex_vof(i)%matl(m)%id, hex_vof%matl(:)%id)
-             hex_vof%matl(hm)%vof = hex_vof%matl(hm)%vof + 0.125_r8*subhex_vof(i)%matl(m)%vof
-          end do
-       end do
     else
        ! if we are at (or somehow past) the recursion limit or the cell does not contain an interface,
        ! calculate the vof in this hex based on the materials at its nodes
-       hex_vof = this%vof_from_nodes(matl_geometry)
+       hex_vof = this%vof_from_nodes(matl_geometry, nmat)
     end if
     
   end function vof
@@ -131,31 +123,20 @@ contains
     
   end function contains_interface
   
-  type(cell_materials) function vof_from_nodes(this, matl_geometry)
+  function vof_from_nodes(this, matl_geometry, nmat)
     ! the material at each node contributes 1/8th of the vof in the given hex
     class(hex_cell), intent(in) :: this
     type(material_geometry), intent(in) :: matl_geometry
+    integer, intent(in) :: nmat
+    real(r8), dimension(nmat) :: vof_from_nodes
     
     integer :: n,m
-    integer, dimension(8) :: matl_at_node
-    
-    ! get the material ids at each node
-    do n = 1,8
-       matl_at_node(n) = matl_geometry%material_at(this%node(:,n))
-    end do
-    
-    ! count and store the distinct materials on the nodes
-    call distinct_entries(vof_from_nodes%matl, matl_at_node)
-    vof_from_nodes%nmat = size(vof_from_nodes%matl)
-    
-    ! sort?
     
     ! tally up the vof
-    vof_from_nodes%matl(:)%vof = 0.0_r8
+    vof_from_nodes = 0.0_r8
     do n = 1,8
-       ! get the material at each node consider it to be taking up 1/8th of the volume
-       m = index_of(matl_at_node(n), vof_from_nodes%matl(:)%id)
-       vof_from_nodes%matl(m)%vof = vof_from_nodes%matl(m)%vof + 0.125_r8
+       m = matl_geometry%material_at(this%node(:,n))
+       vof_from_nodes(m) = vof_from_nodes(m) + 0.125_r8
     end do
     
   end function vof_from_nodes

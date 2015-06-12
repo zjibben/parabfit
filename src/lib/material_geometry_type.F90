@@ -19,7 +19,7 @@ module material_geometry_type
   
   ! define shape types
   type :: object_t
-     integer :: shape,matl_id
+     integer :: matl_id
    contains
      procedure :: location_is_inside
   end type object_t
@@ -27,15 +27,11 @@ module material_geometry_type
   type, extends(object_t) :: plane_t
      real(r8), dimension(:), allocatable :: normal
      real(r8) :: plane_const
-   contains
-     final :: delete_plane
   end type plane_t
   
   type, extends(object_t) :: sphere_t
-     real(r8) :: radius
      real(r8), dimension(:), allocatable :: center
-   contains
-     final     :: delete_sphere
+     real(r8) :: radius
   end type sphere_t
   
   type :: object_ptr
@@ -44,11 +40,6 @@ module material_geometry_type
      final :: delete_object_ptr
   end type object_ptr
 
-  ! shape IDs
-  integer, parameter :: ALL    = 0
-  integer, parameter :: PLANE  = 1
-  integer, parameter :: SPHERE = 2
-
   ! main material_geometry type
   type, public :: material_geometry
      type(object_ptr), dimension(:), allocatable :: object
@@ -56,7 +47,6 @@ module material_geometry_type
      procedure :: init
      procedure :: material_at
      procedure :: object_at
-     final :: delete_material_geometry
   end type material_geometry
   
 contains
@@ -66,28 +56,14 @@ contains
     if (associated(this%o)) deallocate(this%o)
   end subroutine delete_object_ptr
   
-  subroutine delete_plane (this)
-    type(plane_t), intent(inout) :: this
-    if (allocated(this%normal)) deallocate(this%normal)
-  end subroutine delete_plane
-  
-  subroutine delete_sphere (this)
-    type(sphere_t), intent(inout) :: this
-    if (allocated(this%center)) deallocate(this%center)
-  end subroutine delete_sphere
-  
-  subroutine delete_material_geometry (this)
-    type(material_geometry), intent(inout) :: this
-    if (allocated(this%object)) deallocate(this%object)
-  end subroutine delete_material_geometry
-  
-  subroutine init (this, params)
+  subroutine init (this, params, user_matl_id)
     use parameter_list_type
-
+    
     class(material_geometry), intent(inout) :: this
     type(parameter_list), intent(in)    :: params
+    integer, dimension(:), intent(in)   :: user_matl_id
 
-    integer :: i,stat
+    integer :: i,id,stat
     type(parameter_list_iterator)       :: param
     type(parameter_list), pointer       :: property
     character(:), allocatable           :: context,errmsg
@@ -111,22 +87,20 @@ contains
        select case (param%name())
        case('sphere')
           allocate(sphere_t :: this%object(i)%o)
-          this%object(i)%o%shape = SPHERE
        case('plane')
           allocate(plane_t :: this%object(i)%o)
-          this%object(i)%o%shape = PLANE
        case('all')
           ! 'all' should always be the last item in the list
           allocate(object_t :: this%object(i)%o)
-          this%object(i)%o%shape = ALL
        case default
           call LS_fatal (context//'unrecognized shape "'//param%name()//'"')
        end select
        
        ! read in details on the shape
        property => param%sublist()
-       call property%get ('material-id', this%object(i)%o%matl_id, stat=stat, errmsg=errmsg)
+       call property%get ('material-id', id, stat=stat, errmsg=errmsg)
        if (stat /= 0) call LS_fatal (context//errmsg)
+       this%object(i)%o%matl_id = index_of(id, user_matl_id)
        
        select type (obj_ptr => this%object(i)%o)
        type is (sphere_t)
@@ -208,5 +182,26 @@ contains
     call LS_fatal('material_at: did not find any material at this location')
     
   end function object_at
+
+  integer function index_of(n, array)
+    ! returns the index of the first entry of value n in array
+    ! returns -1 if not found
+    integer, intent(in) :: n
+    integer, dimension(:), intent(in) :: array
+
+    integer :: i
+
+    do i = 1,size(array)
+       if (array(i)==n) then
+          index_of = i
+          return
+       end if
+    end do
+
+    ! value not found
+    index_of = -1
+    !call LS_fatal ('value not found in array')    
+    
+  end function index_of
   
 end module material_geometry_type

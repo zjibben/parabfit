@@ -118,7 +118,7 @@ contains
       plist => params%sublist('vof-solver')
       allocate(this%vof_solver)
       call this%vof_solver%init (this%mesh, this%ns_solver%velocity, plist)
-      call this%ns_solver%init_matls(this%vof_solver%cell_matls)
+      call this%ns_solver%init_matls(this%vof_solver%vof)
     else
       call LS_fatal ('missing "vof-solver" sublist parameter')
     end if
@@ -279,10 +279,10 @@ contains
     call gmv_write_cell_var (this%mesh, this%ns_solver%velocity(3,:), 'u3')
     
     ! get the vof
-    call matl_get_vof (vof, this%vof_solver%cell_matls, this%vof_solver%nmat, this%vof_solver%matl_id)
+    !call matl_get_vof (vof, this%vof_solver%cell_matls, this%vof_solver%nmat, this%vof_solver%matl_id)
     do m = 1,this%vof_solver%nmat ! write all material vofs (TODO should I somehow be writing the interface reconstruction?)
        write(mstr, '(i3)') this%vof_solver%matl_id(m)
-       call gmv_write_cell_var (this%mesh, vof(:,m), 'Vof_'//trim(adjustl(mstr)) )
+       call gmv_write_cell_var (this%mesh, this%vof_solver%vof(m,:), 'Vof_'//trim(adjustl(mstr)) )
     end do
     
     call gmv_end_variables

@@ -17,7 +17,6 @@ module vof_solver_type
   use kinds, only: r8
   use unstr_mesh_type
   use logging_services
-  use vof_tools, only: cell_materials
   implicit none
   private
 
@@ -31,7 +30,7 @@ module vof_solver_type
     integer, public               :: nmat                       ! number of materials present globally
     real(r8), pointer             :: velocity_cc(:,:) => null() ! cell centered velocity. reference only -- do not own
     integer, dimension(:), allocatable, public :: matl_id
-    type(cell_materials), public, pointer :: cell_matls(:) => null()    ! potentially a target
+    real(r8), dimension(:,:), allocatable, public :: vof
   contains
     procedure :: init
     procedure :: set_initial_state
@@ -43,23 +42,11 @@ module vof_solver_type
     ! procedure :: get_solution_view
     ! procedure :: get_solution_copy
     ! procedure :: write_metrics
-    !procedure :: advance_state
-    !procedure :: commit_pending_state
-    final :: vof_solver_delete
+    ! procedure :: advance_state
+    ! procedure :: commit_pending_state
  end type vof_solver
  
 contains
-
-  subroutine vof_solver_delete (this)
-    type(vof_solver), intent(inout) :: this
-    integer :: i
-    if (associated(this%cell_matls)) then
-       do i = 1,size(this%cell_matls)
-          if (allocated(this%cell_matls(i)%matl)) deallocate(this%cell_matls(i)%matl)
-       end do
-       deallocate(this%cell_matls)
-    end if
-  end subroutine vof_solver_delete
 
   subroutine init (this, mesh, velocity_cc, params)
     
@@ -71,41 +58,38 @@ contains
     real(r8), dimension(:,:), intent(in), target :: velocity_cc
     type(parameter_list) :: params
 
+    integer :: stat
     type(parameter_list), pointer :: plist
-    character(:), allocatable :: context
+    character(:), allocatable :: context,errmsg
 
     this%velocity_cc => velocity_cc
     this%mesh        => mesh
 
-    allocate(this%cell_matls(this%mesh%ncell))
+    context = 'processing ' // params%name() // ': '
+    
+    call params%get ('materials', this%matl_id, stat=stat, errmsg=errmsg)
+    if (stat /= 0) call LS_fatal (context//errmsg)
+
+    this%nmat = size(this%matl_id)
+    
+    allocate(this%vof(this%nmat,this%mesh%ncell))
 
   end subroutine init
 
   subroutine set_initial_state (this, plist)
     use parameter_list_type
     use vof_init
-    use vof_tools, only: distinct_matls, volume_of_matl
+    !use vof_tools, only: distinct_matls, volume_of_matl
     
     class(vof_solver), intent(inout) :: this
     type(parameter_list), intent(in) :: plist
-    ! real(r8), intent(in) :: t, temp(:), dt
-
-    ! integer :: stat
-    ! character(:), allocatable :: errmsg
-    ! real(r8), allocatable :: udot(:)
     
     !! Initialize the Vof
-    call vof_initialize (this%mesh, plist, this%cell_matls)
-    call distinct_matls(this%nmat, this%matl_id, this%cell_matls)
-
-    write(*,*) volume_of_matl(1, this%cell_matls, this%mesh%volume)
-    write(*,*) volume_of_matl(2, this%cell_matls, this%mesh%volume)
+    call vof_initialize (this%mesh, plist, this%vof, this%matl_id, this%nmat)
     
-    ! allocate(udot(size(this%u)))
-    ! call compute_initial_state (this%model, t, temp, dt, this%u, udot, stat, errmsg)
-    ! if (stat /= 0) call LS_fatal ('HC_SOLVER%SET_INITIAL_STATE: ' // errmsg)
-    ! call this%integ%set_initial_state (t, this%u, udot)
-
+    write(*,*) sum(this%vof(1,:)*this%mesh%volume(:))
+    write(*,*) sum(this%vof(2,:)*this%mesh%volume(:))
+    
   end subroutine set_initial_state
 
   ! subroutine test_initial_state (this, t, temp, dt, u, udot)
