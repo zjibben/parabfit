@@ -301,101 +301,20 @@ contains
 
   end function new_unstr_mesh_exodus
 
-  !! Generate a good ordering of the cells.  The cell-cell face
-  !! adjacency info is given by CNHBR (0 values mark a boundary face),
-  !! and the ordering is returned in the new-to-old mapping array
-  !! PERM. 
-  !!
-  !! Correctness of this code and any mesh-partitioning code can be
-  !! determined independently.  However, the performance of two will
-  !! be determined by surface-to-volume ratios, and that ration will
-  !! be determined by this code and the partitioning coded.
+  !! Generate a good ordering of the cells.  The cell-cell face adjacency info
+  !! is given by CNHBR (0 values mark a boundary face), and the ordering is
+  !! returned in the new-to-old mapping array PERM.  This is a just a stub at
+  !! this point; we ought to be doing something like RCM here.
 
   subroutine order_cells (cnhbr, perm)
-    integer, intent(in) :: cnhbr(:,:)
-    integer, intent(out) :: perm(:)
-
-    !! After some testing, RCM turns out to be poor compared to a
-    !! simpler ordering.
-
-    !call order_cells_RCM(cnhbr, perm)
-    call order_cells_naive(cnhbr, perm)
-  end subroutine order_cells
-  
-  subroutine order_cells_naive(cnhbr,perm)
-    integer, intent(in) :: cnhbr(:,:)
-    integer, intent(out) :: perm(:)
-    integer :: j
-    perm = [(j,j=1,size(perm),1)]
-  end subroutine order_cells_naive
-
-  subroutine order_cells_RCM (cnhbr, perm)
     use permutations
     integer, intent(in) :: cnhbr(:,:)
     integer, intent(out) :: perm(:)
-    integer :: scratch(size(cnhbr,dim=1))
-    logical :: ordered(size(cnhbr,dim=2))
-    integer :: j,k,t,min_deg,min_idx,num_ordered,order_index
+    integer :: j
     ASSERT(size(perm) == size(cnhbr,dim=2))
-    ! Nothing is ordered at the beginning
-    num_ordered = 0
-    ordered = .false.
-    ! Find a vertex with minimal degree -- the first vertex
-    min_idx = 1
-    min_deg = vert_degree(min_idx)
-    do j=2,size(cnhbr,dim=2)
-       if (vert_degree(j) < min_deg) then
-          min_idx = j
-          min_deg = vert_degree(min_idx)
-       end if
-    end do
-    ! Add the first vertex index
-    call add_index(min_idx)
-    ! Perform the RCM iteration
-    order_index = 0
-    do while (num_ordered .lt. size(cnhbr,dim=2))
-       order_index = order_index+1
-       ! Sort the neighbors of the currently ordered cell.
-       scratch=cnhbr(:,perm(order_index))
-       do j=1,size(scratch)-1
-          do k=j+1,size(scratch)
-             if (vert_degree(scratch(j)) > vert_degree(scratch(k))) then
-                t = scratch(j)
-                scratch(j) = scratch(k)
-                scratch(k) = t
-             end if
-          end do
-       end do ! Sorting scratch
-       do j=1,size(scratch) 
-          call add_index(scratch(j))
-       end do ! Adding elements of scratch
-    end do ! Ordering points
-    ASSERT(is_perm(perm))
-  contains
-    function vert_degree(n) result(d)
-      integer :: d
-      integer, intent(in) :: n
-      if (n >= 1 .and. n <= size(cnhbr,dim=2)) then      
-         d = count(cnhbr(:,n).gt.0)
-      else
-         ! Handle the case that we are asked for the degree of a
-         ! non-cell by returning a degree that is higher than the
-         ! degree of any actual cell.
-         d = 1 + size(cnhbr,dim=2) 
-      end if
-    end function vert_degree
-    subroutine add_index(n)
-      integer, intent(in) :: n
-      ! Silently ignore requests to add indicies for non-cells
-      if (n >= 1 .and. n <= size(cnhbr,dim=2)) then
-         if (.not. ordered(n)) then
-            num_ordered = num_ordered+1
-            perm(num_ordered) = n
-            ordered(n) = .true.
-         end if
-      end if
-    end subroutine add_index
-  end subroutine order_cells_RCM
+    !perm = identity_perm(size(perm))
+    perm = [(j, j=size(perm),1,-1)]
+  end subroutine order_cells
 
   !! This procedure generates a new numbering of mesh facets (nodes, edges, or
   !! faces) that is well-ordered.  FACET is a cell-based array where FACET(:,j)
@@ -448,7 +367,9 @@ contains
   subroutine tag_boundary_faces (cface, face_set_mask)
     integer, intent(in) :: cface(:,:)
     integer, intent(inout) :: face_set_mask(:)
-    integer :: k, j, tag(size(face_set_mask))
+    integer :: k, j
+    integer, dimension(:), allocatable :: tag
+    allocate(tag(size(face_set_mask)))
     tag = 0
     do j = 1, size(cface,dim=2)
       do k = 1, size(cface,dim=1)
@@ -463,6 +384,7 @@ contains
         face_set_mask(j) = ibclr(face_set_mask(j),pos=0)
       end if
     end do
+    deallocate(tag)
   end subroutine tag_boundary_faces
 
   !! This routine computes the geometrical quantities and secondary
@@ -536,13 +458,13 @@ contains
 
     integer  :: i, j, k, n
     real(r8) :: x(3)
-
+    
     ASSERT(size(xmin) == 3)
     ASSERT(size(xmax) == 3)
     ASSERT(size(nx) == 3)
     ASSERT(all(xmin < xmax))
     ASSERT(all(nx > 0))
-
+    
     allocate(mesh)
 
     mesh%mesh_type = 'HEX'
@@ -578,7 +500,7 @@ contains
     do j = 1, mesh%ncell
       mesh%xcell(j) = j
     end do
-
+    
     !! Generate the node coordinates.
     allocate(mesh%x(3,mesh%nnode))
     do k = 1, nx(3)+1
@@ -593,23 +515,28 @@ contains
     end do
 
     if (present(eps)) call randomize_coord (eps)
-
+    
     !! Retain the node numbering.
     allocate(mesh%xnode(mesh%nnode))
     do j = 1, mesh%nnode
       mesh%xnode(j) = j
     end do
-
+    
     !! Generate a numbering of the mesh faces and the cell-to-face map.
     !! Faces are numbered as encountered when interating through the cells.
     allocate(mesh%cface(6,mesh%ncell), mesh%cfpar(mesh%ncell))
     call label_mesh_faces (mesh%cnode, mesh%nface, mesh%cface, mesh%cfpar)
-
+    
+    
     !! Generate side set data: 6 sides of the brick, IDs 1 through 6.
     mesh%face_set_id = [1, 2, 3, 4, 5, 6]
+    
     allocate(mesh%face_set_mask(mesh%nface))
+    
     mesh%face_set_mask = 0 !ZERO_BITFIELD  ! unset all bits
+    
     call tag_boundary_faces (mesh%cface, mesh%face_set_mask)
+    
     !! Side sets 1 (x=xmin) and 2 (x=xmax)
     do k = 1, nx(3)
       do j = 1, nx(2)

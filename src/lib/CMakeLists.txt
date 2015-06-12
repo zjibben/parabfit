@@ -18,7 +18,6 @@ set(Pececillo_SOURCE_FILES
 # Mesh modules
     unstr_mesh_type.F90
     unstr_mesh_factory.F90
-    unstr_mesh_partition_type.F90
     cell_topology.F90
     cell_geometry.F90
     unstr_mesh_tools.F90
@@ -64,6 +63,11 @@ set(Pececillo_SOURCE_FILES
 # DAE integrator modules
     idaesol_type.F90
     nka_type.F90
+
+    # Vof modules
+    vof_tools.F90
+    material_geometry_type.F90
+    vof_init.F90
 
 # Output modules
     gmvwrite.c

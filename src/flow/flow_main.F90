@@ -1,15 +1,15 @@
 !!
-!! HC_MAIN
+!! FLOW_MAIN
 !!
-!! A Basic driver for the heat conduction (HC) model.
+!! A Basic driver for the flow model.
 !!
-!! Neil N. Carlson <nnc@lanl.gov>
-!! September 2014
+!! Zechariah J. Jibben (zjibben@lanl.gov)
+!! June 2015
 !!
 
 #include "f90_assert.fpp"
 
-program HC_main
+program flow_main
 
   use,intrinsic :: iso_fortran_env, only: output_unit, error_unit
   use,intrinsic :: iso_c_binding, only: C_NEW_LINE
@@ -17,14 +17,14 @@ program HC_main
   use timer_tree_type
   use parameter_list_type
   use parameter_list_json
-  use HC_sim_type
+  use flow_sim_type
   implicit none
 
   integer :: n, num_arg, inlun, stat
   character(256) :: arg
   character(:), allocatable :: prog, infile, errmsg
   type(parameter_list), pointer :: params
-  type(HC_sim) :: sim
+  type(flow_sim) :: sim
 
   !! Get the program name from the command line.
   call get_command (arg)
@@ -54,7 +54,7 @@ program HC_main
   call start_timer ('simulation')
   call sim%init (params)
   call sim%run (stat, errmsg)
-  if (stat /= 0) call LS_fatal ('HC_SIM: '//errmsg)
+  if (stat /= 0) call LS_fatal ('FLOW_SIM: '//errmsg)
   call stop_timer ('simulation')
 
   !! Write some timing info.
@@ -65,4 +65,4 @@ program HC_main
   call LS_info ('')
   call LS_exit
 
-end program
+end program flow_main

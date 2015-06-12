@@ -11,7 +11,7 @@ program test_hypre_hybrid_type
 
   real(r8), parameter :: PI = 3.1415926535897931_r8
   real(r8), parameter :: TWOPI = 6.2831853071795862_r8
-  integer :: status = 0
+  integer :: status
 
   real(r8) :: a ! set by the tests
   integer :: nx, ny, nz ! set by the tests

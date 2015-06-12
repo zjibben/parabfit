@@ -53,14 +53,11 @@ module mfd_disc_type
 
   use kinds, only: r8
   use unstr_mesh_type
-  use unstr_mesh_partition_type
   implicit none
   private
 
   type, public :: mfd_disc
-    ! The next two fields are reference only - we do not own them
-    type(unstr_mesh), pointer :: mesh => null() 
-    type(unstr_mesh_partition), pointer :: partition => null()
+    type(unstr_mesh), pointer :: mesh => null() ! reference only - do not own
     real(r8), allocatable :: minv(:,:)
   contains
     procedure :: init => mfd_disc_init
@@ -80,21 +77,15 @@ module mfd_disc_type
 
 contains
 
-  subroutine mfd_disc_init (this, mesh, partition)
+  subroutine mfd_disc_init (this, mesh)
 
     class(mfd_disc), intent(out) :: this
     type(unstr_mesh), intent(in), target :: mesh
-    type(unstr_mesh_partition), intent(in), target :: partition
 
     integer :: j
     type(mfd_hex) :: tmp
 
-    !! Keep a reference to the mesh
     this%mesh => mesh
-
-    !! Keep a reference to the partition
-    this%partition => partition
-
     allocate(this%minv(21,mesh%ncell))
     do j = 1, mesh%ncell
       call tmp%init (mesh%x(:,mesh%cnode(:,j)))
@@ -106,17 +97,14 @@ contains
   subroutine mfd_disc_apply_diff (this, coef, ucell, uface, rcell, rface)
 
     use upper_packed_matrix, only: upm_matmul
-    use timer_tree_type
 
     class(mfd_disc), intent(in) :: this
     real(r8), intent(in)  :: coef(:)
     real(r8), intent(in)  :: ucell(:), uface(:)
     real(r8), intent(out) :: rcell(:), rface(:)
 
-    integer :: j,st,en
-
-    integer :: p
-    real(r8), allocatable :: rface_exp(:)
+    integer :: j
+    real(r8) :: flux(size(this%mesh%cface,dim=1))
 
     ASSERT(size(coef) == this%mesh%ncell)
     ASSERT(size(ucell) == size(coef))
@@ -125,42 +113,11 @@ contains
     ASSERT(size(rface) == size(uface))
 
     rface = 0.0_r8
-
-    ! Scatter rface to the partitioned data in rface_expanded.
-    call this%partition%scatter_face(rface, rface_exp)
-
-    ! Dispatch a parallel loop over the partitions.
-    call start_timer('apply_diff')
-    !$OMP parallel private(p)
-    !$OMP do
-    do p = 1,this%partition%num_part()
-       call update_section(p)
+    do j = 1, this%mesh%ncell
+      flux = coef(j) * upm_matmul(this%minv(:,j), ucell(j) - uface(this%mesh%cface(:,j)))
+      rface(this%mesh%cface(:,j)) = rface(this%mesh%cface(:,j)) - flux
+      rcell(j) = sum(flux)
     end do
-    !$OMP end do
-    !$OMP end parallel
-    call stop_timer('apply_diff')
-
-    ! Gather the partitioned data in rface_expanded back to rface
-    call this%partition%gather_sum_face(rface_exp, rface)
-
-  contains 
-
-    subroutine update_section(p)
-      integer, intent(in) :: p
-      integer :: st,en,j,offset
-      real(r8) :: flux(size(this%mesh%cface,dim=1))
-
-      st=this%partition%part_start(p)
-      en=this%partition%part_end(p) 
-      offset = st-1
-      
-      do j = st,en
-         flux = coef(j) * upm_matmul(this%minv(:,j), ucell(j) - uface(this%mesh%cface(:,j)))
-         rface_exp(this%partition%cface(:,j-offset,p)) = &
-              rface_exp(this%partition%cface(:,j-offset,p)) - flux
-         rcell(j) = sum(flux)
-      end do
-    end subroutine update_section
 
   end subroutine mfd_disc_apply_diff
 

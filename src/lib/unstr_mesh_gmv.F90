@@ -85,8 +85,8 @@ contains
       INSIST(.false.)
     end select
     cell_type(9:9) = C_NULL_CHAR
-
-    call gmvwrite_node_data (size(mesh%x,dim=2), mesh%x(1,:), mesh%x(2,:), mesh%x(3,:))
+    
+    call gmvwrite_node_data (size(mesh%x,dim=2), mesh%x(1,:), mesh%x(2,:), mesh%x(3,:)) ! segfault here
     call gmvwrite_cell_header (size(mesh%cnode,dim=2))
     do j = 1, size(mesh%cnode,dim=2)
       call gmvwrite_cell_type (cell_type, size(mesh%cnode,dim=1), mesh%cnode(:,j))

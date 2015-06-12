@@ -23,7 +23,6 @@ contains
 
     use facet_hash_type
     use cell_topology
-    use timer_tree_type
 
     integer, intent(in)  :: cnode(:,:)
     integer, intent(out) :: cnhbr(:,:)
@@ -42,8 +41,6 @@ contains
     type(table_entry), pointer :: bin(:) => null()
 
     procedure(hex_face_nodes), pointer :: face_nodes
-
-    call start_timer('get_cell_neighbor_array')
 
     !! Infer the type of mesh we are working with from the shape of CNODE and CNHBR.
     ASSERT(size(cnode,dim=2) == size(cnhbr,dim=2))
@@ -170,7 +167,6 @@ contains
     end do
     deallocate(p, xbin, bin_table)
 
-    call stop_timer('get_cell_neighbor_array')
   end subroutine get_cell_neighbor_array
 
   subroutine label_mesh_faces (cnode, nface, cface, cfpar)
