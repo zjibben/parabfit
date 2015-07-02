@@ -11,27 +11,26 @@ module vof_init
   use kinds, only: r8
   use material_geometry_type
   use logging_services
+  use hex_types
   implicit none
   private
 
   ! hex type to make divide and conquer algorithm simpler
-  type, public :: hex_cell
-     real(r8) :: node(3,8)
-     integer  :: depth
+  type, extends(base_hex) :: dnc_hex
    contains
      procedure         :: divide
-     procedure         :: volume
      procedure         :: cell_center
      procedure         :: face_centers
      procedure         :: edge_centers
      procedure         :: contains_interface
      procedure         :: vof
      procedure,private :: vof_from_nodes
-  end type hex_cell
+  end type dnc_hex
 
   public :: vof_initialize
 
-  integer, parameter :: cell_vof_recursion_limit = 4 ! should be made user-specified parameter
+  integer , parameter :: cell_vof_recursion_limit  = 100     ! should be made user-specified parameter
+  real(r8), parameter :: cell_vof_tolerance_factor = 1e-3_r8 ! should be made user-specified parameter
 contains
 
   subroutine vof_initialize (mesh, plist, vof, matl_ids, nmat) !cell_matls)
@@ -48,12 +47,15 @@ contains
     
     ! local variables
     integer :: i
-    type(hex_cell) :: hex
+    real(r8) :: tolerance
+    type(dnc_hex) :: hex
     type(material_geometry) :: matl_init_geometry
     
     ! first, determine the initial state provided by the user, and assign
     ! the function which will determine what points are inside the materials
     call matl_init_geometry%init(plist, matl_ids)
+
+    tolerance = cell_vof_tolerance_factor * minval(mesh%volume(:))
     
     ! next, loop though every cell and check if all verteces lie within a single material
     ! if so, set the Vof for that material to 1.0.
@@ -63,28 +65,31 @@ contains
        ! make a hex type out of the cell before calculating the vof
        ! this will make it easier to handle
        hex%node = mesh%x(:,mesh%cnode(:,i))
-       hex%depth = 0
 
        ! calculate the vof
-       vof(:,i) = hex%vof(matl_init_geometry, nmat)
+       vof(:,i) = hex%vof(matl_init_geometry, nmat, 0, tolerance)
     end do
     
   end subroutine vof_initialize
 
-  recursive function vof(this, matl_geometry, nmat) result(hex_vof)
+  recursive function vof(this, matl_geometry, nmat, depth, tolerance) result(hex_vof)
     ! calculates the volume fractions of materials in a cell
-    class(hex_cell), intent(in) :: this
-    type(material_geometry), intent(in) :: matl_geometry
-    integer, intent(in) :: nmat
+    class(dnc_hex), intent(in) :: this
+    class(base_region), intent(in) :: matl_geometry
+    integer , intent(in) :: nmat
+    integer , intent(in) :: depth
+    real(r8), intent(in) :: tolerance
     real(r8), dimension(nmat) :: hex_vof
-    !type(cell_materials)              :: hex_vof
 
-    integer :: i !,m,hm
-    type(hex_cell)      , dimension(8) :: subhex
+    integer :: i
+    type(dnc_hex)      , dimension(8) :: subhex
+    real(r8) :: this_volume
+
+    this_volume = this%calc_volume()
     
     ! if the cell contains an interface (and therefore has at least two materials
     ! and we haven't yet hit our recursion limit, divide the hex and repeat
-    if (this%contains_interface(matl_geometry) .and. this%depth < cell_vof_recursion_limit) then
+    if (this%contains_interface(matl_geometry) .and. depth < cell_vof_recursion_limit .and. this_volume > tolerance) then
        !if (this%depth <= cell_vof_recursion_limit) then
        ! divide into 8 smaller hexes
        subhex = this%divide()
@@ -92,7 +97,7 @@ contains
        ! tally the vof from subhexes
        hex_vof = 0.0_r8
        do i = 1,8
-          hex_vof = hex_vof + subhex(i)%vof(matl_geometry,nmat) * 0.125_r8
+          hex_vof = hex_vof + subhex(i)%vof(matl_geometry,nmat,depth+1,tolerance) * subhex(i)%calc_volume()/this_volume
        end do
        
     else
@@ -107,26 +112,26 @@ contains
     ! This function takes a hex, described by its vertex positions,
     ! and determines if it contains an interface for a given material.
     ! This is done by checking if every vertex lies within the material, or not.
-    class(hex_cell), intent(in) :: this
-    type(material_geometry), intent(in) :: matl_geometry
+    class(dnc_hex), intent(in) :: this
+    class(base_region), intent(in) :: matl_geometry
 
     integer :: i,reference_id
     real(r8) :: facec(3,6),edgec(3,12)
     
     contains_interface = .false.
-    reference_id = matl_geometry%material_at(this%node(:,1))
+    reference_id = matl_geometry%index_at(this%node(:,1))
 
     ! if any node doesn't have the same material as the first node, there's an interface in this cell
     do i = 2,8
-       contains_interface = contains_interface .or. reference_id /= matl_geometry%material_at(this%node(:,i))
+       contains_interface = contains_interface .or. reference_id /= matl_geometry%index_at(this%node(:,i))
     end do
     
   end function contains_interface
   
   function vof_from_nodes(this, matl_geometry, nmat)
     ! the material at each node contributes 1/8th of the vof in the given hex
-    class(hex_cell), intent(in) :: this
-    type(material_geometry), intent(in) :: matl_geometry
+    class(dnc_hex), intent(in) :: this
+    class(base_region), intent(in) :: matl_geometry
     integer, intent(in) :: nmat
     real(r8), dimension(nmat) :: vof_from_nodes
     
@@ -135,30 +140,22 @@ contains
     ! tally up the vof
     vof_from_nodes = 0.0_r8
     do n = 1,8
-       m = matl_geometry%material_at(this%node(:,n))
+       m = matl_geometry%index_at(this%node(:,n))
        vof_from_nodes(m) = vof_from_nodes(m) + 0.125_r8
     end do
     
   end function vof_from_nodes
   
-  real(r8) function volume (this)
-    ! calculates the volume of a hex
-    use cell_geometry, only: eval_hex_volumes
-    class(hex_cell), intent(in) :: this
-    real(r8) :: cvol_tmp(8)
-    call eval_hex_volumes(this%node, volume, cvol_tmp)
-  end function volume
-  
   function cell_center(hex)
     ! returns the center of the given hex
-    class(hex_cell), intent(in) :: hex
+    class(dnc_hex), intent(in) :: hex
     real(r8), dimension(3) :: cell_center
     cell_center = sum(hex%node(:,:), dim=2) / 8.0_r8
   end function cell_center
 
   function face_centers(this)
     ! returns an array of face centers
-    class(hex_cell), intent(in) :: this
+    class(dnc_hex), intent(in) :: this
     real(r8), dimension(3,6) :: face_centers
     face_centers(:,1) = sum(this%node(:,(/1,2,5,6/)), dim=2) / 4.0_r8
     face_centers(:,2) = sum(this%node(:,(/2,3,6,7/)), dim=2) / 4.0_r8
@@ -170,7 +167,7 @@ contains
 
   function edge_centers(this)
     ! returns an array of edge centers
-    class(hex_cell), intent(in) :: this
+    class(dnc_hex), intent(in) :: this
     real(r8), dimension(3,12) :: edge_centers
     edge_centers(:, 1) = sum(this%node(:,(/1,2/)), dim=2) / 2.0_r8
     edge_centers(:, 2) = sum(this%node(:,(/2,3/)), dim=2) / 2.0_r8
@@ -188,8 +185,8 @@ contains
 
   function divide(this) result(subhex)
     ! this function takes a hex and returns an array of 8 hexes obtained from dividing the input
-    class(hex_cell), intent(in)  :: this
-    type(hex_cell), dimension(8) :: subhex
+    class(dnc_hex), intent(in) :: this
+    type(dnc_hex)              :: subhex(8)
     
     real(r8) :: cellc(3), facec(3,6), edgec(3,12)
     integer :: i
@@ -199,9 +196,6 @@ contains
     facec = this%face_centers()
     edgec = this%edge_centers()
     
-    ! set subhexes at 1 lower depth
-    subhex(:)%depth = this%depth+1
-
     ! set subhex node positions
     subhex(1)%node(:,1) = this%node(:,1)
     subhex(1)%node(:,2) = edgec(:,1)

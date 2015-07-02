@@ -64,10 +64,19 @@ set(Pececillo_SOURCE_FILES
     idaesol_type.F90
     nka_type.F90
 
-    # Vof modules
+# Flow Modules
+    prescribed_velocity_fields.F90
+    velocity_to_faces_func.F90
+    
+# Vof modules
+    hex_types.F90
     material_geometry_type.F90
     vof_init.F90
-
+    locate_plane_module.F90
+    truncate_volume_module.F90
+    volume_track_module.F90
+    flux_volume_module.F90
+    
 # Output modules
     gmvwrite.c
     gmvwrite_fortran_binding.F90

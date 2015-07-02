@@ -40,13 +40,36 @@ module material_geometry_type
      final :: delete_object_ptr
   end type object_ptr
 
-  ! main material_geometry type
-  type, public :: material_geometry
+  ! region type
+  type, abstract, public :: base_region
+   contains
+     procedure(index_at), deferred :: index_at
+  end type base_region
+  
+  abstract interface
+     integer function index_at (this, x)
+       use kinds, only: r8
+       import base_region
+       class(base_region), intent(in) :: this
+       real(r8), intent(in) :: x(3)
+     end function index_at
+  end interface
+
+  ! object_geometry type
+  type, extends(base_region), public :: object_geometry
+     private
      type(object_ptr), dimension(:), allocatable :: object
    contains
-     procedure :: init
-     procedure :: material_at
+     !procedure :: init
+     procedure :: index_at => object_index_at
      procedure :: object_at
+  end type object_geometry
+  
+  ! material_geometry type
+  type, extends(object_geometry), public :: material_geometry
+   contains
+     procedure :: init
+     procedure :: index_at => material_at
   end type material_geometry
   
 contains
@@ -159,9 +182,32 @@ contains
     
   end function material_at
 
+  integer function object_index_at (this, x)
+    ! identifies and returns the index of object at point x
+    class(object_geometry), intent(in) :: this
+    real(r8), dimension(3), intent(in) :: x
+
+    integer :: i
+    
+    ! loop through every shape defined in the initial geometry
+    do i = 1,size(this%object)
+       ! check if we are inside the shape
+       ! these shapes are ordered such that if materials overlap,
+       ! the first one hit is the actual material at this location
+       ! the last 'shape' covers the remainder of the domain, so
+       ! there should always be a material discovered
+       if (this%object(i)%o%location_is_inside (x)) then
+          object_index_at = i
+          return
+       end if
+    end do
+    call LS_fatal('material_at: did not find any material at this location')
+    
+  end function object_index_at
+  
   function object_at(this, x)
     ! identifies and returns the object at point x
-    class(material_geometry), intent(in) :: this
+    class(object_geometry), intent(in) :: this
     real(r8), dimension(3), intent(in) :: x
     class(object_t), pointer :: object_at
 

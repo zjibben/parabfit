@@ -19,19 +19,21 @@ module NS_solver_type
   implicit none
   private
   
-  type, public :: NS_solver_t
+  type, public :: NS_solver
      private
      !type(HC_model), pointer :: model => null() ! reference only -- do not own
      type(unstr_mesh), pointer :: mesh => null() ! reference only -- do not own
      
      !! Pending/current state
      real(r8) :: t, dt
-     real(r8), public, pointer :: velocity(:,:) => null()             ! potentially a target
+     real(r8), public, allocatable :: velocity(:,:) ! potentially a target
      real(r8), pointer :: vof(:,:) ! reference only -- do not own
+     logical, public   :: use_prescribed_velocity
+     integer, public   :: prescribed_velocity_case
    contains
      procedure :: init
      procedure :: init_matls
-     ! procedure :: set_initial_state
+     procedure :: set_initial_state
      ! procedure :: test_initial_state
      ! procedure :: time
      ! procedure :: get_interpolated_solution
@@ -41,36 +43,45 @@ module NS_solver_type
      !procedure :: advance_state
      !procedure :: commit_pending_state
      final :: NS_solver_delete
-  end type NS_solver_t
+  end type NS_solver
 
 contains
   
   subroutine NS_solver_delete (this)
-    type(NS_solver_t), intent(inout) :: this
+    type(NS_solver), intent(inout) :: this
     ! if (associated(this%precon)) deallocate(this%precon)
     ! if (associated(this%norm)) deallocate(this%norm)
     ! if (associated(this%integ_model)) deallocate(this%integ_model)
-    if (associated(this%velocity)) deallocate(this%velocity)
+    !if (associated(this%velocity)) deallocate(this%velocity)
   end subroutine NS_solver_delete
   
   subroutine init (this, mesh, params)
     
     use parameter_list_type
     
-    class(NS_solver_t), intent(out) :: this
+    class(NS_solver), intent(out) :: this
     !type(HC_model), intent(in), target :: model
     type(unstr_mesh), intent(in), target :: mesh
     type(parameter_list) :: params
     
     type(parameter_list), pointer :: plist
-    character(:), allocatable :: context
-
+    character(:), allocatable :: context,errmsg
+    integer :: stat
     ! this%model => model
 
     this%mesh => mesh
     allocate(this%velocity(3,this%mesh%ncell))
     ! allocate(this%u(this%model%num_dof()))
 
+    
+    !! check for prescribed velocity case
+    context = 'processing ' // params%name() // ': '
+    this%use_prescribed_velocity = params%is_scalar('prescribed-velocity')
+    if (this%use_prescribed_velocity) then
+       call params%get ('prescribed-velocity', this%prescribed_velocity_case, stat=stat, errmsg=errmsg)
+       if (stat /= 0) call LS_fatal (context//errmsg)
+    end if
+    
     ! !! Create the preconditioner
     ! context = 'processing ' // params%name() // ': '
     ! if (params%is_sublist('preconditioner')) then
@@ -105,31 +116,37 @@ contains
   end subroutine init
 
   subroutine init_matls(this, vof)
-    class(NS_solver_t), intent(inout) :: this
+    class(NS_solver), intent(inout) :: this
     real(r8), dimension(:,:), intent(in), target :: vof
     
     this%vof => vof
   end subroutine init_matls
+  
+  subroutine set_initial_state (this) !, t, temp, dt)
+    use prescribed_velocity_fields, only: prescribed_velocity
+    
+    class(NS_solver), intent(inout) :: this
+    !real(r8), intent(in) :: t, temp(:), dt
 
-  ! subroutine set_initial_state (this, t, temp, dt)
+    integer :: i
+    ! integer :: stat
+    ! character(:), allocatable :: errmsg
+    !real(r8), allocatable :: udot(:)
 
-  !   class(NS_solver_t), intent(inout) :: this
-  !   real(r8), intent(in) :: t, temp(:), dt
+    ! allocate(udot(size(this%u)))
+    ! call compute_initial_state (this%model, t, temp, dt, this%u, udot, stat, errmsg)
+    ! if (stat /= 0) call LS_fatal ('HC_SOLVER%SET_INITIAL_STATE: ' // errmsg)
+    ! call this%integ%set_initial_state (t, this%u, udot)
 
-  !   integer :: stat
-  !   character(:), allocatable :: errmsg
-  !   real(r8), allocatable :: udot(:)
-
-  !   allocate(udot(size(this%u)))
-  !   call compute_initial_state (this%model, t, temp, dt, this%u, udot, stat, errmsg)
-  !   if (stat /= 0) call LS_fatal ('HC_SOLVER%SET_INITIAL_STATE: ' // errmsg)
-  !   call this%integ%set_initial_state (t, this%u, udot)
-
-  ! end subroutine set_initial_state
-
+    do i = 1,this%mesh%ncell
+       this%velocity(:,i) = prescribed_velocity (this%mesh%x(:,i), 0.0_r8, this%prescribed_velocity_case)
+    end do
+    
+  end subroutine set_initial_state
+  
   ! subroutine test_initial_state (this, t, temp, dt, u, udot)
 
-  !   class(NS_solver_t), intent(inout) :: this
+  !   class(NS_solver), intent(inout) :: this
   !   real(r8), intent(in) :: t, temp(:), dt
   !   real(r8), intent(out) :: u(:), udot(:)
 
@@ -146,7 +163,7 @@ contains
 
   ! !! Returns the current integration time.
   ! real(r8) function time (this)
-  !   class(NS_solver_t), intent(in) :: this
+  !   class(NS_solver), intent(in) :: this
   !   time = this%integ%last_time()
   ! end function time
   
@@ -155,7 +172,7 @@ contains
 !   !! that T lies within an interval of very recent time steps where
 !   !! solution data is currently available.
 !   subroutine get_interpolated_solution (this, t, u)
-!     class(NS_solver_t), intent(in) :: this
+!     class(NS_solver), intent(in) :: this
 !     real(r8), intent(in)  :: t
 !     real(r8), intent(out) :: u(:)
 !     ASSERT(size(u) == this%model%num_dof())
@@ -163,19 +180,19 @@ contains
 !   end subroutine get_interpolated_solution
 
 !   subroutine get_solution_view (this, u)
-!     class(NS_solver_t), intent(in) :: this
+!     class(NS_solver), intent(in) :: this
 !     real(r8), pointer, intent(out) :: u(:)
 !     call this%integ%get_last_state_view (u)
 !   end subroutine get_solution_view
 
 !   subroutine get_solution_copy (this, u)
-!     class(NS_solver_t), intent(in) :: this
+!     class(NS_solver), intent(in) :: this
 !     real(r8), intent(out) :: u(:)
 !     call this%integ%get_last_state_copy (u)
 !   end subroutine get_solution_copy
 
 !   subroutine write_metrics (this, string)
-!     class(NS_solver_t), intent(in) :: this
+!     class(NS_solver), intent(in) :: this
 !     character(*), intent(out) :: string(:)
 !     ASSERT(size(string) == 2)
 !     call this%integ%write_metrics (string)

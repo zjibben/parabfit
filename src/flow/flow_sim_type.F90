@@ -4,8 +4,8 @@
 !! This module defines a class that encapsulates a flow simulation.
 !! This drives the time integration and generates the output; it is very basic.
 !!
-!! Neil N. Carlson <nnc@lanl.gov>
-!! September 2014
+!! Zechariah J. Jibben <zjibben@lanl.gov>
+!! June 2015
 !!
 
 #include "f90_assert.fpp"
@@ -27,7 +27,7 @@ module flow_sim_type
      type(unstr_mesh)         , pointer :: mesh       => null()
      ! type(mfd_disc)           , pointer :: disc       => null()
      ! type(HC_model)           , pointer :: model      => null()
-     type(NS_solver_t), pointer :: ns_solver  => null()
+     type(NS_solver), pointer :: ns_solver  => null()
      type(vof_solver)         , pointer :: vof_solver => null()
      !! Integration control
      real(r8) :: dt_init
@@ -100,7 +100,7 @@ contains
     ! call stop_timer ('hc-model')
     
     !! Create the navier stokes solver.
-    write(*,*) 'initializing Navier Stokes solver...'
+    write(*,*) 'initializing Navier-Stokes solver...'
     call start_timer ('ns-solver')
     if (params%is_sublist('ns-solver')) then
       plist => params%sublist('ns-solver')
@@ -145,19 +145,28 @@ contains
       call LS_fatal ('missing "sim-control" sublist parameter')
     end if
 
+    !! Set the initial flow field
+    write(*,*) 'initializing velocity field...'
+    call start_timer ('initial-state')
+    call this%ns_solver%set_initial_state()
+    ! plist => params%sublist('vof-solver')
+    ! if (plist%is_sublist('initial-vof')) then
+    !    plist => plist%sublist('initial-vof')
+    !    call this%vof_solver%set_initial_state(plist)
+    ! else
+    !    call LS_fatal ('missing "initial-vof" sublist parameter')
+    ! end if
+    
     !! Generate the initial material configuration
     write(*,*) 'initializing material layout...'
-    call start_timer ('initial-state')
     plist => params%sublist('vof-solver')
     if (plist%is_sublist('initial-vof')) then
-      plist => plist%sublist('initial-vof')
-      call this%vof_solver%set_initial_state(plist)
-   else
-      call LS_fatal ('missing "initial-vof" sublist parameter')
+       plist => plist%sublist('initial-vof')
+       call this%vof_solver%set_initial_state(plist)
+    else
+       call LS_fatal ('missing "initial-vof" sublist parameter')
     end if
-    
-    !! Define the initial heat conduction state
-    !call this%solver%set_initial_state (t_init, temp, this%dt_init)
+
     call stop_timer ('initial-state')
 
     call stop_timer ('initialization')
@@ -165,7 +174,8 @@ contains
   end subroutine init
 
   subroutine run (this, stat, errmsg)
-
+    use velocity_to_faces_func
+    
     class(flow_sim), intent(inout) :: this
     integer, intent(out) :: stat
     character(:), allocatable, intent(out) :: errmsg
@@ -183,63 +193,34 @@ contains
     t = 0.0_r8 !this%ns_solver%time()
     call this%write_solution (t)
 
-    ! call LS_info ('')
-    ! write(string(1),'(a,es12.5)') 'Beginning integration at T = ', t
-    ! call LS_info (string(1))
-
-    ! ! hnext = this%dt_init
-    ! ! do n = 1, size(this%tout)
-    ! !    call this%ns_solver%integrate  (hnext, status, tout=this%tout(n), hmin=this%dt_min)
-    ! !    call this%vof_solver%integrate (hnext, status, tout=this%tout(n), hmin=this%dt_min)
-    ! !    t = this%ns_solver%time()
-    ! ! end do
-
-    ! ! do n = 1, size(this%tout)
-    ! !   if (this%tout(n) <= this%solver%time()) then
-    ! !     t = this%tout(n)
-        
-    ! !     call this%vof_solver%get_interpolated_solution (t, cells)
+    call LS_info ('')
+    write(string(1),'(a,es12.5)') 'Beginning integration at T = ', t
+    call LS_info (string(1))
     
-    ! !     call this%write_solution (t, u)
-    ! !   else
-    ! !     call this%ns_solver%integrate (hnext, status, tout=this%tout(n), hmin=this%dt_min)
-    ! !     call this%ns_solver%integrate (hnext, status, tout=this%tout(n), hmin=this%dt_min)
-    ! !     t = this%ns_solver%time()
-    ! !     select case (status)
-    ! !     case (SOLVED_TO_TOUT)
-    ! !       call this%solver%get_interpolated_solution (this%tout(n), u)
-    ! !       call this%write_solution (this%tout(n), u)
-    ! !     case (STEP_FAILED)
-    ! !       call this%solver%get_solution_copy (u)
-    ! !       call this%write_solution (t, u)
-    ! !       stat = -1
-    ! !       errmsg = 'failed to take a step'
-    ! !       return
-    ! !     case (STEP_SIZE_TOO_SMALL)
-    ! !       call this%solver%get_solution_copy (u)
-    ! !       call this%write_solution (t, u)
-    ! !       stat = -1
-    ! !       errmsg = 'next time step is too small'
-    ! !       return
-    ! !     case (BAD_INPUT)
-    ! !       stat = -1
-    ! !       errmsg = 'bad integrator input parameters'
-    ! !       return
-    ! !     case default
-    ! !       stat = -1
-    ! !       errmsg = 'unknown integrator return status'
-    ! !       return
-    ! !     end select
-    ! !     call this%solver%write_metrics (string)
-    ! !     call LS_info ('')
-    ! !     call LS_info (string(1))
-    ! !     call LS_info (string(2))
-    ! !   end if
-    ! ! end do
+    do n = 1, size(this%tout)
+       t = this%tout(n)
 
-    ! call LS_info ('')
-    ! write(string(1),'(a,es12.5,a)') 'Completed integration to T = ', this%tout(size(this%tout))
-    ! call LS_info (string(1))
+       !call this%ns_solver%
+       
+       ! call velocity_to_faces(this%vof_solver%velocity, this%ns_solver%velocity, this%mesh, t, &
+       !      this%ns_solver%use_prescribed_velocity, this%ns_solver%prescribed_velocity_case)
+       call velocity_to_faces(this%vof_solver%fluxing_velocity, this%ns_solver%velocity, this%mesh, t, &
+            this%ns_solver%use_prescribed_velocity, this%ns_solver%prescribed_velocity_case)
+
+       call this%vof_solver%advect_mass()
+
+       call this%write_solution (t)
+
+       !call this%solver%write_metrics (string)
+       call LS_info ('')
+       write(string(1),'(a,es12.5,a)') 'Completed integration to T = ', this%tout(n)
+       call LS_info (string(1))
+       !call LS_info (string(2))
+    end do
+    
+    call LS_info ('')
+    write(string(1),'(a,es12.5,a)') 'Completed integration to T = ', this%tout(size(this%tout))
+    call LS_info (string(1))
     
     stat = 0
     call stop_timer ('integration')
@@ -265,7 +246,7 @@ contains
     real(r8), dimension(this%mesh%ncell,this%vof_solver%nmat) :: Vof
 
     call start_timer ('output')
-    write(*,*) 'dumping solution...'
+    !write(*,*) 'dumping solution...'
     write(filename,'(a,i4.4)') 'flow_out.gmv.', this%nfile
     this%nfile = this%nfile + 1
     
