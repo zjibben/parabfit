@@ -24,7 +24,7 @@ module volume_track_module
   implicit none
   private
 
-  public :: volume_track
+  public :: volume_track, material_flux_unit_test
 
   integer, parameter :: ndim = 3
   integer, parameter :: nfc = 6 ! number of faces per cell
@@ -33,6 +33,27 @@ module volume_track_module
   integer, parameter :: cutvof = 1.0e-8_r8
 contains
 
+  
+  subroutine material_flux_unit_test (plane_cell)
+    use kinds, only: r8
+    use hex_types, only: cell_data
+    use locate_plane_module
+    
+    type(locate_plane_hex), intent(in) :: plane_cell
+
+    type(cell_data) :: cell
+    real(r8)        :: face_fluxing_velocity(6), mat_vol_flux(6), flux_vol_sum(6)
+
+    call cell%init (plane_cell%node)
+    
+    face_fluxing_velocity = [ 0.0_r8, 0.0_r8, -1.0_r8, 1.0_r8, 0.0_r8, 0.0_r8 ] * 0.5_r8
+    mat_vol_flux = 0.0_r8
+    flux_vol_sum = 0.0_r8
+
+    call material_volume_flux (mat_vol_flux, flux_vol_sum, plane_cell, cell, .true., face_fluxing_velocity, 1.0_r8, 0.5_r8)
+    
+    write(*,*) 'mat_vol_vlux', mat_vol_flux,'exact: ',7.0_r8/48.0_r8
+  end subroutine material_flux_unit_test
   
   !=======================================================================
   ! Purpose(s):
@@ -45,202 +66,191 @@ contains
   !
   !=======================================================================
   function volume_track (adv_dt, mesh, Vof, Fluxing_Velocity, nmat, fluidRho) result(volume_flux_sub)
-    use flux_volume_module,      only: flux_vol_quantity, flux_vol_vertices
     use timer_tree_type
-    use truncate_volume_module,  only: truncate_volume, face_param, truncvol_data
-        use locate_plane_module, only: interface_data, locate_plane_hex
-        
-    real(r8), intent(in) :: adv_dt
-    type(unstr_mesh), intent(in) :: mesh
-    real(r8), intent(in)    :: Vof(:,:)
-    real(r8), intent(in)    :: fluxing_velocity(:)
-    integer,  intent(in)    :: nmat
-    real(r8), intent(in)    :: fluidRho(:)
-    real(r8)                :: volume_flux_sub(nmat, 6, mesh%ncell)
+    use hex_types, only: cell_data
     
-    ! Local Variables
-    integer  :: interfaces, m, n, f, ff, ni, v, p, nicells, i, icell, locate_plane_niters
-    integer  :: Mat(mesh%ncell)
-    real(r8) :: vp, g2, vofint(mesh%ncell)
-    real(r8) :: Flux_Vol_Sum(nfc,mesh%ncell)
-    !real(r8) :: Xv(3,nvc,mesh%ncell)
-    real(r8) :: Grad(3,nmat,mesh%ncell)
-    !real(r8), allocatable :: Pack_vert(:,:,:)
+    real(r8),         intent(in) :: adv_dt, vof(:,:), fluxing_velocity(:), fluidrho(:)
+    type(unstr_mesh), intent(in) :: mesh
+    integer,          intent(in) :: nmat
+    real(r8)                     :: volume_flux_sub(nmat, 6, mesh%ncell)
+    
+    integer        :: ninterfaces, i
+    integer        :: nmat_in_cell(mesh%ncell)
+    real(r8)       :: int_norm(3,nmat,mesh%ncell)
+    type(cell_data) :: cell
+    
+    call start_timer ("Reconstruct/Advect")   ! Start the volume track timer
 
-    type(locate_plane_hex) :: plane_cell
-    logical :: Mask(mesh%ncell)
-    type(FLUX_VOL_QUANTITY) :: Flux_Vol
-    type(truncvol_data) :: trunc_vol(nfc)
-    ! <><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><>
-
-    ! Start the volume track timer
-    call start_timer ("Reconstruct/Advect")
-
-    volume_flux_sub = 0.0_r8
-
-    ! Count the number of materials in each cell
-    Mat = 0
-    do m = 1,nmat
-      where (Vof(m,:) > 0.0_r8) Mat = Mat + 1
-    end do
-
-    ! Number of interfaces to process, and the maximum number of materials in a cell
-    interfaces = maxval(Mat) - 1
-
-    ! Compute interface normal vectors for all the materials.
-    Grad = interface_normal (Vof, mesh)
-
-    ! Initialize the sum of volume fluxes on each donor face.
-    Flux_Vol_Sum = 0.0_r8
-
-    ! Loop over the interfaces in priority order; if interfaces <= 0,
-    ! we don't ever go into this loop.
-    do ni = 1, interfaces
-
-      ! Accumulate the volume fraction of this material and
-      ! the volume fraction of materials with lower priorities.
-      Vofint = sum(vof(1:ni,:), dim=1)
-
-      ! Force 0.0 <= Vofint <= 1.0
-      Vofint = min(max(Vofint, 0.0_r8), 1.0_r8)
-
-      ! Count the number of mixed donor cells
-      Mask = Vofint > (0.0_r8 + cutvof) .and. Vofint < (1.0_r8 - cutvof)
-      where(fluidRho < alittle) Mask = .false.
-      nicells = COUNT(Mask)
-
-      ! Pack interface data into the Interface derived type
-      icell = 1
-      do i = 1,mesh%ncell
-        
-        ! Locate each interface plane by computing rho, the plane constant.
-        if (mask(i)) then
-          call plane_cell%init (grad(:,ni,i), vofint(i), mesh%volume(i), mesh%x(:,mesh%cnode(:,i)))
-          call plane_cell%locate_plane (locate_plane_niters)
-        end if
-
-        ! Calculate delta advection volumes (Volume_Flux_Sub) for this material
-        ! at each donor face and accumulate the sum.
-        do f = 1,nfc
-          ! Flux volumes
-          if (Flux_Vol%Vol <= cutvof*mesh%volume(i)) then
-            Flux_Vol%Fc = 0
-            Flux_Vol%Vol = 0.0_r8
-          else
-            Flux_Vol%Fc  = f
-            Flux_Vol%Vol = adv_dt*Fluxing_Velocity(mesh%cface(f,i))*mesh%area(mesh%cface(f,i))
-          end if
-
-          call flux_vol_vertices (f, mesh, Mask(i), Fluxing_Velocity, Flux_Vol, i, adv_dt)
-
-          if (mask(i)) then
-            ! Now compute the volume truncated by interface planes in each flux volumes.
-            do ff = 1,nfc
-              call FACE_PARAM (plane_cell, 'flux_cell', ff, trunc_vol, transpose(flux_vol%xv))
-            end do
-            
-            ! For clean donor cells, the entire Flux volume goes to the single donor material.
-            ! For mixed donor cells, the face flux is in Int_Flux%Advection_Volume.
-            Vp = truncate_volume(plane_cell, trunc_vol)
-          else
-            if (Vof(ni,i) >= (1.0_r8-cutvof)) then
-              Vp = abs(flux_vol%vol)
-            else
-              Vp = 0.0_r8
-            end if
-          end if
-
-          ! If Vp is close to 0 set it to 0.  If it is close
-          ! to 1 set it to 1. This will avoid numerical round-off.
-          if (Vp > (1.0_r8-cutvof)*abs(Flux_Vol%Vol)) Vp = abs(Flux_Vol%Vol)
-          
-          ! Make sure that the current material-integrated advection
-          ! volume hasn't decreased from its previous value.  (This
-          ! can happen if the interface significantly changed its
-          ! orientation and now crosses previous interfaces.)  Also
-          ! limit Volume_Flux_Sub to take no more than the material
-          ! occupied volume in the donor cell.
-          if (abs(Flux_Vol%Vol) > 0.0_r8) then
-            G2 = min(max(Vp - Flux_Vol_Sum(f,i), 0.0_r8), Vof(ni,i)*mesh%volume(i))
-          else
-            G2 = 0.0_r8
-          end if
-
-          ! Now gather advected volume information into Volume_Flux_Sub
-          if (Flux_Vol%Vol > 0.0_r8) then
-            Volume_Flux_Sub(ni,f,i) = G2
-            Flux_Vol_Sum(f,i) = Flux_Vol_Sum(f,i) + G2
-          end if
-
-        end do ! face loop
-
-        if (mask(i)) icell = icell+1
-      end do ! cell loop
-
-      ! ! Deallocate interface cell vertices if interface areas have been computed
-      ! if (allocated(Pack_vert)) deallocate (Pack_vert)
-
-    end do ! interface loop
-
-    ! If I'm right, then the INTERFACE_LOOP, which looped over the number of interfaces
-    ! in each cell, did so one less times than the number of materials in each cell.  And
-    ! so this last loop looks at the lowest-priority material, and so-to-speak, reconciles
-    ! the books.  Yes?   - Markus
-
-    ! Make sure the volume flux sum has been initialized if there are no interfaces.
-    if (interfaces == 0) Flux_Vol_Sum = 0.0_r8
-
-    ! Compute the advection volume for the last material.
+    nmat_in_cell = count(vof > 0.0_r8, dim=1) ! count the number of materials in each cell
+    ninterfaces = maxval(Nmat_In_Cell) - 1     ! number of interfaces to process
+    int_norm = interface_normal (Vof, mesh)   ! compute interface normal vectors for all the materials.
+    
+    ! get the volume flux in every cell
     do i = 1,mesh%ncell
-      do f = 1,nfc
-        ! Recalculate the total flux volume for this face.
-        Flux_Vol%Vol = adv_dt*Fluxing_Velocity(mesh%cface(f,i))*mesh%area(mesh%cface(f,i))
-        if (Flux_Vol%Vol <= cutvof*mesh%volume(i)) Flux_Vol%Vol = 0.0_r8
-        
-        ! The volume flux of the last material shouldn't be less than
-        ! zero nor greater than the volume of this material in the donor cell.
-        if (abs(Flux_Vol%Vol) > 0.0_r8) then
-          G2 = min(max(abs(Flux_Vol%Vol - Flux_Vol_Sum(f,i)), 0.0_r8), Vof(nmat,i)*mesh%volume(i))
-        else
-          G2 = 0.0_r8
-        end if
-        
-        ! Store the last material's volume flux.
-        if (G2 > cutvof*mesh%volume(i)) then
-          Volume_Flux_Sub(nmat,f,i) = G2
-          Flux_Vol_Sum(f,i) = Flux_Vol_Sum(f,i) + G2
-        end if
-        
-        ! For donor cells containing only one material, assign the total flux.
-        if (Mat(i) == 1 .and. Flux_Vol%Vol > 0.0_r8) then
-          Volume_Flux_Sub(nmat,f,i) = Flux_Vol%Vol
-          Flux_Vol_Sum(f,i) = Flux_Vol%Vol
-        end if
-      end do ! face loop
+      call cell%init (mesh%x(:,mesh%cnode(:,i)), mesh%volume(i), mesh%area(mesh%cface(:,i)), mesh%normal(:,mesh%cface(:,i)))
+      volume_flux_sub(:,:,i) = cell_volume_flux (adv_dt, cell, fluidRho(i), vof(:,i), int_norm(:,:,i), nmat_in_cell(i), nmat, &
+            fluxing_velocity(mesh%cface(:,i)), ninterfaces )
     end do ! cell loop
-
-    ! Stop the volume track timer
-    call stop_timer ("Reconstruct/Advect")
+        
+    call stop_timer ("Reconstruct/Advect") ! Stop the volume track timer
 
   end function volume_track
 
-  function interface_normal (Vof, mesh)
-    !=======================================================================
-    ! Purpose(s):
-    !
-    !   This routine calculates the interface normal for each
-    !   material by computing the gradient of material volume fractions
-    !
-    !=======================================================================
+  ! get the volume flux for every material in the given cell
+  function cell_volume_flux (adv_dt, cell, fluidRho, vof, int_norm, nmat_in_cell, nmat, face_fluxing_velocity, ninterfaces)
+    use hex_types,               only: cell_data
+    use truncate_volume_module,  only: truncvol_data
+    use locate_plane_module,     only: locate_plane_hex
+    use flux_volume_module,      only: flux_vol_quantity, flux_vol_vertices
+    
+    real(r8), intent(in)        :: adv_dt, int_norm(:,:), vof(:), fluidRho, face_fluxing_velocity(6)
+    integer,  intent(in)        :: ninterfaces, nmat_in_cell, nmat
+    type(cell_data), intent(in) :: cell
+    real(r8)                    :: cell_volume_flux(nmat,6)
 
-    ! Arguments
+    real(r8)                :: Vofint, vp, dvol
+    real(r8)                :: flux_vol_sum(nfc)
+    integer                 :: ni,f,locate_plane_niters
+    logical                 :: is_mixed_donor_cell
+    type(locate_plane_hex)  :: plane_cell
+    type(truncvol_data)     :: trunc_vol(nfc)
+    type(flux_vol_quantity) :: Flux_Vol
+    
+    cell_volume_flux = 0.0_r8
+    flux_vol_sum = 0.0_r8
+
+    ! Here, I am not certain the conversion from pri_ptr to direct material indices worked properly. -zjibben
+    
+    ! Loop over the interfaces in priority order
+    do ni = 1,ninterfaces
+      ! check if this is a mixed material cell
+      ! First accumulate the volume fraction of this material and materials with lower priorities.
+      ! Force 0.0 <= Vofint <= 1.0
+      Vofint = min(max(sum(vof(1:ni)), 0.0_r8), 1.0_r8)
+      is_mixed_donor_cell = (0.0_r8 + cutvof) < Vofint .and. Vofint < (1.0_r8 - cutvof) .and. .not.fluidRho<alittle
+
+      ! locate each interface plane by computing the plane constant
+      if (is_mixed_donor_cell) then
+        call plane_cell%init (int_norm(:,ni), vofint, cell%volume, cell%node)
+        call plane_cell%locate_plane (locate_plane_niters)
+      end if
+      
+      ! calculate delta advection volumes for this material at each donor face and accumulate the sum
+      call material_volume_flux (cell_volume_flux(ni,:), flux_vol_sum, plane_cell, cell, &
+           is_mixed_donor_cell, face_fluxing_velocity, adv_dt, vof(ni))
+    end do ! interface loop
+    
+    ! Compute the advection volume for the last material.
+    do f = 1,nfc
+      ! Recalculate the total flux volume for this face.
+      Flux_Vol%Vol = adv_dt*face_fluxing_velocity(f)*cell%face_area(f)
+      if (Flux_Vol%Vol <= cutvof*cell%volume) Flux_Vol%Vol = 0.0_r8
+
+      ! The volume flux of the last material shouldn't be less than
+      ! zero nor greater than the volume of this material in the donor cell.
+      if (abs(Flux_Vol%Vol) > 0.0_r8) then
+        dvol = min(max(abs(Flux_Vol%Vol - Flux_Vol_Sum(f)), 0.0_r8), Vof(nmat)*cell%volume)
+      else
+        dvol = 0.0_r8
+      end if
+
+      ! Store the last material's volume flux.
+      if (dvol > cutvof*cell%volume) cell_volume_flux(nmat,f) = dvol
+        
+      ! For donor cells containing only one material, assign the total flux.
+      if (nmat_in_cell==1 .and. Flux_Vol%Vol > 0.0_r8) cell_volume_flux(nmat,f) = Flux_Vol%Vol
+    end do ! face loop
+
+  end function cell_volume_flux
+
+  ! calculate the flux of one material in a cell
+  subroutine material_volume_flux (mat_vol_flux, flux_vol_sum, plane_cell, cell, is_mixed_donor_cell, face_fluxing_velocity, adv_dt, vof)
+    use hex_types,              only: cell_data
+    use locate_plane_module,    only: locate_plane_hex
+    use truncate_volume_module, only: truncate_volume, face_param, truncvol_data
+    use flux_volume_module,     only: flux_vol_quantity, flux_vol_vertices
+    
+    real(r8),               intent(out)   :: mat_vol_flux(:)
+    real(r8),               intent(inout) :: flux_vol_sum(:)
+    real(r8),               intent(in)    :: face_fluxing_velocity(:), adv_dt, vof
+    type(locate_plane_hex), intent(in)    :: plane_cell
+    type(cell_data),        intent(in)    :: cell
+    logical,                intent(in)    :: is_mixed_donor_cell
+    
+    integer                 :: f,ff
+    real(r8)                :: vp, dvol
+    type(truncvol_data)     :: trunc_vol(nfc)
+    type(flux_vol_quantity) :: Flux_Vol
+
+    mat_vol_flux = 0.0_r8
+    
+    do f = 1,nfc
+      ! Flux volumes
+      Flux_Vol%Fc  = f
+      Flux_Vol%Vol = adv_dt*face_fluxing_velocity(f)*cell%face_area(f)
+      if (Flux_Vol%Vol <= cutvof*cell%volume) then
+        Flux_Vol%Fc = 0
+        Flux_Vol%Vol = 0.0_r8
+      end if
+
+      ! calculate the vertices describing the volume being truncated through the face
+      call flux_vol_vertices (f, cell, is_mixed_donor_cell, face_fluxing_velocity(f)*adv_dt, Flux_Vol)
+      
+      if (is_mixed_donor_cell) then
+        ! Now compute the volume truncated by interface planes in each flux volumes.
+        do ff = 1,nfc
+          trunc_vol(ff) = face_param (plane_cell, 'flux_cell', ff, flux_vol%xv)
+        end do
+        
+        ! For mixed donor cells, the face flux is in Int_Flux%Advection_Volume.
+        Vp = truncate_volume(plane_cell, trunc_vol)
+      else
+        ! For clean donor cells, the entire Flux volume goes to the single donor material.
+        if (vof >= (1.0_r8-cutvof)) then
+          Vp = abs(flux_vol%vol)
+        else
+          Vp = 0.0_r8
+        end if
+      end if
+      
+      ! If Vp is close to 0 set it to 0.  If it is close
+      ! to 1 set it to 1. This will avoid numerical round-off.
+      if (Vp > (1.0_r8-cutvof)*abs(Flux_Vol%Vol)) Vp = abs(Flux_Vol%Vol)
+
+      ! Make sure that the current material-integrated advection
+      ! volume hasn't decreased from its previous value.  (This
+      ! can happen if the interface significantly changed its
+      ! orientation and now crosses previous interfaces.)  Also
+      ! limit Volume_Flux_Sub to take no more than the material
+      ! occupied volume in the donor cell.
+      if (abs(Flux_Vol%Vol) > 0.0_r8) then
+        dvol = min(max(Vp - Flux_Vol_Sum(f), 0.0_r8), Vof*cell%volume)
+      else
+        dvol = 0.0_r8
+      end if
+
+      ! Now gather advected volume information into Volume_Flux_Sub
+      if (Flux_Vol%Vol > 0.0_r8) then
+        mat_vol_flux(f) = dvol
+        Flux_Vol_Sum(f) = Flux_Vol_Sum(f) + dvol
+      end if
+    end do ! face loop
+    
+  end subroutine material_volume_flux
+  
+  !=======================================================================
+  ! Purpose(s):
+  !
+  !   This routine calculates the interface normal for each
+  !   material by computing the gradient of material volume fractions
+  !
+  !=======================================================================
+  function interface_normal (Vof, mesh)
     real(r8), intent(IN)  :: Vof(:,:)
     real(r8)              :: interface_normal(3,size(vof,1),size(vof,2))
     type(unstr_mesh), intent(in) :: mesh
 
-    ! Local Variables
     integer :: m, n, mi, mid(2), mat(size(vof,2)), nmat
-    ! <><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><>
 
     nmat = size(vof, dim=1)
     

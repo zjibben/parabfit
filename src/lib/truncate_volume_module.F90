@@ -1,45 +1,44 @@
+!=======================================================================
+! Purpose(s):
+!
+!   Define procedures necessary to compute hexahedral volumes
+!   truncated by a planar interface
+!
+!   Public Interface:
+!
+!     * call FACE_PARAM (option, face, K, Lambda, MUa, MUi, MUp, Nu, V1234, X)
+!
+!         Compute and store various face parameters needed for a volume
+!         truncation calculation.
+!
+!     * call TRUNCATE_VOLUME (K, Lambda, MUa, MUi, MUp, Nu, Vf, Vol, V1234, X)
+!
+!         Compute the volume truncated by a plane.
+!
+!     * call TRUNCATE_FACE (f, K, Lambda, MUa, MUi, MUp, Nu, Vf, V1234, X)
+!
+!         Compute the volume truncated at the current hex face by a plane.
+!
+! Contains: FACE_PARAM
+!           TRUNCATE_VOLUME
+!           TRUNCATE_FACE
+!           TRUNCATE_FACE_2
+!           TRUNCATE_FACE_2
+!           TRUNCATE_FACE_4
+!           TRUNCATE_FACE_N
+!           Y_FUNCTION
+!
+! Author(s): Douglas B. Kothe, LANL (dbk@lanl.gov)
+!            S. Jay Mosso, LANL (sjm@lanl.gov)
+!
+!=======================================================================
+
 module truncate_volume_module
-  !=======================================================================
-  ! Purpose(s):
-  !
-  !   Define procedures necessary to compute hexahedral volumes
-  !   truncated by a planar interface
-  !
-  !   Public Interface:
-  !
-  !     * call FACE_PARAM (option, face, K, Lambda, MUa, MUi, MUp, Nu, V1234, X)
-  !
-  !         Compute and store various face parameters needed for a volume
-  !         truncation calculation.
-  !
-  !     * call TRUNCATE_VOLUME (K, Lambda, MUa, MUi, MUp, Nu, Vf, Vol, V1234, X)
-  !
-  !         Compute the volume truncated by a plane.
-  !
-  !     * call TRUNCATE_FACE (f, K, Lambda, MUa, MUi, MUp, Nu, Vf, V1234, X)
-  !
-  !         Compute the volume truncated at the current hex face by a plane.
-  !
-  ! Contains: FACE_PARAM
-  !           TRUNCATE_VOLUME
-  !           TRUNCATE_FACE
-  !           TRUNCATE_FACE_2
-  !           TRUNCATE_FACE_2
-  !           TRUNCATE_FACE_4
-  !           TRUNCATE_FACE_N
-  !           Y_FUNCTION
-  !
-  ! Author(s): Douglas B. Kothe, LANL (dbk@lanl.gov)
-  !            S. Jay Mosso, LANL (sjm@lanl.gov)
-  !
-  !=======================================================================
   use kinds, only: r8
   implicit none
   private
 
   public :: truncate_volume, truncate_face, face_param, truncvol_data
-
-  ! <><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><>
 
   integer, parameter :: nvf = 4 ! number of vertices per cell face
   integer, parameter :: nfc = 6 ! number of faces
@@ -57,13 +56,11 @@ module truncate_volume_module
     integer  :: MUp(nvf)
   end type truncvol_data
 
-  ! <><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><>
-
 contains
 
   ! <><><><><><><><><><><><> PUBLIC ROUTINES <><><><><><><><><><><><><><><>
 
-  subroutine face_param (cell, option, face, trunc_vol, int_flux_vol_coord)
+  type(truncvol_data) function face_param (cell, option, face, int_flux_vol_coord)
     !=======================================================================
     ! Purpose(s):
     !
@@ -78,7 +75,6 @@ contains
     class(reconstruction_hex), intent(in) :: cell
     character(9), intent(IN) :: option
     integer, intent(IN) :: face
-    type(truncvol_data), dimension(nfc), intent(inout) :: trunc_vol
     real(r8), dimension(3,8), intent(in), optional :: int_flux_vol_coord
 
     ! Local Variables
@@ -109,37 +105,37 @@ contains
     end select
 
     if (option == 'full_cell') then
-      Trunc_Vol(face)%X(1,:) = cell%node(:,v1)
-      Trunc_Vol(face)%X(2,:) = cell%node(:,v2)
-      Trunc_Vol(face)%X(3,:) = cell%node(:,v3)
-      Trunc_Vol(face)%X(4,:) = cell%node(:,v4)
+      face_param%X(1,:) = cell%node(:,v1)
+      face_param%X(2,:) = cell%node(:,v2)
+      face_param%X(3,:) = cell%node(:,v3)
+      face_param%X(4,:) = cell%node(:,v4)
     else if (option == 'flux_cell') then
       if (.not.present(int_flux_vol_coord)) call LS_fatal('when calculating flux_cell face_param, int_flux_vol_coord is required')
-      Trunc_Vol(face)%X(1,:) = Int_Flux_Vol_Coord(:,v1)
-      Trunc_Vol(face)%X(2,:) = Int_Flux_Vol_Coord(:,v2)
-      Trunc_Vol(face)%X(3,:) = Int_Flux_Vol_Coord(:,v3)
-      Trunc_Vol(face)%X(4,:) = Int_Flux_Vol_Coord(:,v4)
+      face_param%X(1,:) = Int_Flux_Vol_Coord(:,v1)
+      face_param%X(2,:) = Int_Flux_Vol_Coord(:,v2)
+      face_param%X(3,:) = Int_Flux_Vol_Coord(:,v3)
+      face_param%X(4,:) = Int_Flux_Vol_Coord(:,v4)
     endif
 
     ! Compute K   (the Area Vector of the ruled surface)
     do i = 1,3
-      Tmp1(i) = Trunc_Vol(face)%X(3,i) - Trunc_Vol(face)%X(1,i)
-      Tmp2(i) = Trunc_Vol(face)%X(4,i) - Trunc_Vol(face)%X(2,i)
+      Tmp1(i) = face_param%X(3,i) - face_param%X(1,i)
+      Tmp2(i) = face_param%X(4,i) - face_param%X(2,i)
     end do
 
-    Trunc_Vol(face)%K(1) = Tmp1(2)*Tmp2(3) - Tmp1(3)*Tmp2(2)
-    Trunc_Vol(face)%K(2) = Tmp1(3)*Tmp2(1) - Tmp1(1)*Tmp2(3)
-    Trunc_Vol(face)%K(3) = Tmp1(1)*Tmp2(2) - Tmp1(2)*Tmp2(1)
+    face_param%K(1) = Tmp1(2)*Tmp2(3) - Tmp1(3)*Tmp2(2)
+    face_param%K(2) = Tmp1(3)*Tmp2(1) - Tmp1(1)*Tmp2(3)
+    face_param%K(3) = Tmp1(1)*Tmp2(2) - Tmp1(2)*Tmp2(1)
 
     ! Compute V1234
-    Trunc_Vol(face)%V1234 = 0.0_r8
+    face_param%V1234 = 0.0_r8
     do i = 1,3
-      Tmp1(i) = Trunc_Vol(face)%X(1,i) - Trunc_Vol(face)%X(2,i) + &
-           Trunc_Vol(face)%X(3,i) - Trunc_Vol(face)%X(4,i)
-      Trunc_Vol(face)%V1234 = Trunc_Vol(face)%V1234 +       &
-           Tmp1(i)*Trunc_Vol(face)%K(i)
+      Tmp1(i) = face_param%X(1,i) - face_param%X(2,i) + &
+           face_param%X(3,i) - face_param%X(4,i)
+      face_param%V1234 = face_param%V1234 +       &
+           Tmp1(i)*face_param%K(i)
     end do
-    Trunc_Vol(face)%V1234 = 0.5_r8 * Trunc_Vol(face)%V1234
+    face_param%V1234 = 0.5_r8 * face_param%V1234
 
     ! Compute the Mu-i-s.  This is the normal of the interface dotted
     ! with the coordinates of each faces vertex.  Mu-p is the vertex number
@@ -148,77 +144,76 @@ contains
     ! pass through first, second, etc.  The variable Mu-p is the vertex
     ! number of the reordered distances.
     do j = 1, nvf
-      Trunc_Vol(face)%MUi(j) = 0.0_r8
+      face_param%MUi(j) = 0.0_r8
       do i = 1,3
-        Trunc_Vol(face)%MUi(j) = Trunc_Vol(face)%MUi(j) +     &
-             cell%Normal(i)*Trunc_Vol(face)%X(j,i)
+        face_param%MUi(j) = face_param%MUi(j) +     &
+             cell%Normal(i)*face_param%X(j,i)
       end do
-      Trunc_Vol(face)%MUp(j) = j
-      Trunc_Vol(face)%MUa(j) = Trunc_Vol(face)%MUi(j)
+      face_param%MUp(j) = j
+      face_param%MUa(j) = face_param%MUi(j)
     end do
 
     ! Here Nu and Lambda are temporaries used to facilitate ordering the
     ! Mu-i into the Mu-a.  Put the minimum distance (the first vertex
     ! that the interface will pass through) into Mu-p(1) and put its
     ! facial vertex number into Mu-p(1).
-    Trunc_Vol(face)%Nu = 0.0_r8
-    Trunc_Vol(face)%Lambda = MIN(Trunc_Vol(face)%MUi(1),Trunc_Vol(face)%MUi(2), &
-         Trunc_Vol(face)%MUi(3),Trunc_Vol(face)%MUi(4))
+    face_param%Nu = 0.0_r8
+    face_param%Lambda = MIN(face_param%MUi(1),face_param%MUi(2), &
+         face_param%MUi(3),face_param%MUi(4))
     do j = 1, nvf
-      if (Trunc_Vol(face)%MUi(j) == Trunc_Vol(face)%Lambda .and.   &
-           Trunc_Vol(face)%Nu == 0.0_r8) then
-        Trunc_Vol(face)%MUp(j) = 1
-        Trunc_Vol(face)%MUp(1) = j
-        Trunc_Vol(face)%MUa(j) = Trunc_Vol(face)%MUa(1)
-        Trunc_Vol(face)%MUa(1) = Trunc_Vol(face)%MUi(j)
-        Trunc_Vol(face)%Nu = 1.0_r8
+      if (face_param%MUi(j) == face_param%Lambda .and.   &
+           face_param%Nu == 0.0_r8) then
+        face_param%MUp(j) = 1
+        face_param%MUp(1) = j
+        face_param%MUa(j) = face_param%MUa(1)
+        face_param%MUa(1) = face_param%MUi(j)
+        face_param%Nu = 1.0_r8
       end if
     end do
 
     ! Now that the minimum distance is in element 1, order the
     ! other vertices in ascending order using a bubble sort.
-    if (Trunc_Vol(face)%MUa(3) > Trunc_Vol(face)%MUa(4)) then
-      Trunc_Vol(face)%Lambda   = Trunc_Vol(face)%MUp(4)
-      Trunc_Vol(face)%MUp   (4) = Trunc_Vol(face)%MUp(3)
-      Trunc_Vol(face)%MUp   (3) = Trunc_Vol(face)%Lambda
+    if (face_param%MUa(3) > face_param%MUa(4)) then
+      face_param%Lambda   = face_param%MUp(4)
+      face_param%MUp   (4) = face_param%MUp(3)
+      face_param%MUp   (3) = face_param%Lambda
 
-      Trunc_Vol(face)%Lambda   = Trunc_Vol(face)%MUa(4)
-      Trunc_Vol(face)%MUa   (4) = Trunc_Vol(face)%MUa(3)
-      Trunc_Vol(face)%MUa   (3) = Trunc_Vol(face)%Lambda
+      face_param%Lambda   = face_param%MUa(4)
+      face_param%MUa   (4) = face_param%MUa(3)
+      face_param%MUa   (3) = face_param%Lambda
     end if
 
-    if (Trunc_Vol(face)%MUa(2) > Trunc_Vol(face)%MUa(3)) then
-      Trunc_Vol(face)%Lambda   = Trunc_Vol(face)%MUp(3)
-      Trunc_Vol(face)%MUp   (3) = Trunc_Vol(face)%MUp(2)
-      Trunc_Vol(face)%MUp   (2) = Trunc_Vol(face)%Lambda
+    if (face_param%MUa(2) > face_param%MUa(3)) then
+      face_param%Lambda   = face_param%MUp(3)
+      face_param%MUp   (3) = face_param%MUp(2)
+      face_param%MUp   (2) = face_param%Lambda
 
-      Trunc_Vol(face)%Lambda   = Trunc_Vol(face)%MUa(3)
-      Trunc_Vol(face)%MUa   (3) = Trunc_Vol(face)%MUa(2)
-      Trunc_Vol(face)%MUa   (2) = Trunc_Vol(face)%Lambda
+      face_param%Lambda   = face_param%MUa(3)
+      face_param%MUa   (3) = face_param%MUa(2)
+      face_param%MUa   (2) = face_param%Lambda
     end if
 
-    if (Trunc_Vol(face)%MUa(3) > Trunc_Vol(face)%MUa(4)) then
-      Trunc_Vol(face)%Lambda   = Trunc_Vol(face)%MUp   (4)
-      Trunc_Vol(face)%MUp   (4) = Trunc_Vol(face)%MUp   (3)
-      Trunc_Vol(face)%MUp   (3) = Trunc_Vol(face)%Lambda
+    if (face_param%MUa(3) > face_param%MUa(4)) then
+      face_param%Lambda   = face_param%MUp   (4)
+      face_param%MUp   (4) = face_param%MUp   (3)
+      face_param%MUp   (3) = face_param%Lambda
 
-      Trunc_Vol(face)%Lambda   = Trunc_Vol(face)%MUa   (4)
-      Trunc_Vol(face)%MUa   (4) = Trunc_Vol(face)%MUa   (3)
-      Trunc_Vol(face)%MUa   (3) = Trunc_Vol(face)%Lambda
+      face_param%Lambda   = face_param%MUa   (4)
+      face_param%MUa   (4) = face_param%MUa   (3)
+      face_param%MUa   (3) = face_param%Lambda
     end if
 
     ! The definition of Lambda is given in Eqn. 11.5 of Zemach-s notes.
-    Trunc_Vol(face)%Lambda = Trunc_Vol(face)%MUi(2)*Trunc_Vol(face)%MUi(4) &
-         - Trunc_Vol(face)%MUi(1)*Trunc_Vol(face)%MUi(3)
+    face_param%Lambda = face_param%MUi(2)*face_param%MUi(4) &
+         - face_param%MUi(1)*face_param%MUi(3)
 
     ! Nu is the face deviation vector dotted with the interface normal.
     ! If a face is a parallelogram, Nu (and B) will be zero.
     ! If a face is not a parallelogram, the magnitude of B measures
     ! the deviation from the parallelogram.
-    Trunc_Vol(face)%Nu = Trunc_Vol(face)%MUi(1) - Trunc_Vol(face)%MUi(2) + &
-         Trunc_Vol(face)%MUi(3) - Trunc_Vol(face)%MUi(4)
-
-  end subroutine face_param
+    face_param%Nu = face_param%MUi(1) - face_param%MUi(2) + &
+         face_param%MUi(3) - face_param%MUi(4)
+  end function face_param
 
   real(r8) function truncate_volume (cell, trunc_vol)
     !=======================================================================
@@ -266,24 +261,31 @@ contains
 
     real(r8) :: Y(nvf)
 
+    Vf = 0.0_r8
     Y = Y_function (cell, trunc_vol_face)
 
     ! get intersection case
     if ( trunc_vol_face%MUa(1) < cell%rho .and. cell%Rho <= trunc_vol_face%MUa(2) .and. &
          trunc_vol_face%MUa(1) /= trunc_vol_face%MUa(2)) then                                ! case 1
       Vf = truncate_face_N (1, cell%rho, Y, trunc_vol_face)
+      !write(*,*) 'case 1'
     else if ( trunc_vol_face%MUa(2) < cell%Rho .and. cell%Rho <= trunc_vol_face%MUa(3)) then ! case 2 & 5
       if (trunc_vol_face%MUp(2) == (1 + mod(trunc_vol_face%MUp(1)+1, nvf))) then ! case 5
         Vf = truncate_face_N (1, cell%rho, Y, trunc_vol_face) + &
              truncate_face_N (2, cell%rho, Y, trunc_vol_face)
+        !write(*,*) 'case 5'
       else                                                                       ! case 2
         Vf = truncate_face_2 (cell%rho, Y, trunc_vol_face)
+        !write(*,*) 'case 2'
       end if
     else if ( cell%Rho > trunc_vol_face%MUa(3)) then                                         ! case 3 & 4
-      if (cell%Rho < trunc_vol_face%MUa(4)) &          ! case 3
-           Vf = - truncate_face_N (4, cell%rho, Y, trunc_vol_face)
+      if (cell%Rho < trunc_vol_face%MUa(4)) then          ! case 3
+        Vf = - truncate_face_N (4, cell%rho, Y, trunc_vol_face)
+        !write(*,*) 'case 3'
+      end if
       
       Vf = Vf + truncate_face_4 (cell, trunc_vol_face) ! case 4
+      !write(*,*) 'case 4'
     end if
   end function truncate_face
 
