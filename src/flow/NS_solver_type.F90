@@ -27,6 +27,7 @@ module NS_solver_type
      !! Pending/current state
      real(r8) :: t, dt
      real(r8), public, allocatable :: velocity(:,:) ! potentially a target
+     real(r8), public, allocatable :: fluidRho(:)
      real(r8), pointer :: vof(:,:) ! reference only -- do not own
      logical, public   :: use_prescribed_velocity
      integer, public   :: prescribed_velocity_case
@@ -70,7 +71,7 @@ contains
     ! this%model => model
 
     this%mesh => mesh
-    allocate(this%velocity(3,this%mesh%ncell))
+    allocate(this%velocity(3,this%mesh%ncell), this%fluidRho(this%mesh%ncell))
     ! allocate(this%u(this%model%num_dof()))
 
     

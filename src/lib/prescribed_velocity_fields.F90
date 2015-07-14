@@ -30,16 +30,19 @@ contains
     real(r8) :: periodT
     real(r8), parameter :: PI = 4.0_r8 * atan(1.0_r8) !3.14159265358979323846_r8
 
-    periodT = 3.0_r8
-    
+    prescribed_velocity = 0.0_r8
     select case (field)
-    case (1)
-       prescribed_velocity(1) = 2*sin(  PI*x(1))**2 * sin(2*PI*x(2))    * sin(2*PI*x(3))    * cos(PI*t/periodT)
-       prescribed_velocity(2) = - sin(2*PI*x(1))    * sin(  PI*x(2))**2 * sin(2*PI*x(3))    * cos(PI*t/periodT)
-       prescribed_velocity(3) = - sin(2*PI*x(1))    * sin(2*PI*x(2))    * sin(  PI*x(3))**2 * cos(PI*t/periodT)
+    case (1) ! deforming sphere
+      periodT = 3.0_r8
+      prescribed_velocity(1) = 2*sin(  PI*x(1))**2 * sin(2*PI*x(2))    * sin(2*PI*x(3))    * cos(PI*t/periodT)
+      prescribed_velocity(2) = - sin(2*PI*x(1))    * sin(  PI*x(2))**2 * sin(2*PI*x(3))    * cos(PI*t/periodT)
+      prescribed_velocity(3) = - sin(2*PI*x(1))    * sin(2*PI*x(2))    * sin(  PI*x(3))**2 * cos(PI*t/periodT)
+    case (2) ! advecting plane in x-direction
+      prescribed_velocity(1) = 0.5_r8 / 3.0_r8
     case default
-       call LS_fatal ('unrecognized prescribed velocity field case')
+      call LS_fatal ('unrecognized prescribed velocity field case')
     end select
+
   end function prescribed_velocity
 
 end module prescribed_velocity_fields

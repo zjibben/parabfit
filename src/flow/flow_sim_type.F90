@@ -14,8 +14,7 @@ module flow_sim_type
 
   use kinds, only: r8
   use unstr_mesh_type
-  ! use mfd_disc_type
-  ! use flow_model_type
+  use mesh_geom_type
   use NS_solver_type
   use vof_solver_type
   use logging_services
@@ -24,24 +23,24 @@ module flow_sim_type
   private
 
   type, public :: flow_sim
-     type(unstr_mesh)         , pointer :: mesh       => null()
-     ! type(mfd_disc)           , pointer :: disc       => null()
-     ! type(HC_model)           , pointer :: model      => null()
-     type(NS_solver), pointer :: ns_solver  => null()
-     type(vof_solver)         , pointer :: vof_solver => null()
-     !! Integration control
-     real(r8) :: dt_init
-     real(r8) :: dt_min
-     real(r8), allocatable :: tout(:)
-     !!
-     integer :: nfile = 0  ! output file counter
-   contains
-     procedure :: init
-     procedure :: run
-     procedure, private :: write_solution
-     final :: flow_sim_delete
+    type(unstr_mesh), pointer :: mesh       => null()
+    type(mesh_geom) :: gmesh
+    type(NS_solver), pointer :: ns_solver  => null()
+    type(vof_solver), pointer :: vof_solver => null()
+    !! Integration control
+    real(r8) :: dt_init
+    real(r8) :: dt_min
+    real(r8), allocatable :: tout(:)
+    !!
+    integer :: nfile = 0  ! output file counter
+  contains
+    procedure :: init
+    procedure :: run
+    procedure, private :: step
+    procedure, private :: write_solution
+    final :: flow_sim_delete
   end type flow_sim
-  
+
 contains
 
   !! Final subroutine for HC_SIM objects.
@@ -82,6 +81,7 @@ contains
     else
       call LS_fatal ('missing "mesh" sublist parameter')
     end if
+    call this%gmesh%init (this%mesh)
     call stop_timer ('mesh')
     ! call start_timer ('mfd-discretization')
     ! allocate(this%disc)
@@ -98,7 +98,7 @@ contains
     !   call LS_fatal ('missing "hc-model" sublist parameter')
     ! end if
     ! call stop_timer ('hc-model')
-    
+
     !! Create the navier stokes solver.
     write(*,*) 'initializing Navier-Stokes solver...'
     call start_timer ('ns-solver')
@@ -107,23 +107,23 @@ contains
       allocate(this%ns_solver)
       call this%ns_solver%init (this%mesh, plist)
     else
-       call LS_fatal ('missing "ns-solver" sublist parameter')
+      call LS_fatal ('missing "ns-solver" sublist parameter')
     end if
     call stop_timer ('ns-solver')
-    
+
     !! Create the volume of fluid solver.
     write(*,*) 'initializing vof solver...'
     call start_timer ('vof-solver')
     if (params%is_sublist('vof-solver')) then
       plist => params%sublist('vof-solver')
       allocate(this%vof_solver)
-      call this%vof_solver%init (this%mesh, this%ns_solver%velocity, plist)
+      call this%vof_solver%init (this%mesh, this%gmesh, this%ns_solver%velocity, this%ns_solver%fluidRho, plist)
       call this%ns_solver%init_matls(this%vof_solver%vof)
     else
       call LS_fatal ('missing "vof-solver" sublist parameter')
     end if
     call stop_timer ('vof-solver')
-    
+
     !! Simulation control parameters
     write(*,*) 'loading simulation control parameters...'
     if (params%is_sublist('sim-control')) then
@@ -156,26 +156,28 @@ contains
     ! else
     !    call LS_fatal ('missing "initial-vof" sublist parameter')
     ! end if
-    
+
     !! Generate the initial material configuration
     write(*,*) 'initializing material layout...'
     plist => params%sublist('vof-solver')
     if (plist%is_sublist('initial-vof')) then
-       plist => plist%sublist('initial-vof')
-       call this%vof_solver%set_initial_state(plist)
+      plist => plist%sublist('initial-vof')
+      call this%vof_solver%set_initial_state(plist)
     else
-       call LS_fatal ('missing "initial-vof" sublist parameter')
+      call LS_fatal ('missing "initial-vof" sublist parameter')
     end if
 
     call stop_timer ('initial-state')
 
     call stop_timer ('initialization')
-    
+
   end subroutine init
 
+  ! this is the main driver, only separating dumps
+  ! it calls a separate routine for flow subcycles
   subroutine run (this, stat, errmsg)
     use velocity_to_faces_func
-    
+
     class(flow_sim), intent(inout) :: this
     integer, intent(out) :: stat
     character(:), allocatable, intent(out) :: errmsg
@@ -187,85 +189,127 @@ contains
 
     call start_timer ('integration')
     write(*,*) 'running simulation...'
-    ! allocate(u(this%model%num_dof()))
 
     !! Write the initial solution.
-    t = 0.0_r8 !this%ns_solver%time()
+    t = 0.0_r8
     call this%write_solution (t)
 
     call LS_info ('')
     write(string(1),'(a,es12.5)') 'Beginning integration at T = ', t
     call LS_info (string(1))
-    
+
     do n = 1, size(this%tout)
-       t = this%tout(n)
+      ! !call this%ns_solver%
 
-       !call this%ns_solver%
-       
-       ! call velocity_to_faces(this%vof_solver%velocity, this%ns_solver%velocity, this%mesh, t, &
-       !      this%ns_solver%use_prescribed_velocity, this%ns_solver%prescribed_velocity_case)
-       call velocity_to_faces(this%vof_solver%fluxing_velocity, this%ns_solver%velocity, this%mesh, t, &
-            this%ns_solver%use_prescribed_velocity, this%ns_solver%prescribed_velocity_case)
+      ! ! call velocity_to_faces(this%vof_solver%velocity, this%ns_solver%velocity, this%mesh, t, &
+      ! !      this%ns_solver%use_prescribed_velocity, this%ns_solver%prescribed_velocity_case)
+      ! call velocity_to_faces(this%vof_solver%fluxing_velocity, this%ns_solver%velocity, this%mesh, t, &
+      !      this%ns_solver%use_prescribed_velocity, this%ns_solver%prescribed_velocity_case)
 
-       call this%vof_solver%advect_mass()
+      ! call this%vof_solver%advect_mass(this%tout(n)-t)
 
-       call this%write_solution (t)
+      call this%step (this%tout(n)-t, t)
 
-       !call this%solver%write_metrics (string)
-       call LS_info ('')
-       write(string(1),'(a,es12.5,a)') 'Completed integration to T = ', this%tout(n)
-       call LS_info (string(1))
-       !call LS_info (string(2))
+      t = this%tout(n)
+      call this%write_solution (t)
+
+      !call this%solver%write_metrics (string)
+      !call LS_info ('')
+      write(string(1),'(a,es12.5,a)') 'Completed integration to T = ', this%tout(n)
+      call LS_info (string(1))
+      !call LS_info (string(2))
     end do
-    
+
     call LS_info ('')
     write(string(1),'(a,es12.5,a)') 'Completed integration to T = ', this%tout(size(this%tout))
     call LS_info (string(1))
-    
+
     stat = 0
     call stop_timer ('integration')
 
   end subroutine run
-  
+
+  subroutine step (this,dt,t)
+    use velocity_to_faces_func
+
+    class(flow_sim), intent(inout) :: this
+    real(r8), intent(in) :: dt,t
+
+    real(r8) :: flow_dt,tlocal
+    integer  :: n
+    integer :: ns_subcycles
+
+    tlocal = 0.0_r8
+    
+    ! set the flow timestep. this can be improved, probably needs to be corrected for non-cubic cell
+    call velocity_to_faces (this%vof_solver%fluxing_velocity, this%ns_solver%velocity, this%mesh, t, &
+         this%ns_solver%use_prescribed_velocity, this%ns_solver%prescribed_velocity_case)
+    ns_subcycles = ceiling(dt / (0.4_r8*minval(this%mesh%volume**(1.0_r8/3.0_r8))/maxval(this%vof_solver%fluxing_velocity))) 
+    flow_dt = dt / real(ns_subcycles,r8)
+    
+    !do n = 1, ns_subcycles
+    n = 1
+    do while (tlocal<dt)
+      !write(*,*) 'step',n,flow_dt
+      !call this%ns_solver%update_flowfield (flow_dt)
+
+      ! project the cell centered velocity from the flowsolver to the faces
+      call velocity_to_faces (this%vof_solver%fluxing_velocity, this%ns_solver%velocity, this%mesh, t+tlocal, &
+           this%ns_solver%use_prescribed_velocity, this%ns_solver%prescribed_velocity_case)
+      !write(*,*) 'calculated face velocities'
+      ! advect material
+      call this%vof_solver%advect_mass (flow_dt)
+      !write(*,*) 'completed step'
+      ! increment the local time
+      tlocal = tlocal + flow_dt
+      n = n+1
+      !write(*,*) 'incremented time'
+      ! update the timestep
+      ns_subcycles = max(&
+           ceiling((dt-tlocal) / (0.4_r8*minval(this%mesh%volume**(1.0_r8/3.0_r8))/maxval(this%vof_solver%fluxing_velocity))),&
+           1)
+      !write(*,*) 'calculated subcycles',ns_subcycles, dt-tlocal
+      flow_dt = (dt-tlocal) / real(ns_subcycles,r8)
+    end do
+
+  end subroutine step
+
   !! This auxiliary subroutine writes the solution to a GMV format viz file.
   !! There are lots of better things we could do here (write back to an Exodus
   !! file, VTK, or an HDF5 file), but procedures for writing GMV output were
   !! immediately available.
 
   subroutine write_solution (this, t)
-
     use unstr_mesh_gmv
     use vof_tools
-    
+
     class(flow_sim), intent(inout) :: this
     real(r8), intent(in) :: t
-    
+
     integer :: m
     character(21) :: filename,mstr
-    !real(r8), dimension(this%vof_solver%nmat,this%mesh%ncell) :: Vof
-    real(r8), dimension(this%mesh%ncell,this%vof_solver%nmat) :: Vof
 
     call start_timer ('output')
-    !write(*,*) 'dumping solution...'
+
     write(filename,'(a,i4.4)') 'flow_out.gmv.', this%nfile
     this%nfile = this%nfile + 1
-    
+
     call gmv_open (trim(filename))
     call gmv_write_unstr_mesh (this%mesh) ! segfault in here
     call gmv_begin_variables (time=t)
-    
+
     ! write velocities (TODO: how do I write a vector to each cell?)
     call gmv_write_cell_var (this%mesh, this%ns_solver%velocity(1,:), 'u1')
     call gmv_write_cell_var (this%mesh, this%ns_solver%velocity(2,:), 'u2')
     call gmv_write_cell_var (this%mesh, this%ns_solver%velocity(3,:), 'u3')
-    
+
     ! get the vof
     !call matl_get_vof (vof, this%vof_solver%cell_matls, this%vof_solver%nmat, this%vof_solver%matl_id)
     do m = 1,this%vof_solver%nmat ! write all material vofs (TODO should I somehow be writing the interface reconstruction?)
-       write(mstr, '(i3)') this%vof_solver%matl_id(m)
-       call gmv_write_cell_var (this%mesh, this%vof_solver%vof(m,:), 'Vof_'//trim(adjustl(mstr)) )
+      write(mstr, '(i3)') this%vof_solver%matl_id(m)
+      call gmv_write_cell_var (this%mesh, this%vof_solver%vof(m,:), 'Vof_'//trim(adjustl(mstr)) )
     end do
-    
+
     call gmv_end_variables
     call gmv_write_unstr_mesh_surf (this%mesh)
     ! call gmv_begin_surfvars

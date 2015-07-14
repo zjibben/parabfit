@@ -113,8 +113,7 @@ contains
 
     real(r8) :: Rho_Min, Rho_Max, V_Min, V_Max
     type(truncvol_data), dimension(nfc) :: trunc_vol
-    ! <><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><>
-
+    
     ! Start the locate plane timer.
     call start_timer ("Locate Plane")
 
@@ -146,8 +145,8 @@ contains
     use truncate_volume_module, only: truncate_face,face_param,truncvol_data
 
     class(locate_plane_hex), intent(inout) :: this
-    real(r8), intent(OUT) :: Rho_Min, Rho_Max, V_min, V_max
-    type(truncvol_data), dimension(nfc), intent(inout) :: trunc_vol
+    real(r8), intent(out) :: Rho_Min, Rho_Max, V_min, V_max
+    type(truncvol_data), intent(inout) :: trunc_vol(nfc)
 
     integer :: f, n, v
     real(r8), dimension(nvc) :: V_v

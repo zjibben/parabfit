@@ -21,35 +21,43 @@ contains
   subroutine velocity_to_faces(fluxing_velocity, velocity_cc, mesh, t, prescribed, prescribed_case)
     use unstr_mesh_type
     use prescribed_velocity_fields
+    use hex_types, only: calculate_outward_normal
     implicit none
-    
-    real(r8), dimension(  :), intent(inout) :: fluxing_velocity
-    real(r8), dimension(:,:), intent(in)    :: velocity_cc
-    class(unstr_mesh)       , intent(in)    :: mesh
-    real(r8)                , intent(in)    :: t
+
+    real(r8),          intent(inout) :: fluxing_velocity(:,:)
+    real(r8),          intent(in)    :: velocity_cc(:,:)
+    class(unstr_mesh), intent(in)    :: mesh
+    real(r8)         , intent(in)    :: t
     logical, intent(in), optional :: prescribed
     integer, intent(in), optional :: prescribed_case
 
     ! local variables
     logical  :: prescribedh
-    integer  :: f
-    real(r8) :: face_center(3)
-    
+    integer  :: f,fid,n
+    real(r8) :: face_center(3),cell_center(3),outward_normal(3)
+
     if (present(prescribed)) then
-       prescribedh = prescribed
+      prescribedh = prescribed
     else
-       prescribedh = .false.
+      prescribedh = .false.
     end if
 
     if (prescribedh) then
-       if (.not.present(prescribed_case)) call LS_fatal ('velocity_to_faces expected prescribed field case')
-       do f = 1,mesh%nface
-          face_center = sum( mesh%x(:,mesh%fnode(:,f)) , dim=2) / 4.0_r8 ! face center is the average of the face node positions
-          fluxing_velocity(f) = sum( prescribed_velocity (face_center, t, prescribed_case) * (mesh%normal(:,f) / mesh%area(f)) )
-       end do
-       return
+      if (.not.present(prescribed_case)) call LS_fatal ('velocity_to_faces expected prescribed field case')
+
+      do n = 1,mesh%ncell
+        do f = 1,6
+          fid = mesh%cface(f,n)
+          face_center = sum( mesh%x(:,mesh%fnode(:,fid)), dim=2) / 4.0_r8 ! face center is the average of the face node positions
+          outward_normal = calculate_outward_normal( mesh%normal(:,fid) / mesh%area(fid), &
+               sum(mesh%x(:,mesh%cnode(:,n)), dim=2)/8.0_r8, face_center)
+          
+          fluxing_velocity(f,n) = sum( prescribed_velocity (face_center, t, prescribed_case) * outward_normal )
+
+        end do
+      end do
     end if
-    
+
   end subroutine velocity_to_faces
 
   ! subroutine calculate_fluxing_velocities (fluxing_velocity, velocity_cc, mesh, t, prescribed, prescribed_case)

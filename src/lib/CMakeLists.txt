@@ -25,6 +25,7 @@ set(Pececillo_SOURCE_FILES
     facet_table_type.F90
     exodus_c_binding.F90
     exodus_file_type.F90
+    mesh_geom_type.F90
 
 # Function modules
     scalar_func_class.F90

@@ -20,7 +20,8 @@ module volume_track_module
   !            Matthew Williams (mww@lanl.gov)
   !=======================================================================
   use kinds, only: r8
-  use unstr_mesh_type, only: unstr_mesh
+  use unstr_mesh_type
+  use mesh_geom_type
   implicit none
   private
 
@@ -65,12 +66,13 @@ contains
   !   at all relevant cell faces.
   !
   !=======================================================================
-  function volume_track (adv_dt, mesh, Vof, Fluxing_Velocity, nmat, fluidRho) result(volume_flux_sub)
+  function volume_track (adv_dt, mesh, gmesh, Vof, fluxing_velocity, nmat, fluidRho) result(volume_flux_sub)
     use timer_tree_type
     use hex_types, only: cell_data
     
-    real(r8),         intent(in) :: adv_dt, vof(:,:), fluxing_velocity(:), fluidrho(:)
+    real(r8),         intent(in) :: adv_dt, vof(:,:), fluxing_velocity(:,:), fluidrho(:)
     type(unstr_mesh), intent(in) :: mesh
+    type(mesh_geom),  intent(in) :: gmesh
     integer,          intent(in) :: nmat
     real(r8)                     :: volume_flux_sub(nmat, 6, mesh%ncell)
     
@@ -81,15 +83,15 @@ contains
     
     call start_timer ("Reconstruct/Advect")   ! Start the volume track timer
 
-    nmat_in_cell = count(vof > 0.0_r8, dim=1) ! count the number of materials in each cell
-    ninterfaces = maxval(Nmat_In_Cell) - 1     ! number of interfaces to process
-    int_norm = interface_normal (Vof, mesh)   ! compute interface normal vectors for all the materials.
-    
+    nmat_in_cell = count(vof > 0.0_r8, dim=1)      ! count the number of materials in each cell
+    ninterfaces = maxval(Nmat_In_Cell) - 1         ! number of interfaces to process
+    int_norm = interface_normal (Vof, mesh, gmesh) ! compute interface normal vectors for all the materials.
+
     ! get the volume flux in every cell
     do i = 1,mesh%ncell
       call cell%init (mesh%x(:,mesh%cnode(:,i)), mesh%volume(i), mesh%area(mesh%cface(:,i)), mesh%normal(:,mesh%cface(:,i)))
       volume_flux_sub(:,:,i) = cell_volume_flux (adv_dt, cell, fluidRho(i), vof(:,i), int_norm(:,:,i), nmat_in_cell(i), nmat, &
-            fluxing_velocity(mesh%cface(:,i)), ninterfaces )
+            fluxing_velocity(:,i), ninterfaces )
     end do ! cell loop
         
     call stop_timer ("Reconstruct/Advect") ! Stop the volume track timer
@@ -102,6 +104,7 @@ contains
     use truncate_volume_module,  only: truncvol_data
     use locate_plane_module,     only: locate_plane_hex
     use flux_volume_module,      only: flux_vol_quantity, flux_vol_vertices
+    use logging_services
     
     real(r8), intent(in)        :: adv_dt, int_norm(:,:), vof(:), fluidRho, face_fluxing_velocity(6)
     integer,  intent(in)        :: ninterfaces, nmat_in_cell, nmat
@@ -144,8 +147,12 @@ contains
     do f = 1,nfc
       ! Recalculate the total flux volume for this face.
       Flux_Vol%Vol = adv_dt*face_fluxing_velocity(f)*cell%face_area(f)
+      if (abs(flux_vol%vol) > 0.5_r8 * cell%volume) then
+        write(*,*) adv_dt,flux_vol%vol,cell%volume,flux_vol%vol/cell%volume
+        call LS_fatal('advection timestep too large')
+      end if
       if (Flux_Vol%Vol <= cutvof*cell%volume) Flux_Vol%Vol = 0.0_r8
-
+      
       ! The volume flux of the last material shouldn't be less than
       ! zero nor greater than the volume of this material in the donor cell.
       if (abs(Flux_Vol%Vol) > 0.0_r8) then
@@ -245,10 +252,11 @@ contains
   !   material by computing the gradient of material volume fractions
   !
   !=======================================================================
-  function interface_normal (Vof, mesh)
+  function interface_normal (Vof, mesh, gmesh)
     real(r8), intent(IN)  :: Vof(:,:)
     real(r8)              :: interface_normal(3,size(vof,1),size(vof,2))
     type(unstr_mesh), intent(in) :: mesh
+    type(mesh_geom),  intent(in) :: gmesh
 
     integer :: m, n, mi, mid(2), mat(size(vof,2)), nmat
 
@@ -256,7 +264,7 @@ contains
     
     ! Calculate the volume fraction gradient for each material
     do m = 1, nmat
-      interface_normal(:,m,:) = gradient (Vof(m,:), mesh)
+      interface_normal(:,m,:) = gradient (Vof(m,:), mesh, gmesh)
     end do
 
     ! The interface normal is in the opposite sense of the gradient
@@ -355,17 +363,18 @@ contains
   !          using some flux function.
   !
   !=======================================================================
-  function gradient (Phi, mesh)
+  function gradient (Phi, mesh, gmesh)
     real(r8), intent(in)         :: Phi(:)
     real(r8)                     :: gradient(3,size(phi))
     type(unstr_mesh), intent(in) :: mesh
+    type(mesh_geom),  intent(in) :: gmesh
 
     integer  :: f,i
     real(r8) :: Phi_f(mesh%ncell)
     real(r8) :: Phi_vtx(mesh%nnode)
 
     ! Compute Phi_vtx, a vertex value of Phi
-    phi_vtx = vertex_avg (Phi, mesh)
+    phi_vtx = vertex_avg (Phi, mesh, gmesh)
 
     ! green-gauss method
     ! Loop over faces, accumulating the product
@@ -387,9 +396,9 @@ contains
     Gradient(1,:) = Gradient(1,:) / mesh%volume(:)
 
     ! Eliminate noise
-    Gradient(1,:) = MERGE(0.0_r8, Gradient(1,:), ABS(Gradient(1,:)) <= alittle)
-    Gradient(2,:) = MERGE(0.0_r8, Gradient(2,:), ABS(Gradient(2,:)) <= alittle)
-    Gradient(3,:) = MERGE(0.0_r8, Gradient(3,:), ABS(Gradient(3,:)) <= alittle)
+    gradient(1,:) = merge(0.0_r8, gradient(1,:), abs(gradient(1,:)) <= alittle)
+    gradient(2,:) = merge(0.0_r8, gradient(2,:), abs(gradient(2,:)) <= alittle)
+    gradient(3,:) = merge(0.0_r8, gradient(3,:), abs(gradient(3,:)) <= alittle)
   end function gradient
 
   !=======================================================================
@@ -400,24 +409,22 @@ contains
   !   of X_cell: X_vertex = SUM(X_cell/Vol)/SUM(1/Vol).
   !
   !=======================================================================
-  function vertex_avg (x_cell, mesh) result(x_vertex)
+  function vertex_avg (x_cell, mesh, gmesh) result(x_vertex)
     real(r8),         intent(in) :: X_cell(:)
     type(unstr_mesh), intent(in) :: mesh
+    type(mesh_geom),  intent(in) :: gmesh
     real(r8)                     :: X_vertex(mesh%nnode)
 
-    integer  :: i,n, vcell(8,mesh%nnode) ! the node cell array vcell(k,j) is the cell number of local cell k of node j
+    integer  :: i,n
     real(r8) :: rsum_rvol(mesh%nnode)
-
-    ! get cells neighboring a vertex
-    vcell = cells_neighboring_vertices (mesh)
 
     ! calculate the inverse sum of inverse volumes
     X_vertex = 0.0_r8; rsum_rvol = 0.0_r8
     do n = 1,mesh%nnode
       do i = 1,8
-        if (vcell(i,n) /= -1) then
-          X_vertex(n) = X_vertex(n) + X_cell(vcell(i,n)) / mesh%volume(vcell(i,n))
-          rsum_rvol(n) = rsum_rvol(n) + 1.0_r8 / mesh%volume(vcell(i,n))
+        if (gmesh%vcell(i,n) /= -1) then
+          X_vertex(n) = X_vertex(n) + X_cell(gmesh%vcell(i,n)) / mesh%volume(gmesh%vcell(i,n))
+          rsum_rvol(n) = rsum_rvol(n) + 1.0_r8 / mesh%volume(gmesh%vcell(i,n))
         end if
       end do
     end do
@@ -426,27 +433,5 @@ contains
     ! X_vertex: Vertex-averaged X_cell
     X_vertex = X_vertex * rsum_rvol
   end function vertex_avg
-
-  ! this function goes to each node and generates a list of cells containing that node
-  ! there is probably a smarter way of doing this
-  function cells_neighboring_vertices (mesh)
-    type(unstr_mesh), intent(in) :: mesh
-    integer :: cells_neighboring_vertices(8,mesh%nnode)
-
-    integer :: i,n,j
-
-    cells_neighboring_vertices = -1 
-
-    do n = 1,mesh%nnode  ! loop through all nodes
-      j = 1
-      do i = 1,mesh%nnode ! at every node, loop through all cells
-        if (any(mesh%cnode(:,i) == n)) then ! any of this cell's nodes are this node, add this cell to the list
-          cells_neighboring_vertices(j,n) = i
-          j = j + 1
-        end if
-      end do
-    end do
-
-  end function cells_neighboring_vertices
 
 end module volume_track_module

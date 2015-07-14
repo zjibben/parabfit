@@ -16,6 +16,7 @@ module vof_solver_type
 
   use kinds, only: r8
   use unstr_mesh_type
+  use mesh_geom_type
   use logging_services
   implicit none
   private
@@ -23,16 +24,17 @@ module vof_solver_type
 
   type, public :: vof_solver
     private
-    type(unstr_mesh), pointer :: mesh => null() ! reference only -- do not own
-
+    type(unstr_mesh), pointer :: mesh        => null() ! reference only -- do not own
+    type(mesh_geom),  pointer :: gmesh       => null() ! reference only -- do not own
+    real(r8), pointer         :: fluidRho(:) => null() ! reference only -- do not own
+    
     !! Pending/current state
     real(r8)                      :: t, dt
     integer, public               :: nmat          ! number of materials present globally
     !real(r8), public, allocatable :: velocity(:,:) ! face velocities
-    real(r8), public, allocatable :: fluxing_velocity(:) ! face normal velocities
-    real(r8), allocatable :: Volume_flux(:,:,:)
-    integer, dimension(:), allocatable, public :: matl_id
-    real(r8), dimension(:,:), allocatable, public :: vof
+    real(r8), public, allocatable :: fluxing_velocity(:,:) ! face normal velocities
+    integer,  allocatable, public :: matl_id(:)
+    real(r8), allocatable, public :: vof(:,:)
   contains
     procedure :: init
     procedure :: set_initial_state
@@ -49,16 +51,18 @@ module vof_solver_type
     ! procedure :: commit_pending_state
   end type vof_solver
 
+  real(r8), parameter :: cutvof = 1.0e-8_r8
 contains
-
-  subroutine init (this, mesh, velocity_cc, params)
+  
+  subroutine init (this, mesh, gmesh, velocity_cc, fluidRho, params)
 
     use parameter_list_type
     use vof_init
 
     class(vof_solver), intent(out) :: this
     type(unstr_mesh), intent(in), target :: mesh
-    real(r8), dimension(:,:), intent(in), target :: velocity_cc
+    type(mesh_geom),  intent(in), target :: gmesh
+    real(r8), intent(in), target :: velocity_cc(:,:), fluidRho(:)
     type(parameter_list) :: params
 
     integer :: stat
@@ -66,8 +70,10 @@ contains
     character(:), allocatable :: context,errmsg
 
     !this%velocity_cc => velocity_cc
-    this%mesh        => mesh
-    allocate(this%fluxing_velocity(this%mesh%nface))
+    this%mesh     => mesh
+    this%gmesh    => gmesh
+    this%fluidRho => fluidRho
+    allocate(this%fluxing_velocity(6,this%mesh%ncell))
     ! allocate(this%velocity(3,this%mesh%nface))
 
     context = 'processing ' // params%name() // ': '
@@ -78,7 +84,6 @@ contains
     this%nmat = size(this%matl_id)
 
     allocate(this%vof(this%nmat,this%mesh%ncell))
-    allocate(this%volume_flux(this%nmat, 6, this%mesh%ncell))
 
   end subroutine init
 
@@ -154,25 +159,29 @@ contains
 
 
 
-  subroutine advect_mass(this)
+  subroutine advect_mass(this,dt)
+    use timer_tree_type
     class(vof_solver), intent(inout) :: this
+    real(r8), intent(in) :: dt
+    
+    integer  :: stat
+    real(r8) :: Vof_n(this%nmat, this%mesh%ncell)
 
-    integer :: stat
-    real(r8), dimension(  :,:), allocatable :: Vof_n
+    ! if (.not.fluid_to_move) return
 
-    ! Allocate working arrays
-    allocate (Vof_n(this%nmat,this%mesh%ncell))
-
+    ! Start Volume Advection Timer
+    call start_timer("Mass Advection")
+    
     ! if (volume_track_interfaces .and. .not.associated(VT_Interface_Mask)) then
     !    allocate (VT_Interface_Mask(nfc,ncells), stat = stat)
     !    if (stat /= 0) call LS_fatal ('ADVECT_MASS: VT_Interface_Mask(nfc,ncells) allocation failed')
     ! end if
-
-    ! ! need a copy of the time n Vof values.
-    ! Vof_n = this%vof
+    
+    ! need a copy of the time n Vof values.
+    Vof_n = this%vof
 
     ! Advect material volumes.
-    call this%advect_volume (Vof_n)
+    call this%advect_volume (Vof_n,dt)
 
     ! ! Update the mass & concentration distributions.
     ! if (volume_track_interfaces) then 
@@ -187,235 +196,307 @@ contains
     ! ! Find and store the accumulated inflow and outflow mass.
     ! call inflow_outflow_update ()
 
-    ! ! clean up
-    ! deallocate (Vof_n)
-
-    ! ! Stop the Volume Advection Timer
-    ! call stop_timer("Mass Advection")
-
+    ! Stop the Volume Advection Timer
+    call stop_timer("Mass Advection")
+    
   end subroutine advect_mass
 
-  ! subroutine inflow_outflow_update ()
-  !   implicit none
-
+  ! subroutine inflow_outflow_update (qin, qout)
+  !   real(r8), intent(inout) :: qin,qout
+    
   !   real(r8), dimension(this%mesh%ncell) :: Tmp,mask
   !   integer :: f,stat
   !   integer, parameter :: nfc = 6
 
   !   ! loop through all faces
   !   do f = 1, nfc
-  !      Mask = IN_FLOW (f, this%fluxing_velocity) .OR. OUT_FLOW(f, this%fluxing_velocity)
+  !      mask = in_flow (f, this%fluxing_velocity) .or. out_flow(f, this%fluxing_velocity)
 
-  !      if (any(Mask)) then
-  !         ! Accumulate inflow volume - this%fluxing_velocity < zero
-  !         Tmp = MIN(dt*Cell%Face_Area(f)*this%fluxing_velocity(f,:),0.0_r8)
-  !         qin = qin + ABS(PGSLib_Global_SUM(Tmp, MASK = Mask))
+  !      if (any(mask)) then
+  !         ! accumulate inflow volume - this%fluxing_velocity < zero
+  !         tmp = min(dt*cell%face_area(f)*this%fluxing_velocity(f,:),0.0_r8)
+  !         qin = qin + abs(pgslib_global_sum(tmp, mask = mask))
 
-  !         ! Accumulate outflow volume - this%fluxing_velocity > zero
-  !         Tmp = MAX(dt*Cell%Face_Area(f)*this%fluxing_velocity(f,:),0.0_r8)
-  !         qout = qout + PGSLib_Global_SUM(Tmp, MASK = Mask)
+  !         ! accumulate outflow volume - this%fluxing_velocity > zero
+  !         tmp = max(dt*cell%face_area(f)*this%fluxing_velocity(f,:),0.0_r8)
+  !         qout = qout + pgslib_global_sum(tmp, mask = mask)
   !      end if
   !   end do
-
   ! end subroutine inflow_outflow_update
-
-  subroutine advect_volume (this, vof_n)
+  
+  subroutine advect_volume (this, vof_n, dt)
     use timer_tree_type
-    
+    use volume_track_module, only: volume_track
+
     class(vof_solver), intent(inout) :: this
-    real(r8),          intent(in)    :: Vof_n(this%nmat,this%mesh%ncell)
-    
-    integer  :: status
-    integer  :: p, vps
+    real(r8),          intent(in)    :: Vof_n(this%nmat,this%mesh%ncell), dt
+
+    integer  :: status, p, vps, volume_track_subcycles
     real(r8) :: adv_dt
     real(r8) :: Volume_Flux_Sub(this%nmat, 6, this%mesh%ncell) ! keeps track of volume changes in every subcycle
-
+    real(r8) :: volume_flux_tot(this%nmat, 6, this%mesh%ncell)
+    
     ! Start the volume advection timer.
     call start_timer("Volume Tracking")
-
-    ! ! Zero the total flux array.
-    ! this%Volume_Flux = 0.0_r8
-
-    ! ! No subcycling if we're not volume tracking.
-    ! vps = volume_track_subcycles
-
-    ! ! Set the advection timestep.
-    ! adv_dt = dt/real(vps,r8)
-
-    ! do p = 1,vps
-    !   ! Get the donor fluxes.
-    !    volume_flux_sub = volume_track (this%mesh, this%vof, this%fluxing_velocity, Volume_Flux_Sub)
-
-    !    ! Normalize the donor fluxes.
-    !    call this%flux_renorm (Vof_n, Volume_Flux_Sub)
-
-    !    ! Compute the acceptor fluxes.
-    !    call flux_acceptor (Volume_Flux_Sub)
-
-    !    ! Compute BC (inflow) fluxes.
-    !    call this%flux_bc (Vof_n, Volume_Flux_Sub)
-
-    !    ! Add the volume fluxes from this subcycle (Volume_Flux_Sub) to the
-    !    ! total flux array (Volume_Flux_Tot), and update the volume fraction
-    !    ! array (Vof).
-    !    call this%volume_advance (Volume_Flux_Sub)
-
-    !    ! Make sure volume fractions of a particular material are within
-    !    ! the allowed range (0 <= Vof <= 1) and that all materials sum to one.
-    !    call this%vof_bounds ()
-    ! end do
     
+    ! Zero the total flux array.
+    volume_flux_tot = 0.0_r8
+
+    ! Set the advection timestep. this can be improved.
+    volume_track_subcycles = 1
+    adv_dt = dt/real(volume_track_subcycles,r8)
+    
+    do p = 1,volume_track_subcycles
+      ! Get the donor fluxes.
+      volume_flux_sub = volume_track (adv_dt, this%mesh, this%gmesh, this%vof, this%fluxing_velocity, this%nmat, this%fluidRho)
+
+      ! Normalize the donor fluxes.
+      call flux_renorm (this%fluxing_velocity, Vof_n, Volume_Flux_Tot, Volume_Flux_Sub, adv_dt, this%mesh)
+
+      ! Compute the acceptor fluxes.
+      call flux_acceptor (volume_flux_sub, this%gmesh)
+
+      ! Compute BC (inflow) fluxes.
+      call flux_bc (this%fluxing_velocity, vof_n, volume_flux_sub, adv_dt, this%mesh, this%gmesh)
+      
+      ! Add the volume fluxes from this subcycle (Volume_Flux_Sub) to the
+      ! total flux array (Volume_Flux_Tot), and update the volume fraction
+      ! array (Vof).
+      call volume_advance (Volume_Flux_Sub, volume_flux_tot, this%vof, this%mesh%volume)
+
+      ! ! Make sure volume fractions of a particular material are within
+      ! ! the allowed range (0 <= Vof <= 1) and that all materials sum to one.
+      ! call this%vof_bounds ()
+    end do
+
     ! Stop the volume advection timer.
     call stop_timer("Volume Tracking")
-    
+
   end subroutine advect_volume
 
-  ! !=======================================================================
-  ! ! Purpose(s):
-  ! !
-  ! !   Scan all faces with an outward flux and determine if any
-  ! !   material is over-exhausted from this cell.  If so lower
-  ! !   the fluxes until the material is just exhausted.  Then
-  ! !   loop over the faces and balance the individual material
-  ! !   fluxes with the total face flux. The sum of the material
-  ! !   volume fluxes (Volume_Flux_Sub) for each face should sum
-  ! !   to the total volume flux for that face.
-  ! !
-  ! !=======================================================================
-  ! subroutine flux_renorm (Fluxing_Velocity, Vof_n, Volume_Flux_Tot, Volume_Flux_Sub, adv_dt)
-  !   use cutoffs_module,       only: cutvof
-  !   use fluid_data_module,    only: isImmobile
-  !   use mesh_module,          only: Cell
-  !   use parameter_module,     only: ncells, nfc, nmat
-  !   use vof_data_module,      only: adv_dt
+  !=======================================================================
+  ! Purpose(s):
+  !
+  !   Scan all faces with an outward flux and determine if any
+  !   material is over-exhausted from this cell.  If so lower
+  !   the fluxes until the material is just exhausted.  Then
+  !   loop over the faces and balance the individual material
+  !   fluxes with the total face flux. The sum of the material
+  !   volume fluxes (Volume_Flux_Sub) for each face should sum
+  !   to the total volume flux for that face.
+  !
+  !=======================================================================
+  subroutine flux_renorm (Fluxing_Velocity, Vof_n, Volume_Flux_Tot, Volume_Flux_Sub, adv_dt, mesh)
+        use unstr_mesh_type
 
-  !   real(r8), intent(in)    :: fluxing_velocity(:,:), vof_n(:,:), adv_dt
-  !   real(r8), intent(inout) :: volume_flux_tot(:,:,:), volume_flux_sub(:,:,:)
+    real(r8), intent(in)    :: fluxing_velocity(:,:), vof_n(:,:), adv_dt, volume_flux_tot(:,:,:)
+    real(r8), intent(inout) :: volume_flux_sub(:,:,:)
+    class(unstr_mesh), intent(in) :: mesh
 
-  !   real(r8) :: Ratio, Sum, Cumul_Sum, Sum_not_maxed, Total_Face_Flux
-  !   integer  :: norm_iter, f, m, n, number_not_maxed
-  !   logical  :: Done_Renorm, maxed(nmat)
+    integer :: n,ierr
 
-  !   CELLS: do n = 1,ncells
+    do n = 1,mesh%ncell
+      call renorm_cell (volume_flux_sub(:,:,n), volume_flux_tot(:,:,n), fluxing_velocity(:,n), vof_n(:,n), adv_dt, &
+           adv_dt*Fluxing_Velocity(:,n)*mesh%area(mesh%cnode(:,n)), mesh%volume(n), ierr)
+      if (ierr /= 0) then
+        write(*,*) 'cell id:       ',n
+        write(*,*) 'cell centroid: ',sum(mesh%x(:,mesh%cnode(:,n)), dim=2) / 8.0_r8
+        call LS_fatal ('FLUX_RENORM: cannot reassign face flux to any other material')
+      end if
+    end do ! cell loop
+    
+  end subroutine flux_renorm
 
-  !     Maxed = .False.
+  subroutine renorm_cell (volume_flux_sub, volume_flux_tot, fluxing_velocity, vof_n, adv_dt, total_face_flux, cell_volume, ierr)
+    !use fluid_data_module,    only: isImmobile
 
-  !     ! Loop over the renorm_loop a maximum of nmat - 1 times, to resolve all instances
-  !     ! of fluxing more material than was in the cell at the beginning of the timestep
+    real(r8), intent(in)    :: fluxing_velocity(:), vof_n(:), adv_dt, volume_flux_tot(:,:), total_face_flux(:), cell_volume
+    real(r8), intent(inout) :: volume_flux_sub(:,:)
+    integer,  intent(out)   :: ierr
 
-  !     RENORM_LOOP: do norm_iter = 1, nmat+1
+    real(r8) :: Ratio, total_material_flux, cumulative_outward_material_flux, total_flux_through_face,total_flux_through_face_not_maxed
+    integer  :: norm_iter, f, m, number_not_maxed
+    logical  :: flux_reduced, maxed(size(vof_n))
 
-  !       Done_Renorm = .True.
+    maxed = .false.
+    ierr = 0
+    
+    ! Loop over the renorm_loop a maximum of nmat - 1 times, to resolve all instances
+    ! of fluxing more material than was in the cell at the beginning of the timestep
+    do norm_iter = 1, size(vof_n)+1
+      flux_reduced = .false.
 
-  !       ! We stay in this loop until the sum of material fluxes from each face of
-  !       ! the cell equals the total face volume flux.  Where the cumulative sum of 
-  !       ! individual material fluxes (from this and previous volume_track_subcycles) 
-  !       ! exceeds the volume of a particular material originally within a 
-  !       ! cell, we decrease those fluxes to equal the volume of material still available
-  !       ! to be fluxed, and increase other fluxes appropriately.  If this increase
-  !       ! leads to the over-exhaustion of other materials, we work our way through
-  !       ! this loop again, and again, and again, and ... , until we're done.
+      ! We stay in this loop until the sum of material fluxes from each face of
+      ! the cell equals the total face volume flux.  Where the cumulative sum of 
+      ! individual material fluxes (from this and previous volume_track_subcycles) 
+      ! exceeds the volume of a particular material originally within a 
+      ! cell, we decrease those fluxes to equal the volume of material still available
+      ! to be fluxed, and increase other fluxes appropriately.  If this increase
+      ! leads to the over-exhaustion of other materials, we work our way through
+      ! this loop again, and again, and again, and ... , until we're done.
 
-  !       ! The first step is to determine if any material is being over-exhausted from 
-  !       ! a cell.  If so mark it as MAXED and lower the Volume_Flux_Sub's so that the 
-  !       ! material is just exhausted.
-
-  !       MAT_LOOP: do m = 1,nmat
-
-  !         ! Remember that at this stage of the code Face_Flux'es are only positive
-  !         ! or zero.  Sum is the volume of material m attempting to leave the cell
-  !         ! in this volume_track_subcycle; Cumul_Sum is Sum plus the material that
-  !         ! has already left in previous volume_track_subcycles.
-  !         Sum = 0.0_r8
-  !         Cumul_Sum = 0.0_r8
-  !         do f = 1,nfc
-  !           Sum = Sum + Volume_Flux_Sub(m,f,n)
-  !           Cumul_Sum = Cumul_Sum + MAX(Volume_Flux_Tot(m,f,n),0.0_r8)
-  !         end do
-  !         if (Sum == 0.0_r8) CYCLE MAT_LOOP
-  !         Cumul_Sum = Cumul_Sum + Sum
-
-  !         ! If the CUMULATIVE sum of outward fluxes across faces (Cumul_Sum)
-  !         ! exceeds the amount of material ORIGINALLY in the cell (from Vof_n),
-  !         ! calculate the 'Ratio' of fluid material volume still allowed to be
-  !         ! fluxed to the flux volume, and note that we're not 'Done'
-  !         Ratio = 0.0_r8  ! if none of this material was originally in the cell
-  !         ! Update the Ratio for fluid materials; if the material isImmobile, 
-  !         ! leave Ratio = 0.0_r8
-  !         if (.not. isImmobile(m)) &
-  !              Ratio = (Vof_n(m,n)*Cell(n)%Volume - (Cumul_Sum-Sum)) / Sum
-  !         if (Ratio < 1.0_r8) then
-  !           Done_Renorm = .False.
-  !           Maxed(m) = .True.
-  !         end if
-
-  !         ! If Ratio < 1, lower the fluxes to match the material volume within
-  !         ! the cell, and flag the cell and material number with 'Maxed'.
-  !         if (Ratio < 1.0_r8) then
-  !           do f = 1,nfc
-  !             Volume_Flux_Sub(m,f,n) = Ratio * Volume_Flux_Sub(m,f,n)
-  !           end do
-  !         end if
-
-  !       end do MAT_LOOP
-
-  !       if (Done_Renorm) exit RENORM_LOOP
-
-  !       ! This cell had one/more fluxes reduced.  For each of the faces, if the sum
-  !       ! of material fluxes is less than Total_Face_Flux, multiply all non-maxed 
-  !       ! fluxes by another 'Ratio' (this time > 1) that restores the flux balance.  
-  !       ! This may in turn over-exhaust one or more of these materials, and so from
-  !       ! the bottom of this loop, we head back to the top.
-
-  !       do f = 1,nfc
-
-  !         ! Calculate the total flux volume through the cell face (is this already
-  !         ! available elsewhere?), and if the flux volume is greater than zero, 
-  !         ! then concern ourselves with adjusting individual material fluxes.
-
-  !         Total_Face_Flux = adv_dt*Fluxing_Velocity(f,n)*Cell(n)%Face_Area(f)
-  !         if (Total_Face_Flux > cutvof*Cell(n)%Volume) then
-
-  !           ! Add up the sum of material fluxes at a face (Sum), and the sum of 
-  !           ! un-maxed material fluxes (Sum_not_maxed).
-  !           Sum = 0.0_r8
-  !           Sum_not_maxed = 0.0_r8
-  !           do m = 1,nmat
-  !             Sum = Sum + Volume_Flux_Sub(m,f,n)
-  !             if (.not. Maxed(m)) Sum_not_maxed = Sum_not_maxed + Volume_Flux_Sub(m,f,n)
-  !           end do
-
-  !           ! Ratio as defined below, when used to multiply the non-maxed fluxes at 
-  !           ! a face, will restore the flux balance.
-  !           if (Sum_not_maxed > 0.0_r8) then
-  !             ! jms Note:  Ratio = (Total_Face_Flux - Maxed_Face_Flux) / Sum_not_maxed
-  !             Ratio = 1.0_r8 + (Total_Face_Flux - Sum) / Sum_not_maxed
-  !             do m = 1,nmat
-  !               if (.not. Maxed(m)) Volume_Flux_Sub(m,f,n) = Ratio * Volume_Flux_Sub(m,f,n)
-  !             end do
-  !           else
-  !             number_not_maxed = 0
-  !             do m = 1,nmat
-  !               if (.not. Maxed(m) .and. .not.isImmobile(m)) number_not_maxed = number_not_maxed + 1
-  !             end do
-  !             if (number_not_maxed == 0) &
-  !                  call LS_fatal ('FLUX_RENORM: cannot reassign face flux to any other material')
-              
-  !             Ratio = (Total_Face_Flux - Sum) / number_not_maxed
-  !             do m = 1,nmat
-  !               if (.not. Maxed(m).and. .not.isImmobile(m)) Volume_Flux_Sub(m,f,n) = Ratio
-  !             end do
-  !           end if
-
-  !         end if
-  !       end do ! face loop
+      ! The first step is to determine if any material is being over-exhausted from 
+      ! a cell.  If so mark it as MAXED and lower the Volume_Flux_Sub's so that the 
+      ! material is just exhausted.
+      do m = 1,size(vof_n)
+        ! volume of material m attempting to leave the cell in this volume_track_subcycle
+        total_material_flux = sum(Volume_Flux_Sub(m,:)) 
+        if (total_material_flux == 0.0_r8) cycle
         
-  !     end do RENORM_LOOP
-  !   end do CELLS
+        ! If the cumulative_outward_material_flux
+        ! exceeds the amount of material originally in the cell (from vof_n),
+        ! calculate the 'Ratio' of fluid material volume still allowed to be
+        ! fluxed to the flux volume, and note that we're not 'Done'
+        !if (.not.isImmobile(m)) then
+          ! cumulative volume of material m that left the cell in previous subcycles
+          cumulative_outward_material_flux = sum(max(volume_flux_tot(m,:),0.0_r8))
 
-  ! END SUBROUTINE FLUX_RENORM
+          ! ratio between the volume of original (from beginning of flow cycle) material remaining in the cell
+          ! (material that has entered is disregarded)
+          ! and the volume of material m attempting to leave the cell in this volume track cycle
+          ratio = (vof_n(m)*cell_volume - cumulative_outward_material_flux) / total_material_flux
+        ! else ! if none of this material was originally in the cell or material isImmobile
+        !   ratio = 0.0_r8
+        ! end if
 
+        if (Ratio < 1.0_r8) then
+          ! lower the fluxes to match the material volume within the cell,
+          ! and flag the material number as maxed
+          flux_reduced = .true.
+          maxed(m) = .true.
+          volume_flux_sub(m,:) = ratio * volume_flux_sub(m,:)
+        end if
+      end do ! material loop
+      
+      if (flux_reduced) then
+        ! This cell had one/more fluxes reduced.  For each of the faces, if the sum
+        ! of material fluxes is less than Total_Face_Flux, multiply all non-maxed 
+        ! fluxes by another 'Ratio' (this time > 1) that restores the flux balance.  
+        ! This may in turn over-exhaust one or more of these materials, and so from
+        ! the bottom of this loop, we head back to the top.
+        do f = 1,6
+          ! Calculate the total flux volume through the cell face (is this already
+          ! available elsewhere?), and if the flux volume is greater than zero, 
+          ! then concern ourselves with adjusting individual material fluxes.
+          if (Total_Face_Flux(f) > cutvof*cell_volume) then
+            ! Add up the sum of material fluxes at a face (Sum), and the sum of 
+            ! un-maxed material fluxes (Sum_not_maxed).
+            total_flux_through_face           = sum(Volume_Flux_Sub(:,f))
+            total_flux_through_face_not_maxed = sum(volume_flux_sub(:,f), mask=.not.maxed)
 
+            ! Ratio as defined below, when used to multiply the non-maxed fluxes at 
+            ! a face, will restore the flux balance.
+            if (total_flux_through_face_not_maxed > 0.0_r8) then
+              Ratio = (Total_Face_Flux(f) + total_flux_through_face_not_maxed - total_flux_through_face) &
+                   /                       total_flux_through_face_not_maxed
+              where (.not.maxed) Volume_Flux_Sub(:,f) = Ratio * Volume_Flux_Sub(:,f)
+            else
+              number_not_maxed = count(.not.Maxed) ! .and. .not.isImmobile)
+              if (number_not_maxed == 0) then
+                ierr = 1
+                return
+              end if
+
+              Ratio = (Total_Face_Flux(f) - total_flux_through_face) / real(number_not_maxed,r8)
+              where (.not.Maxed) & ! .and. .not.isImmobile)
+                   Volume_Flux_Sub(:,f) = Ratio
+            end if
+
+          end if
+        end do ! face loop
+      else
+        exit
+      end if
+      
+    end do ! renorm loop
+
+  end subroutine renorm_cell
+  
+  !=======================================================================
+  ! Purpose(s):
+  !
+  !   Compute inflow volume fluxes.
+  !
+  !=======================================================================
+  subroutine flux_bc (Fluxing_Velocity, Vof_n, Volume_Flux_Sub, adv_dt, mesh, gmesh)
+    use unstr_mesh_type
+
+    type(unstr_mesh), intent(in) :: mesh
+    type(mesh_geom),  intent(in) :: gmesh
+    real(r8), intent(in)    :: Fluxing_Velocity(:,:), Vof_n(:,:), adv_dt
+    real(r8), intent(inout) :: Volume_Flux_Sub(:,:,:)
+
+    real(r8) :: flux_vol
+    integer  :: f,n,fid
+
+    do n = 1,mesh%ncell ! loop over all cells and faces
+      do f = 1,6
+        fid = mesh%cface(f,n)
+        
+        ! Calculate the inflow flux volume
+        Flux_Vol = min(adv_dt*Fluxing_Velocity(f,n)*mesh%area(fid), 0.0_r8)
+        
+        ! if this is an inflow face, calculate the flux and delta volume
+        if (gmesh%cneighbor(f,n)==-1 .and. flux_vol < -cutvof*mesh%volume(n)) then
+          volume_flux_sub(:,f,n) = 0.0_r8 ! Zero out the subcycle volume fluxes
+
+          ! If inflow material specified as a BC, assign it.
+          ! otherwise, assume what's flowing in is more of what was in the cell at the beginning of the timestep
+          ! if (BC_Mat(fid) /= NULL_I) then
+          !   Volume_Flux_Sub(BC_Mat(fid),f,n) = Flux_Vol
+          ! else
+          Volume_Flux_Sub(:,f,n) = Flux_Vol*Vof_n(:,n)
+          ! end if
+        end if
+      end do
+    end do
+    
+  end subroutine flux_bc
+  
+  subroutine flux_acceptor (volume_flux_sub,gmesh)
+    use unstr_mesh_type
+
+    real(r8), intent(inout) :: volume_flux_sub(:,:,:)
+    type(mesh_geom),  intent(in) :: gmesh
+
+    real(r8) :: acceptor_flux
+    integer :: m,n,f,nf,nc
+    
+    do m = 1,size(volume_flux_sub, dim=1)   ! loop through materials
+      do n = 1,size(volume_flux_sub, dim=3) ! loop through cells
+        do f = 1,6                          ! loop through faces
+          nf = gmesh%fneighbor(f,n)
+          nc = gmesh%cneighbor(f,n)
+
+          if (nf>0) then ! neighbor exists (not boundary cell)
+            acceptor_flux = volume_flux_sub(m,nf,nc)
+            if (acceptor_flux > 0.0_r8) volume_flux_sub(m,f,n) = - acceptor_flux
+          end if
+          
+        end do
+      end do
+    end do
+    
+  end subroutine flux_acceptor
+
+  subroutine volume_advance (volume_flux_sub, volume_flux_tot, vof, volume)
+    real(r8), intent(in)    :: volume_flux_sub(:,:,:), volume(:)
+    real(r8), intent(inout) :: volume_flux_tot(:,:,:), vof(:,:)
+
+    integer :: f,m
+    
+    volume_flux_tot = volume_flux_tot + volume_flux_sub
+
+    do m = 1,size(vof, dim=1)
+      !if (.not.isImmobile(m)) then
+        do f = 1,6
+          vof(m,:) = vof(m,:) - volume_flux_sub(m,f,:) / volume(:)
+        end do
+      !end if
+    end do
+    
+  end subroutine volume_advance
+  
   !   !! This auxiliary procedure computes the consistent initial state (u, du/dt)
   !   !! given the initial cell temperatures.  For a typical explicit ODE system
   !   !! du/dt = F(t,u) this is trivial; u is given and F evaluated to get du/dt.

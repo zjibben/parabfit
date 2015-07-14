@@ -13,6 +13,8 @@ module hex_types
   use logging_services
   implicit none
   private
+
+  public :: calculate_outward_normal ! this should really go somewhere else (maybe with the mesh?)
   
   ! hex type to make divide and conquer algorithm simpler
   type, public :: base_hex
@@ -42,15 +44,15 @@ module hex_types
     !   procedure              :: locate_plane
   end type reconstruction_hex
   
-  ! integer, parameter, public :: face_node(4,6) = &
-  !      (/ &
-  !      (/4,8,7,3/), &
-  !      (/5,1,2,6/), &
-  !      (/5,8,4,1/), &
-  !      (/6,2,3,7/), &
-  !      (/3,2,1,4/), &
-  !      (/7,8,5,6/)  &
-  !      /)
+  integer, parameter, public :: face_node(4,6) = &
+       [ &
+       [4,8,7,3], &
+       [5,1,2,6], &
+       [5,8,4,1], &
+       [6,2,3,7], &
+       [3,2,1,4], &
+       [7,8,5,6]  &
+       ]
   
 contains
   
@@ -72,12 +74,17 @@ contains
     if (present(face_area) .and. present(face_normal)) then
       this%face_area = face_area
       do f = 1,6
-        this%face_normal(:,f) = face_normal(:,f) / sqrt(sum(face_normal(:,f)**2))
+        this%face_normal(:,f) = face_normal(:,f) / sqrt(sum(face_normal(:,f)**2)) ! normalize the input
       end do
     else
       call this%calc_face_areas_and_normals ()
     end if
-    
+
+    ! ensure the normals are outward facing
+    do f = 1,6
+      this%face_normal(:,f) = calculate_outward_normal (this%face_normal(:,f), sum(this%node, dim=2)/8.0_r8, &
+           sum(this%node(:,face_node(:,f)), dim=2)/4.0_r8)
+    end do
   end subroutine init_cell_data
 
   ! calculates the volume of a hex
@@ -87,34 +94,36 @@ contains
     real(r8) :: cvol_tmp(8)
     call eval_hex_volumes(this%node, calc_volume, cvol_tmp)
   end function calc_volume
-
+  
   subroutine calc_face_areas_and_normals (this)
     use cell_geometry, only: quad_face_normal, vector_length
     
     class(cell_data), intent(inout) :: this
 
-    integer :: f, v(4)
+    integer :: f
 
     do f = 1,6
-      select case (f)
-      case(1)
-        v = [4,8,7,3] ! Left face
-      case(2)
-        v = [5,1,2,6] ! Right face
-      case(3)
-        v = [5,8,4,1] ! Front face
-      case(4)
-        v = [6,2,3,7] ! Back face
-      case(5)
-        v = [3,2,1,4] ! Bottom face
-      case(6)
-        v = [7,8,5,6] ! Top face
-      end select
-
-      this%face_normal(:,f) = quad_face_normal(this%node(:,v))
+      this%face_normal(:,f) = quad_face_normal(this%node(:,face_node(:,f)))
       this%face_area(f) = vector_length(this%face_normal(:,f))
       this%face_normal(:,f) = this%face_normal(:,f) / sqrt(sum(this%face_normal(:,f)**2))
     end do
+    
   end subroutine calc_face_areas_and_normals
+
+  function calculate_outward_normal (normal, cell_center, face_center) result(outward_normal)
+    real(r8), intent(in) :: normal(:), cell_center(:), face_center(:)
+    real(r8)             :: outward_normal(3)
+    
+    real(r8) :: outward_dir(3)
+    
+    outward_dir = face_center - cell_center
+
+    if ( sum(normal*outward_dir)>0.0_r8 ) then
+      outward_normal = normal
+    else
+      outward_normal = - normal
+    end if
+    
+  end function calculate_outward_normal
   
 end module hex_types
