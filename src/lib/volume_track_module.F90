@@ -35,25 +35,25 @@ module volume_track_module
 contains
 
   
-  subroutine material_flux_unit_test (plane_cell)
+  subroutine material_flux_unit_test (plane_cell, face_fluxing_velocity, fluxex)
     use kinds, only: r8
     use hex_types, only: cell_data
     use locate_plane_module
     
     type(locate_plane_hex), intent(in) :: plane_cell
+    real(r8),               intent(in) :: fluxex, face_fluxing_velocity(:)
 
     type(cell_data) :: cell
-    real(r8)        :: face_fluxing_velocity(6), mat_vol_flux(6), flux_vol_sum(6)
+    real(r8)        :: mat_vol_flux(6), flux_vol_sum(6)
 
     call cell%init (plane_cell%node)
     
-    face_fluxing_velocity = [ 0.0_r8, 0.0_r8, -1.0_r8, 1.0_r8, 0.0_r8, 0.0_r8 ] * 0.5_r8
     mat_vol_flux = 0.0_r8
     flux_vol_sum = 0.0_r8
-
+    
     call material_volume_flux (mat_vol_flux, flux_vol_sum, plane_cell, cell, .true., face_fluxing_velocity, 1.0_r8, 0.5_r8)
     
-    write(*,*) 'mat_vol_vlux', mat_vol_flux,'exact: ',7.0_r8/48.0_r8
+    write(*,*) 'mat_vol_flux', mat_vol_flux,'exact: ',fluxex
   end subroutine material_flux_unit_test
   
   !=======================================================================
@@ -89,6 +89,7 @@ contains
 
     ! get the volume flux in every cell
     do i = 1,mesh%ncell
+      !write(*,*) 'cell: ',i
       call cell%init (mesh%x(:,mesh%cnode(:,i)), mesh%volume(i), mesh%area(mesh%cface(:,i)), mesh%normal(:,mesh%cface(:,i)))
       volume_flux_sub(:,:,i) = cell_volume_flux (adv_dt, cell, fluidRho(i), vof(:,i), int_norm(:,:,i), nmat_in_cell(i), nmat, &
             fluxing_velocity(:,i), ninterfaces )
@@ -113,7 +114,7 @@ contains
 
     real(r8)                :: Vofint, vp, dvol
     real(r8)                :: flux_vol_sum(nfc)
-    integer                 :: ni,f,locate_plane_niters
+    integer                 :: ni,f,locate_plane_niters,nlast
     logical                 :: is_mixed_donor_cell
     type(locate_plane_hex)  :: plane_cell
     type(truncvol_data)     :: trunc_vol(nfc)
@@ -136,12 +137,16 @@ contains
       if (is_mixed_donor_cell) then
         call plane_cell%init (int_norm(:,ni), vofint, cell%volume, cell%node)
         call plane_cell%locate_plane (locate_plane_niters)
+        !plane_cell%normal = -plane_cell%normal ! flux routines want the negative of the normal for some reason -zjibben
       end if
       
       ! calculate delta advection volumes for this material at each donor face and accumulate the sum
       call material_volume_flux (cell_volume_flux(ni,:), flux_vol_sum, plane_cell, cell, &
            is_mixed_donor_cell, face_fluxing_velocity, adv_dt, vof(ni))
     end do ! interface loop
+
+    ! get the id of the last material
+    nlast = last_true_loc(vof > 0.0_r8)
     
     ! Compute the advection volume for the last material.
     do f = 1,nfc
@@ -151,21 +156,28 @@ contains
         write(*,*) adv_dt,flux_vol%vol,cell%volume,flux_vol%vol/cell%volume
         call LS_fatal('advection timestep too large')
       end if
-      if (Flux_Vol%Vol <= cutvof*cell%volume) Flux_Vol%Vol = 0.0_r8
+      if (Flux_Vol%Vol <= cutvof*cell%volume) cycle
       
-      ! The volume flux of the last material shouldn't be less than
-      ! zero nor greater than the volume of this material in the donor cell.
-      if (abs(Flux_Vol%Vol) > 0.0_r8) then
-        dvol = min(max(abs(Flux_Vol%Vol - Flux_Vol_Sum(f)), 0.0_r8), Vof(nmat)*cell%volume)
-      else
-        dvol = 0.0_r8
-      end if
-
-      ! Store the last material's volume flux.
-      if (dvol > cutvof*cell%volume) cell_volume_flux(nmat,f) = dvol
-        
       ! For donor cells containing only one material, assign the total flux.
-      if (nmat_in_cell==1 .and. Flux_Vol%Vol > 0.0_r8) cell_volume_flux(nmat,f) = Flux_Vol%Vol
+      if (nmat_in_cell==1) then
+        cell_volume_flux(nlast,f) = Flux_Vol%Vol
+      else
+        ! The volume flux of the last material shouldn't be less than
+        ! zero nor greater than the volume of this material in the donor cell.
+        dvol = min(max(abs(Flux_Vol%Vol - Flux_Vol_Sum(f)), 0.0_r8), Vof(nlast)*cell%volume)
+
+        ! Store the last material's volume flux.
+        if (dvol > cutvof*cell%volume) cell_volume_flux(nlast,f) = dvol
+        
+        ! write(*,'(a,4es13.4)') 'interface rho,n: ',plane_cell%rho, plane_cell%normal
+        ! if (dvol<1e-7) then
+        ! write(*,*)
+        ! write(*,*) 'vol,farea: ',cell%volume,cell%face_area(f)
+        !   write(*,*) 'matflux: ',cell_volume_flux(:,f)
+        !   write(*,'(a,3es13.4)') 'dvol,fluxvol,fluxvolsum: ',dvol, flux_vol%vol, flux_vol_sum(f)
+        !   write(*,*) 'vof: ',vof*cell%volume
+        ! end if
+      end if
     end do ! face loop
 
   end function cell_volume_flux
@@ -190,16 +202,13 @@ contains
     type(flux_vol_quantity) :: Flux_Vol
 
     mat_vol_flux = 0.0_r8
-    
+!    write(*,*)
     do f = 1,nfc
       ! Flux volumes
       Flux_Vol%Fc  = f
       Flux_Vol%Vol = adv_dt*face_fluxing_velocity(f)*cell%face_area(f)
-      if (Flux_Vol%Vol <= cutvof*cell%volume) then
-        Flux_Vol%Fc = 0
-        Flux_Vol%Vol = 0.0_r8
-      end if
-
+      if (Flux_Vol%Vol <= cutvof*cell%volume) cycle
+      
       ! calculate the vertices describing the volume being truncated through the face
       call flux_vol_vertices (f, cell, is_mixed_donor_cell, face_fluxing_velocity(f)*adv_dt, Flux_Vol)
       
@@ -211,6 +220,21 @@ contains
         
         ! For mixed donor cells, the face flux is in Int_Flux%Advection_Volume.
         Vp = truncate_volume(plane_cell, trunc_vol)
+        
+        ! write(*,*) 'face,vel,dist: ',f,face_fluxing_velocity(f),adv_dt*face_fluxing_velocity(f)
+        ! write(*,*) 'Fvol: ',flux_vol%vol
+        ! write(*,'(a,3es13.4)') 'no: ',plane_cell%node(:,1)
+        ! write(*,'(a,3es13.4)') 'no: ',plane_cell%node(:,2)
+        ! write(*,'(a,3es13.4)') 'xv: ',flux_vol%xv(:,1)
+        ! write(*,'(a,3es13.4)') 'xv: ',flux_vol%xv(:,2)
+        ! write(*,'(a,3es13.4)') 'xv: ',flux_vol%xv(:,3)
+        ! write(*,'(a,3es13.4)') 'xv: ',flux_vol%xv(:,4)
+        ! write(*,'(a,3es13.4)') 'xv: ',flux_vol%xv(:,5)
+        ! write(*,'(a,3es13.4)') 'xv: ',flux_vol%xv(:,6)
+        ! write(*,'(a,3es13.4)') 'xv: ',flux_vol%xv(:,7)
+        ! write(*,'(a,3es13.4)') 'xv: ',flux_vol%xv(:,8)
+        ! write(*,'(a,4es13.4)') 'interface, rho,n: ',plane_cell%rho, plane_cell%normal
+        ! write(*,*) 'Vp:   ',Vp
       else
         ! For clean donor cells, the entire Flux volume goes to the single donor material.
         if (vof >= (1.0_r8-cutvof)) then
@@ -230,17 +254,11 @@ contains
       ! orientation and now crosses previous interfaces.)  Also
       ! limit Volume_Flux_Sub to take no more than the material
       ! occupied volume in the donor cell.
-      if (abs(Flux_Vol%Vol) > 0.0_r8) then
-        dvol = min(max(Vp - Flux_Vol_Sum(f), 0.0_r8), Vof*cell%volume)
-      else
-        dvol = 0.0_r8
-      end if
-
+      dvol = min(max(Vp - Flux_Vol_Sum(f), 0.0_r8), Vof*cell%volume)
+      
       ! Now gather advected volume information into Volume_Flux_Sub
-      if (Flux_Vol%Vol > 0.0_r8) then
-        mat_vol_flux(f) = dvol
-        Flux_Vol_Sum(f) = Flux_Vol_Sum(f) + dvol
-      end if
+      mat_vol_flux(f) = dvol
+      Flux_Vol_Sum(f) = Flux_Vol_Sum(f) + dvol
     end do ! face loop
     
   end subroutine material_volume_flux
@@ -258,39 +276,41 @@ contains
     type(unstr_mesh), intent(in) :: mesh
     type(mesh_geom),  intent(in) :: gmesh
 
-    integer :: m, n, mi, mid(2), mat(size(vof,2)), nmat
+    integer :: m, n, mi, mid(2), nmat, nmat_in_cell
 
     nmat = size(vof, dim=1)
     
     ! Calculate the volume fraction gradient for each material
     do m = 1, nmat
       interface_normal(:,m,:) = gradient (Vof(m,:), mesh, gmesh)
+      !write(*,*) 'gradient: ',m,interface_normal(:,m,501)
     end do
-
+    
     ! The interface normal is in the opposite sense of the gradient
     interface_normal = -interface_normal
-
+    
     ! mmfran 07/22/11 --- begin changes
     ! bug fix for material order independent results
     ! consider special case the cell contains only two materials
     ! if cell has two materials only, their normal should be consistent
-    Mat = 0
-    do m=1,nmat
-      where(Vof(m,:) > 0.0_r8) Mat = Mat + 1
-    enddo
 
     do n = 1,size(vof, dim=2)
+      nmat_in_cell = count(vof(:,n) > 0.0_r8)
+      
       ! if there are more than 2 materials in the cell
       ! Sum the gradients in priority order.  This is equivalent to calculating the
       !  interface normal for a material composed of the first few materials
-      if (Mat(n) >= 3) then
+      if (nmat_in_cell > 2) then
         do m = 2, nmat
-          if (Vof(m,n) > alittle) Interface_Normal(:,m,n) = Interface_Normal(:,m,n) + Interface_Normal(:,1,n)
-          if (Vof(m,n) < alittle) Interface_Normal(:,m,n) =                           Interface_Normal(:,1,n)
+          if (Vof(m,n) > alittle) then
+            Interface_Normal(:,m,n) = Interface_Normal(:,m,n) + Interface_Normal(:,1,n)
+          else
+            Interface_Normal(:,m,n) =                           Interface_Normal(:,1,n)
+          end if
         end do
-      else if (mat(n) == 2) then ! if there are only two materials in the cell, ensure the normals are consistent
+      else if (nmat_in_cell == 2) then ! if there are only two materials in the cell, ensure the normals are consistent
         mid = 0
-        ! identify the material ID in the cells
+        ! identify the material IDs in the cells
         mi=1; m=1
         do while (mi<=2)
           if (Vof(m,n) > 0.0_r8) then
@@ -299,6 +319,7 @@ contains
           endif
           m = m+1
         end do
+        
         Interface_Normal(:,mid(2),n) = - Interface_Normal(:,mid(1),n)
       end if
     end do ! cell loop
@@ -319,22 +340,22 @@ contains
     real(r8) :: tmp(size(n, dim=2))
 
     ! calculate the denominator
-    Tmp = SQRT(n(1,:)**2 + n(2,:)**2 + n(3,:)**2)
+    tmp = sqrt(n(1,:)**2 + n(2,:)**2 + n(3,:)**2)
 
     ! invert when it won't blow up
-    where (ABS(Tmp) > alittle)
-      Tmp = 1.0_r8/Tmp
+    where (abs(tmp) > alittle)
+      tmp = 1.0_r8/Tmp
     elsewhere
-      Tmp = 1.0_r8
+      tmp = 1.0_r8
     end where
 
     ! normalize
-    n(1,:) = n(1,:) * Tmp
-    n(2,:) = n(2,:) * Tmp
-    n(3,:) = n(3,:) * Tmp
+    n(1,:) = n(1,:) * tmp
+    n(2,:) = n(2,:) * tmp
+    n(3,:) = n(3,:) * tmp
 
     ! set tiny components to zero
-    where (ABS(n) < 1.0d-6) n = 0.0_r8
+    where (abs(n) < 1.0d-6) n = 0.0_r8
 
     ! set all components to 1.0 in pure cells
     where (n(1,:) == 0.0_r8 .and. n(2,:) == 0.0_r8 .and. n(3,:) == 0.0_r8)
@@ -342,6 +363,7 @@ contains
       n(2,:) = 1.0_r8
       n(3,:) = 1.0_r8
     end where
+    
   end subroutine normalize
 
   !=======================================================================
@@ -379,26 +401,23 @@ contains
     ! green-gauss method
     ! Loop over faces, accumulating the product
     ! Phi_f*Face_Normal for each area vector component
-    Gradient = 0.0_r8
-    do f = 1,nfc
-      ! Interpolate vertex values to this face (see note 1)
-      do i = 1,mesh%ncell
-        phi_f(i) = sum(phi_vtx(mesh%cnode(:,i))) / 4.0_r8
+    gradient = 0.0_r8
+    do i = 1,mesh%ncell
+      do f = 1,nfc
+        ! Interpolate vertex values to this face (see note 1)
+        phi_f = sum(phi_vtx(mesh%fnode(:,mesh%cface(f,i)))) / 4.0_r8
+
+        ! Accumulate the dot product
+        Gradient(:,i) = Gradient(:,i) + gmesh%outnorm(:,f,i)*mesh%area(mesh%cface(f,i))*Phi_f
       end do
 
-      ! Accumulate the dot product
-      Gradient(1,:) = Gradient(1,:) + mesh%normal(1,mesh%cface(f,:))*Phi_f
-      Gradient(2,:) = Gradient(2,:) + mesh%normal(2,mesh%cface(f,:))*Phi_f
-      Gradient(3,:) = Gradient(3,:) + mesh%normal(3,mesh%cface(f,:))*Phi_f
+      ! Normalize by cell volume
+      Gradient(:,i) = Gradient(:,i) / mesh%volume(i)
+
+      ! Eliminate noise
+      where (abs(gradient(:,i)) <= alittle) gradient(:,i) = 0.0_r8
     end do
 
-    ! Normalize by cell volume
-    Gradient(1,:) = Gradient(1,:) / mesh%volume(:)
-
-    ! Eliminate noise
-    gradient(1,:) = merge(0.0_r8, gradient(1,:), abs(gradient(1,:)) <= alittle)
-    gradient(2,:) = merge(0.0_r8, gradient(2,:), abs(gradient(2,:)) <= alittle)
-    gradient(3,:) = merge(0.0_r8, gradient(3,:), abs(gradient(3,:)) <= alittle)
   end function gradient
 
   !=======================================================================
@@ -416,22 +435,38 @@ contains
     real(r8)                     :: X_vertex(mesh%nnode)
 
     integer  :: i,n
-    real(r8) :: rsum_rvol(mesh%nnode)
+    real(r8) :: sum_rvol(mesh%nnode)
 
     ! calculate the inverse sum of inverse volumes
-    X_vertex = 0.0_r8; rsum_rvol = 0.0_r8
+    X_vertex = 0.0_r8; sum_rvol = 0.0_r8
     do n = 1,mesh%nnode
       do i = 1,8
         if (gmesh%vcell(i,n) /= -1) then
           X_vertex(n) = X_vertex(n) + X_cell(gmesh%vcell(i,n)) / mesh%volume(gmesh%vcell(i,n))
-          rsum_rvol(n) = rsum_rvol(n) + 1.0_r8 / mesh%volume(gmesh%vcell(i,n))
+          sum_rvol(n) = sum_rvol(n) + 1.0_r8 / mesh%volume(gmesh%vcell(i,n))
         end if
       end do
     end do
-    rsum_rvol = 1.0_r8 / rsum_rvol
 
     ! X_vertex: Vertex-averaged X_cell
-    X_vertex = X_vertex * rsum_rvol
+    X_vertex = X_vertex / sum_rvol
   end function vertex_avg
 
+
+  ! return the index of the last true element of mask
+  function last_true_loc (mask)
+    logical, intent(in) :: mask(:)
+    integer :: last_true_loc
+    
+    integer :: i
+
+    do i = size(mask),1,-1
+      if (mask(i)) then
+        last_true_loc = i
+        exit
+      end if
+    end do
+
+  end function last_true_loc
+  
 end module volume_track_module

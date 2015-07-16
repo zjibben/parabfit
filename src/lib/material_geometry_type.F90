@@ -141,7 +141,7 @@ contains
           ! should do some check here to ensure center is of length 3
           ASSERT(size(obj_ptr%normal)==3)
           ! make sure the normal is normalized
-          obj_ptr%normal = obj_ptr%normal / sum(obj_ptr%normal**2)
+          obj_ptr%normal = obj_ptr%normal / sqrt(sum(obj_ptr%normal**2))
        type is (object_t)
           ! already done
        class default

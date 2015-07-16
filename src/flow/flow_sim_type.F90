@@ -236,39 +236,33 @@ contains
     real(r8), intent(in) :: dt,t
 
     real(r8) :: flow_dt,tlocal
-    integer  :: n
     integer :: ns_subcycles
-
+    
     tlocal = 0.0_r8
     
     ! set the flow timestep. this can be improved, probably needs to be corrected for non-cubic cell
     call velocity_to_faces (this%vof_solver%fluxing_velocity, this%ns_solver%velocity, this%mesh, t, &
          this%ns_solver%use_prescribed_velocity, this%ns_solver%prescribed_velocity_case)
-    ns_subcycles = ceiling(dt / (0.4_r8*minval(this%mesh%volume**(1.0_r8/3.0_r8))/maxval(this%vof_solver%fluxing_velocity))) 
+    ns_subcycles = ceiling(dt / (0.25_r8*minval(this%mesh%volume**(1.0_r8/3.0_r8))/maxval(this%vof_solver%fluxing_velocity))) 
     flow_dt = dt / real(ns_subcycles,r8)
     
-    !do n = 1, ns_subcycles
-    n = 1
     do while (tlocal<dt)
-      !write(*,*) 'step',n,flow_dt
       !call this%ns_solver%update_flowfield (flow_dt)
 
       ! project the cell centered velocity from the flowsolver to the faces
       call velocity_to_faces (this%vof_solver%fluxing_velocity, this%ns_solver%velocity, this%mesh, t+tlocal, &
            this%ns_solver%use_prescribed_velocity, this%ns_solver%prescribed_velocity_case)
-      !write(*,*) 'calculated face velocities'
+
       ! advect material
       call this%vof_solver%advect_mass (flow_dt)
-      !write(*,*) 'completed step'
+
       ! increment the local time
       tlocal = tlocal + flow_dt
-      n = n+1
-      !write(*,*) 'incremented time'
+
       ! update the timestep
       ns_subcycles = max(&
-           ceiling((dt-tlocal) / (0.4_r8*minval(this%mesh%volume**(1.0_r8/3.0_r8))/maxval(this%vof_solver%fluxing_velocity))),&
+           ceiling((dt-tlocal) / (0.25_r8*minval(this%mesh%volume**(1.0_r8/3.0_r8))/maxval(this%vof_solver%fluxing_velocity))),&
            1)
-      !write(*,*) 'calculated subcycles',ns_subcycles, dt-tlocal
       flow_dt = (dt-tlocal) / real(ns_subcycles,r8)
     end do
 

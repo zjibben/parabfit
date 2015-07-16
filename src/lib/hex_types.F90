@@ -43,15 +43,38 @@ module hex_types
     ! contains
     !   procedure              :: locate_plane
   end type reconstruction_hex
-  
+
+  ! truchas face ordering and node numbering
+  ! integer, parameter, public :: face_node(4,6) = &
+  !      [ &
+  !      [4,8,7,3], & ! y-
+  !      [5,1,2,6], & ! y+
+  !      [5,8,4,1], & ! x+
+  !      [6,2,3,7], & ! x-
+  !      [3,2,1,4], & ! z-
+  !      [7,8,5,6]  & ! z+
+  !      ]
+
+  ! ! truchas face ordering and pececillo node numbering
+  ! integer, parameter, public :: face_node(4,6) = &
+  !      [ &
+  !      [2,6,5,1], & ! y-
+  !      [7,3,4,8], & ! y+
+  !      [7,6,2,3], & ! x+
+  !      [8,4,1,5], & ! x-
+  !      [1,4,3,2], & ! z-
+  !      [5,6,7,8]  & ! z+
+  !      ]
+
+  ! pececillo face ordering and node numbering
   integer, parameter, public :: face_node(4,6) = &
        [ &
-       [4,8,7,3], &
-       [5,1,2,6], &
-       [5,8,4,1], &
-       [6,2,3,7], &
-       [3,2,1,4], &
-       [7,8,5,6]  &
+       [7,3,4,8], & ! y+
+       [2,6,5,1], & ! y-
+       [8,4,1,5], & ! x-
+       [7,6,2,3], & ! x+
+       [1,4,3,2], & ! z-
+       [5,6,7,8]  & ! z+
        ]
   
 contains

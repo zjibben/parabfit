@@ -189,7 +189,6 @@ contains
     type(dnc_hex)              :: subhex(8)
     
     real(r8) :: cellc(3), facec(3,6), edgec(3,12)
-    integer :: i
     
     ! find center points
     cellc = this%cell_center()

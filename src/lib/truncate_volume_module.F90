@@ -47,41 +47,34 @@ module truncate_volume_module
 
   type truncvol_data
     real(r8) :: K(3)
-    real(r8) :: Lambda
-    real(r8) :: MUa(nvf)
-    real(r8) :: MUi(nvf)
-    real(r8) :: Nu
-    real(r8) :: V1234
+    real(r8) :: Lambda, Nu, V1234
+    real(r8) :: MUa(nvf), MUi(nvf)
     real(r8) :: X(nvf,3)
     integer  :: MUp(nvf)
   end type truncvol_data
-
+  
 contains
 
   ! <><><><><><><><><><><><> PUBLIC ROUTINES <><><><><><><><><><><><><><><>
-
+  
+  !=======================================================================
+  ! Purpose(s):
+  !
+  !   Compute and store various face parameters needed
+  !   for the volume truncation calculation
+  !
+  !=======================================================================
   type(truncvol_data) function face_param (cell, option, face, int_flux_vol_coord)
-    !=======================================================================
-    ! Purpose(s):
-    !
-    !   Compute and store various face parameters needed
-    !   for the volume truncation calculation
-    !
-    !=======================================================================
-    use hex_types, only: reconstruction_hex
+    use hex_types, only: reconstruction_hex, face_node
     use logging_services
 
-    ! Arguments
     class(reconstruction_hex), intent(in) :: cell
-    character(9), intent(IN) :: option
-    integer, intent(IN) :: face
-    real(r8), dimension(3,8), intent(in), optional :: int_flux_vol_coord
+    character(9), intent(in) :: option
+    integer,      intent(in) :: face
+    real(r8),     intent(in), optional :: int_flux_vol_coord(:,:)
 
-    ! Local Variables
-    integer :: i, j, n, v1, v2, v3, v4
-    real(r8), dimension(3) :: Tmp1, Tmp2
-
-    ! <><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><>
+    integer  :: i, j, n
+    real(r8) :: Tmp1(3), Tmp2(3)
 
     ! Store face vertices in an order that is
     !    counterclockwise relative to a direction
@@ -89,53 +82,25 @@ contains
     !    the cell.
     ! For option = 'full_cell', use the donor cell vertices (Cell_Coord)
     ! For option = 'flux_cell', use the vertices of the flux volume (Xv_flux)
-    select case (face)
-    case(1)
-      v1 = 4; v2 = 8; v3 = 7; v4 = 3      ! Left face
-    case(2)
-      v1 = 5; v2 = 1; v3 = 2; v4 = 6      ! Right face
-    case(3)
-      v1 = 5; v2 = 8; v3 = 4; v4 = 1      ! Front face
-    case(4)
-      v1 = 6; v2 = 2; v3 = 3; v4 = 7      ! Back face
-    case(5)
-      v1 = 3; v2 = 2; v3 = 1; v4 = 4      ! Bottom face
-    case(6)
-      v1 = 7; v2 = 8; v3 = 5; v4 = 6      ! Top face
-    end select
-
     if (option == 'full_cell') then
-      face_param%X(1,:) = cell%node(:,v1)
-      face_param%X(2,:) = cell%node(:,v2)
-      face_param%X(3,:) = cell%node(:,v3)
-      face_param%X(4,:) = cell%node(:,v4)
+      face_param%X = transpose(cell%node(:,face_node(:,face)))
     else if (option == 'flux_cell') then
       if (.not.present(int_flux_vol_coord)) call LS_fatal('when calculating flux_cell face_param, int_flux_vol_coord is required')
-      face_param%X(1,:) = Int_Flux_Vol_Coord(:,v1)
-      face_param%X(2,:) = Int_Flux_Vol_Coord(:,v2)
-      face_param%X(3,:) = Int_Flux_Vol_Coord(:,v3)
-      face_param%X(4,:) = Int_Flux_Vol_Coord(:,v4)
-    endif
-
+      face_param%X = transpose(int_flux_vol_coord(:,face_node(:,face)))
+    end if
+    
     ! Compute K   (the Area Vector of the ruled surface)
-    do i = 1,3
-      Tmp1(i) = face_param%X(3,i) - face_param%X(1,i)
-      Tmp2(i) = face_param%X(4,i) - face_param%X(2,i)
-    end do
+    Tmp1(:) = face_param%X(3,:) - face_param%X(1,:)
+    Tmp2(:) = face_param%X(4,:) - face_param%X(2,:)
 
     face_param%K(1) = Tmp1(2)*Tmp2(3) - Tmp1(3)*Tmp2(2)
     face_param%K(2) = Tmp1(3)*Tmp2(1) - Tmp1(1)*Tmp2(3)
     face_param%K(3) = Tmp1(1)*Tmp2(2) - Tmp1(2)*Tmp2(1)
 
     ! Compute V1234
-    face_param%V1234 = 0.0_r8
-    do i = 1,3
-      Tmp1(i) = face_param%X(1,i) - face_param%X(2,i) + &
-           face_param%X(3,i) - face_param%X(4,i)
-      face_param%V1234 = face_param%V1234 +       &
-           Tmp1(i)*face_param%K(i)
-    end do
-    face_param%V1234 = 0.5_r8 * face_param%V1234
+    Tmp1(:) = face_param%X(1,:) - face_param%X(2,:) &
+         &  + face_param%X(3,:) - face_param%X(4,:)
+    face_param%V1234 = 0.5_r8 * sum(Tmp1*face_param%K)
 
     ! Compute the Mu-i-s.  This is the normal of the interface dotted
     ! with the coordinates of each faces vertex.  Mu-p is the vertex number
@@ -143,26 +108,20 @@ contains
     ! in ascending order, it denotes which vertex the interface will
     ! pass through first, second, etc.  The variable Mu-p is the vertex
     ! number of the reordered distances.
-    do j = 1, nvf
-      face_param%MUi(j) = 0.0_r8
-      do i = 1,3
-        face_param%MUi(j) = face_param%MUi(j) +     &
-             cell%Normal(i)*face_param%X(j,i)
-      end do
+    do j = 1,nvf
+      face_param%MUi(j) = sum(cell%Normal(:)*face_param%X(j,:))
       face_param%MUp(j) = j
-      face_param%MUa(j) = face_param%MUi(j)
     end do
-
+    face_param%MUa(:) = face_param%MUi(:)
+    
     ! Here Nu and Lambda are temporaries used to facilitate ordering the
     ! Mu-i into the Mu-a.  Put the minimum distance (the first vertex
     ! that the interface will pass through) into Mu-p(1) and put its
     ! facial vertex number into Mu-p(1).
     face_param%Nu = 0.0_r8
-    face_param%Lambda = MIN(face_param%MUi(1),face_param%MUi(2), &
-         face_param%MUi(3),face_param%MUi(4))
+    face_param%Lambda = minval(face_param%MUi(1:4))
     do j = 1, nvf
-      if (face_param%MUi(j) == face_param%Lambda .and.   &
-           face_param%Nu == 0.0_r8) then
+      if (face_param%MUi(j) == face_param%Lambda .and. face_param%Nu == 0.0_r8) then
         face_param%MUp(j) = 1
         face_param%MUp(1) = j
         face_param%MUa(j) = face_param%MUa(1)
@@ -174,71 +133,66 @@ contains
     ! Now that the minimum distance is in element 1, order the
     ! other vertices in ascending order using a bubble sort.
     if (face_param%MUa(3) > face_param%MUa(4)) then
-      face_param%Lambda   = face_param%MUp(4)
+      face_param%Lambda    = face_param%MUp(4)
       face_param%MUp   (4) = face_param%MUp(3)
       face_param%MUp   (3) = face_param%Lambda
 
-      face_param%Lambda   = face_param%MUa(4)
+      face_param%Lambda    = face_param%MUa(4)
       face_param%MUa   (4) = face_param%MUa(3)
       face_param%MUa   (3) = face_param%Lambda
     end if
 
     if (face_param%MUa(2) > face_param%MUa(3)) then
-      face_param%Lambda   = face_param%MUp(3)
+      face_param%Lambda    = face_param%MUp(3)
       face_param%MUp   (3) = face_param%MUp(2)
       face_param%MUp   (2) = face_param%Lambda
 
-      face_param%Lambda   = face_param%MUa(3)
+      face_param%Lambda    = face_param%MUa(3)
       face_param%MUa   (3) = face_param%MUa(2)
       face_param%MUa   (2) = face_param%Lambda
     end if
 
     if (face_param%MUa(3) > face_param%MUa(4)) then
-      face_param%Lambda   = face_param%MUp   (4)
+      face_param%Lambda    = face_param%MUp   (4)
       face_param%MUp   (4) = face_param%MUp   (3)
       face_param%MUp   (3) = face_param%Lambda
 
-      face_param%Lambda   = face_param%MUa   (4)
+      face_param%Lambda    = face_param%MUa   (4)
       face_param%MUa   (4) = face_param%MUa   (3)
       face_param%MUa   (3) = face_param%Lambda
     end if
 
     ! The definition of Lambda is given in Eqn. 11.5 of Zemach-s notes.
     face_param%Lambda = face_param%MUi(2)*face_param%MUi(4) &
-         - face_param%MUi(1)*face_param%MUi(3)
+         &            - face_param%MUi(1)*face_param%MUi(3)
 
     ! Nu is the face deviation vector dotted with the interface normal.
     ! If a face is a parallelogram, Nu (and B) will be zero.
     ! If a face is not a parallelogram, the magnitude of B measures
     ! the deviation from the parallelogram.
-    face_param%Nu = face_param%MUi(1) - face_param%MUi(2) + &
-         face_param%MUi(3) - face_param%MUi(4)
+    face_param%Nu = face_param%MUi(1) - face_param%MUi(2) &
+         &        + face_param%MUi(3) - face_param%MUi(4)
   end function face_param
-
+  
+  !=======================================================================
+  ! Purpose(s):
+  !  
+  !   Compute the truncation volume.
+  !
+  !=======================================================================
   real(r8) function truncate_volume (cell, trunc_vol)
-    !=======================================================================
-    ! Purpose(s):
-    !  
-    !   Compute the truncation volume.
-    !
-    !=======================================================================
-    !use vof_data_module,  only: Cases, count_cases
-
     use hex_types, only: reconstruction_hex
 
-    ! Arguments
     class(reconstruction_hex), intent(in) :: cell
     type(truncvol_data), dimension(nfc), intent(in) :: trunc_vol
 
-    ! Local Variables
     integer :: f
-    ! <><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><>
-
+    
     ! Initialize relevant quantities
     !if (count_cases) Cases = 0
 
     ! Loop over faces, accumulating the truncated volume
-    Truncate_Volume     = 0.0_r8
+    Truncate_Volume = 0.0_r8
     do f = 1, nfc
       Truncate_Volume = Truncate_Volume + truncate_face (cell, trunc_vol(f))
     end do
@@ -256,8 +210,8 @@ contains
     use hex_types, only: reconstruction_hex
 
     class(reconstruction_hex), intent(in) :: cell
-    type(truncvol_data),      intent(in) :: trunc_vol_face
-    real(r8)                             :: Vf
+    type(truncvol_data),       intent(in) :: trunc_vol_face
+    real(r8)                              :: Vf
 
     real(r8) :: Y(nvf)
 
@@ -287,48 +241,29 @@ contains
       Vf = Vf + truncate_face_4 (cell, trunc_vol_face) ! case 4
       !write(*,*) 'case 4'
     end if
+
   end function truncate_face
 
   ! <><><><><><><><><><><><> PRIVATE ROUTINES <><><><><><><><><><><><><><>
 
+  !=======================================================================
+  ! PURPOSE - 
+  !   Compute an expression (for case "2") that is part of
+  !   the volume truncated along a hex face by the plane
+  !   X*Normal - Ro = 0
+  !=======================================================================
   function truncate_face_2 (cell_rho, Y, trunc_vol_face) result(Q)
-    !=======================================================================
-    ! PURPOSE - 
-    !   Compute an expression (for case "2") that is part of
-    !   the volume truncated along a hex face by the plane
-    !   X*Normal - Ro = 0
-    !=======================================================================
-
-    ! Arguments
-    real(r8), intent(in) :: cell_rho
-    real(r8), dimension(nvf), intent(IN)  :: Y
+    real(r8),            intent(in) :: cell_rho, Y(:)
     type(truncvol_data), intent(in) :: trunc_vol_face
-    real(r8) :: Q 
+    real(r8)                        :: Q 
 
-    ! Local Variables
     integer :: i, k
     real(r8) :: J1, J2, J3, W1, W2, W3, W4, Z1, Z2, Z3
-
-    real(r8), parameter :: one_third     = 1.0_r8 / 3.0_r8
-    real(r8), parameter :: one_fourth    = 0.25_r8
-    real(r8), parameter :: one_fifth     = 0.2_r8
-    real(r8), parameter :: one_sixth     = 1.0_r8 / 6.0_r8
-    real(r8), parameter :: one_seventh   = 1.0_r8 / 7.0_r8
-    real(r8), parameter :: one_eighth    = 0.125_r8
-
-    ! <><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><>
-
+    
     Q  = 0.0_r8
-    J1 = 0.0_r8
-    J2 = 0.0_r8
-    J3 = 0.0_r8
-    W1 = 0.0_r8
-    W2 = 0.0_r8
-    W3 = 0.0_r8
-    W4 = 0.0_r8
-    Z1 = 0.0_r8
-    Z2 = 0.0_r8
-    Z3 = 0.0_r8
+    J1 = 0.0_r8; J2 = 0.0_r8; J3 = 0.0_r8
+    W1 = 0.0_r8; W2 = 0.0_r8; W3 = 0.0_r8; W4 = 0.0_r8
+    Z1 = 0.0_r8; Z2 = 0.0_r8; Z3 = 0.0_r8
 
     do k = 1, nvf
       i = 1 + mod(k + 1,nvf)
@@ -336,7 +271,6 @@ contains
       ! Scan the four face indicies until we get to the 
       ! 2nd predecessor of MU(b).
       if (trunc_vol_face%MUp(2) == k) then
-
         ! Z3 is the Y function of the successor of the A vertex
         Z3 = Y(k)
 
@@ -358,7 +292,6 @@ contains
       ! Scan the four face indicies until we get to the 
       ! 2nd predecessor of MU(a).
       if (trunc_vol_face%MUp(1) == k) then
-
         ! Z1 is the Y function of the A vertex
         Z1 = Y(k)
 
@@ -384,11 +317,10 @@ contains
       W4 = 1.0_r8/W3
       J1 = (1.0_r8 - log(abs(1.0_r8 + W3))*W4)*W4
       J2 = (0.5_r8 - J1)*W4
-      J3 = (one_third - J2)*W4
+      J3 = (1.0_r8/3.0_r8 - J2)*W4
     else
-      J3 = one_fourth - one_fifth*W3 + one_sixth*W3*W3 - &
-           one_seventh*W3*W3*W3 + one_eighth*W3**4
-      J2 = one_third - W3*J3
+      J3 = 0.25_r8 - W3/5.0_r8 + W3*W3/6.0_r8 - W3*W3*W3/7.0_r8 + 0.125_r8*W3**4
+      J2 = 1.0_r8/3.0_r8 - W3*J3
       J1 = 0.5_r8 - W3*J2
     end if
 
@@ -397,61 +329,46 @@ contains
          (Cell_Rho - trunc_vol_face%MUa(1))*J2 &
          + J3*(trunc_vol_face%MUa(2) - trunc_vol_face%MUa(1))**2)
 
-    Q = Q + W1*Z1*(2.0_r8*Cell_Rho - trunc_vol_face%MUa(1) - &
-         trunc_vol_face%MUa(2))/6.0_r8
-
-    Q = Q + (W1*W2*(Z2 - Z3)*(Cell_Rho - trunc_vol_face%MUa(2))**2)/6.0_r8
-
+    Q = Q + W1*Z1*(2.0_r8*Cell_Rho - trunc_vol_face%MUa(1) - trunc_vol_face%MUa(2))/6.0_r8 &
+         + (W1*W2*(Z2 - Z3)*(Cell_Rho - trunc_vol_face%MUa(2))**2)/6.0_r8
   end function TRUNCATE_FACE_2
-
+  
+  !=======================================================================
+  ! PURPOSE - 
+  !   Compute an expression (for case "4") that is part of
+  !   the volume truncated along a hex face by the plane
+  !   X*Normal - Ro = 0
+  !=======================================================================
   function TRUNCATE_FACE_4 (cell, trunc_vol_face) result(Q)
-    !=======================================================================
-    ! PURPOSE - 
-    !   Compute an expression (for case "4") that is part of
-    !   the volume truncated along a hex face by the plane
-    !   X*Normal - Ro = 0
-    !=======================================================================
     use hex_types, only: reconstruction_hex
 
-    ! Arguments
     class(reconstruction_hex), intent(in) :: cell
-    type(truncvol_data), intent(in) :: trunc_vol_face
-    real(r8) :: Q
+    type(truncvol_data),       intent(in) :: trunc_vol_face
+    real(r8)                              :: Q
 
-    ! Local Variables
-    real(r8), dimension(3) :: Tmp
+    real(r8) :: Tmp(3)
 
-    ! <><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><>
-
-    Tmp = 0.25_r8*(trunc_vol_face%X(1,:) + trunc_vol_face%X(2,:)  + &
-         &         trunc_vol_face%X(3,:) + trunc_vol_face%X(4,:)) - &
-         Cell%Rho*Cell%Normal(:)
-
+    Tmp = 0.25_r8*sum(trunc_vol_face%X(:,:), dim=1) - cell%rho*cell%normal(:)
     Q = sum( tmp * trunc_vol_face%K ) / 6.0_r8
 
   end function TRUNCATE_FACE_4
 
+  !=======================================================================
+  ! PURPOSE - 
+  !   Compute an expression (for case "n") that is part of
+  !   the volume truncated along a hex face by the plane
+  !   X*Normal - Ro = 0
+  !=======================================================================
   function TRUNCATE_FACE_N (n, plane_const, Y, trunc_vol_face) result(Q)
-    !=======================================================================
-    ! PURPOSE - 
-    !   Compute an expression (for case "n") that is part of
-    !   the volume truncated along a hex face by the plane
-    !   X*Normal - Ro = 0
-    !=======================================================================
-
-    ! Arguments
     integer,  intent(in) :: n
     real(r8), intent(in) :: plane_const
-    real(r8), dimension(nvf), intent(in) :: Y
+    real(r8), intent(in) :: Y(:)
     type(truncvol_data), intent(in) :: trunc_vol_face
-    real(r8)  :: Q
+    real(r8)                        :: Q
 
-    ! Local Variables
     integer  :: k
     real(r8) :: J1, S, T, W1, W3
-    ! <><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><>
-
-
+    
     T = plane_const - trunc_vol_face%MUa(n)
     W3 = trunc_vol_face%Lambda + trunc_vol_face%Nu*trunc_vol_face%MUa(n)
 
@@ -464,11 +381,17 @@ contains
     W1 = T*T*W3
     T = trunc_vol_face%Nu * T * W3
 
-    S = 0.0_r8
-    if (abs(T) > alittle) S = 1.0_r8/T
+    if (abs(T) > alittle) then
+      S = 1.0_r8/T
+    else
+      S = 0.0_r8
+    end if
 
-    J1 = 0.0_r8
-    if (T /= -1.0_r8) J1 = (1.0_r8-log(abs(1.0_r8+T))*S)*S
+    if (T /= -1.0_r8) then
+      J1 = (1.0_r8-log(abs(1.0_r8+T))*S)*S
+    else
+      J1 = 0.0_r8
+    end if
 
     if (abs(T) > 1.0e-2) then
       W3 = J1 + (-2.0_r8/3.0_r8 + 2.0_r8*J1 + (J1 - 0.5_r8) * S) * S
@@ -483,39 +406,35 @@ contains
     end do
 
   end function TRUNCATE_FACE_N
-
+  
+  !=======================================================================
+  ! PURPOSE -
+  !   THIS ROUTINE COMPUTES THE VARIABLE :
+  !   Yi = (Xi'''-Normal.Ro) . (Xi-Normal.Ro) X (Xi'-Normal.Ro)
+  !
+  ! Note:
+  !   Xi     - is the i-th vertex of face "FACE".
+  !   Xi'''  - is the predecessor vertex (third successor vertex) to
+  !            vertex Xi
+  !   Xi'    - is the successor vertex to vertex Xi
+  !   Normal - is the normal vector to the material interface
+  !   Ro     - is the distance of vertex Xi from the origin along
+  !            the interface normal "NORMAL"
+  !   X      - the coordinates of the four vertices that define
+  !            call face "FACE".
+  !   Y      - the value of the Y-FUNCTION for this value of RO.
+  !
+  ! This routine is called from truncate_face.
+  !=======================================================================
   function Y_FUNCTION (cell, trunc_vol_face)
-    !=======================================================================
-    ! PURPOSE -
-    !   THIS ROUTINE COMPUTES THE VARIABLE :
-    !   Yi = (Xi'''-Normal.Ro) . (Xi-Normal.Ro) X (Xi'-Normal.Ro)
-    !
-    ! Note:
-    !   Xi     - is the i-th vertex of face "FACE".
-    !   Xi'''  - is the predecessor vertex (third successor vertex) to
-    !            vertex Xi
-    !   Xi'    - is the successor vertex to vertex Xi
-    !   Normal - is the normal vector to the material interface
-    !   Ro     - is the distance of vertex Xi from the origin along
-    !            the interface normal "NORMAL"
-    !   X      - the coordinates of the four vertices that define
-    !            call face "FACE".
-    !   Y      - the value of the Y-FUNCTION for this value of RO.
-    !
-    ! This routine is called from truncate_face.
-    !=======================================================================
     use hex_types, only: reconstruction_hex
 
-    ! Arguments
     class(reconstruction_hex), intent(in) :: cell
-    type(truncvol_data), intent(in) :: trunc_vol_face
-    real(r8), dimension(nvf) :: Y_FUNCTION
+    type(truncvol_data),       intent(in) :: trunc_vol_face
+    real(r8)                              :: Y_FUNCTION(nvf)
 
-    ! Local Variables
     integer, parameter :: ICMP = 1, JCMP = 2, KCMP = 3
     real(r8), dimension(3) :: R1, R2, R3, R4, S1, S3
-
-    ! <><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><>
 
     R4 = Cell%Rho * Cell%Normal
 

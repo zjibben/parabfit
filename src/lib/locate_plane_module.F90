@@ -45,14 +45,15 @@ module locate_plane_module
 
 contains
 
-  subroutine unit_test (this)
+  subroutine unit_test (this, normal, vof, rhoex)
     class(locate_plane_hex), intent(out) :: this
+    real(r8), intent(in) :: normal(3), vof, rhoex
 
     integer  :: iter
     real(r8) :: flux_vol_coord(3,8)
 
     ! set a normal
-    this%normal = [1.0_r8, 1.0_r8, 1.0_r8] / sqrt(3.0_r8)
+    this%normal = normal
     !this%normal = [1.0_r8, 0.0_r8, 1.0_r8] / sqrt(2.0_r8)
     !this%normal = [0.0_r8, 0.0_r8, 1.0_r8]
 
@@ -70,13 +71,13 @@ contains
     this%volume = this%calc_volume ()
 
     ! set the vof
-    this%vof = 0.5_r8
+    this%vof = vof
 
     ! calculate the plane constant
     call this%locate_plane (iter)
 
     ! put a check here rather than a print
-    write(*,'(2(a,f14.10))') 'plane constant = ',this%rho,',     correct plane constant = ',sqrt(3.0_r8)/2.0_r8
+    write(*,'(2(a,f14.10))') 'plane constant = ',this%rho,',     correct plane constant = ',rhoex
   end subroutine unit_test
 
   subroutine init_locate_plane_hex (this, norm, vof, volume, node)

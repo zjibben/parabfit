@@ -251,8 +251,9 @@ contains
       volume_flux_sub = volume_track (adv_dt, this%mesh, this%gmesh, this%vof, this%fluxing_velocity, this%nmat, this%fluidRho)
 
       ! Normalize the donor fluxes.
-      call flux_renorm (this%fluxing_velocity, Vof_n, Volume_Flux_Tot, Volume_Flux_Sub, adv_dt, this%mesh)
-
+      write(*,*) 'warning: flux renorm deactivated'
+      !call flux_renorm (this%fluxing_velocity, Vof_n, Volume_Flux_Tot, Volume_Flux_Sub, adv_dt, this%mesh)
+      !write(*,*) 'current volumes: ',this%vof(:,501) * this%mesh%volume(501)
       ! Compute the acceptor fluxes.
       call flux_acceptor (volume_flux_sub, this%gmesh)
 
@@ -263,7 +264,7 @@ contains
       ! total flux array (Volume_Flux_Tot), and update the volume fraction
       ! array (Vof).
       call volume_advance (Volume_Flux_Sub, volume_flux_tot, this%vof, this%mesh%volume)
-
+      
       ! ! Make sure volume fractions of a particular material are within
       ! ! the allowed range (0 <= Vof <= 1) and that all materials sum to one.
       ! call this%vof_bounds ()
@@ -421,10 +422,10 @@ contains
   subroutine flux_bc (Fluxing_Velocity, Vof_n, Volume_Flux_Sub, adv_dt, mesh, gmesh)
     use unstr_mesh_type
 
-    type(unstr_mesh), intent(in) :: mesh
-    type(mesh_geom),  intent(in) :: gmesh
-    real(r8), intent(in)    :: Fluxing_Velocity(:,:), Vof_n(:,:), adv_dt
-    real(r8), intent(inout) :: Volume_Flux_Sub(:,:,:)
+    type(unstr_mesh), intent(in)    :: mesh
+    type(mesh_geom),  intent(in)    :: gmesh
+    real(r8),         intent(in)    :: Fluxing_Velocity(:,:), Vof_n(:,:), adv_dt
+    real(r8),         intent(inout) :: Volume_Flux_Sub(:,:,:)
 
     real(r8) :: flux_vol
     integer  :: f,n,fid
@@ -468,7 +469,7 @@ contains
           nf = gmesh%fneighbor(f,n)
           nc = gmesh%cneighbor(f,n)
 
-          if (nf>0) then ! neighbor exists (not boundary cell)
+          if (nc>0) then ! neighbor exists (not boundary cell)
             acceptor_flux = volume_flux_sub(m,nf,nc)
             if (acceptor_flux > 0.0_r8) volume_flux_sub(m,f,n) = - acceptor_flux
           end if
@@ -476,6 +477,8 @@ contains
         end do
       end do
     end do
+    
+    !write(*,*) 'final flux: ',volume_flux_sub(:,:,501)
     
   end subroutine flux_acceptor
 

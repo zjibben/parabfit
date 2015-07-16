@@ -28,7 +28,7 @@ contains
     real(r8)             :: prescribed_velocity(3)
 
     real(r8) :: periodT
-    real(r8), parameter :: PI = 4.0_r8 * atan(1.0_r8) !3.14159265358979323846_r8
+    real(r8), parameter :: PI = 4.0_r8 * atan(1.0_r8)
 
     prescribed_velocity = 0.0_r8
     select case (field)
@@ -39,6 +39,8 @@ contains
       prescribed_velocity(3) = - sin(2*PI*x(1))    * sin(2*PI*x(2))    * sin(  PI*x(3))**2 * cos(PI*t/periodT)
     case (2) ! advecting plane in x-direction
       prescribed_velocity(1) = 0.5_r8 / 3.0_r8
+    case (3) ! advecting plane in y-direction
+      prescribed_velocity(2) = 0.5_r8 / 3.0_r8
     case default
       call LS_fatal ('unrecognized prescribed velocity field case')
     end select

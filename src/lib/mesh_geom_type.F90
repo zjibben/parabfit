@@ -19,7 +19,7 @@ module mesh_geom_type
   type, public :: mesh_geom
     private
     integer,  allocatable, public :: cneighbor(:,:), fneighbor(:,:), vcell(:,:)
-    real(r8), allocatable, public :: length(:)
+    real(r8), allocatable, public :: length(:), outnorm(:,:,:)
   contains
     procedure :: init
   end type mesh_geom
@@ -30,12 +30,32 @@ contains
     class(mesh_geom), intent(out) :: this
     type(unstr_mesh), intent(in) :: mesh
 
+    integer :: i,f
+    
     allocate(this%cneighbor(6,mesh%ncell), this%fneighbor(6,mesh%ncell), &
-         this%vcell(8,mesh%nnode), this%length(mesh%nedge))
+         this%vcell(8,mesh%nnode), this%length(mesh%nedge), this%outnorm(3,6,mesh%ncell))
     
     call neighbor_ids (this%cneighbor, this%fneighbor, mesh)
     this%vcell = cells_neighboring_vertices (mesh)
     !this%length = edge_lengths (mesh%enode, mesh%nedge)
+
+    do i = 1,mesh%ncell
+      do f = 1,6
+        this%outnorm(:,f,i) = mesh%normal(:,mesh%cface(f,i)) / sqrt(sum(mesh%normal(:,mesh%cface(f,i))**2))
+        ! why is it so slow to do it here rather than the loop down there? -zjibben
+        ! if (.not.btest(mesh%cfpar(i),f)) & !check the orientation of the face with respect to this cell
+        !      this%outnorm = - this%outnorm
+      end do
+    end do
+    
+    do f = 1,6
+      !check the orientation of the face with respect to this cell
+      where (btest(mesh%cfpar(:),f))
+        this%outnorm(1,f,:) = - this%outnorm(1,f,:)
+        this%outnorm(2,f,:) = - this%outnorm(2,f,:)
+        this%outnorm(3,f,:) = - this%outnorm(3,f,:)
+      end where
+    end do
     
   end subroutine init
 
