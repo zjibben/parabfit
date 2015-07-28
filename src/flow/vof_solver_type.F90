@@ -249,10 +249,11 @@ contains
     do p = 1,volume_track_subcycles
       ! Get the donor fluxes.
       volume_flux_sub = volume_track (adv_dt, this%mesh, this%gmesh, this%vof, this%fluxing_velocity, this%nmat, this%fluidRho)
-
+      
       ! Normalize the donor fluxes.
-      write(*,*) 'warning: flux renorm deactivated'
-      !call flux_renorm (this%fluxing_velocity, Vof_n, Volume_Flux_Tot, Volume_Flux_Sub, adv_dt, this%mesh)
+      !write(*,*) 'warning: flux renorm deactivated'
+      call flux_renorm (this%fluxing_velocity, Vof_n, Volume_Flux_Tot, Volume_Flux_Sub, adv_dt, this%mesh)
+      
       !write(*,*) 'current volumes: ',this%vof(:,501) * this%mesh%volume(501)
       ! Compute the acceptor fluxes.
       call flux_acceptor (volume_flux_sub, this%gmesh)
@@ -268,6 +269,8 @@ contains
       ! ! Make sure volume fractions of a particular material are within
       ! ! the allowed range (0 <= Vof <= 1) and that all materials sum to one.
       ! call this%vof_bounds ()
+
+      write(*,*) 'completed subcycle'
     end do
 
     ! Stop the volume advection timer.

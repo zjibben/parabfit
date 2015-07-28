@@ -42,7 +42,7 @@ if (CMAKE_Fortran_COMPILER_ID STREQUAL "NAG")
  set (CMAKE_Fortran_FLAGS_DEBUG   "-u -g90")
 elseif (CMAKE_Fortran_COMPILER_ID STREQUAL "Intel")
  set (CMAKE_Fortran_FLAGS_RELEASE "-O3 -DNDEBUG -assume realloc_lhs")
- set (CMAKE_Fortran_FLAGS_DEBUG   "-g -assume realloc_lhs -fp-stack-check -ftrapuv -check bounds -check uninit")
+ set (CMAKE_Fortran_FLAGS_DEBUG   "-g -traceback -assume realloc_lhs -fp-stack-check -ftrapuv -check bounds -check uninit")
  message(STATUS "${CMAKE_Fortran_COMPILER_VERSION}")
 endif()
 

@@ -86,14 +86,15 @@ contains
     nmat_in_cell = count(vof > 0.0_r8, dim=1)      ! count the number of materials in each cell
     ninterfaces = maxval(Nmat_In_Cell) - 1         ! number of interfaces to process
     int_norm = interface_normal (Vof, mesh, gmesh) ! compute interface normal vectors for all the materials.
-
+    
     ! get the volume flux in every cell
+    !$omp parallel do default(private) shared(volume_flux_sub,mesh,adv_dt,fluidRho,vof,int_norm,nmat_in_cell,nmat,fluxing_velocity,ninterfaces)
     do i = 1,mesh%ncell
-      !write(*,*) 'cell: ',i
       call cell%init (mesh%x(:,mesh%cnode(:,i)), mesh%volume(i), mesh%area(mesh%cface(:,i)), mesh%normal(:,mesh%cface(:,i)))
       volume_flux_sub(:,:,i) = cell_volume_flux (adv_dt, cell, fluidRho(i), vof(:,i), int_norm(:,:,i), nmat_in_cell(i), nmat, &
             fluxing_velocity(:,i), ninterfaces )
     end do ! cell loop
+    !$omp end parallel do
         
     call stop_timer ("Reconstruct/Advect") ! Stop the volume track timer
 
@@ -168,15 +169,6 @@ contains
 
         ! Store the last material's volume flux.
         if (dvol > cutvof*cell%volume) cell_volume_flux(nlast,f) = dvol
-        
-        ! write(*,'(a,4es13.4)') 'interface rho,n: ',plane_cell%rho, plane_cell%normal
-        ! if (dvol<1e-7) then
-        ! write(*,*)
-        ! write(*,*) 'vol,farea: ',cell%volume,cell%face_area(f)
-        !   write(*,*) 'matflux: ',cell_volume_flux(:,f)
-        !   write(*,'(a,3es13.4)') 'dvol,fluxvol,fluxvolsum: ',dvol, flux_vol%vol, flux_vol_sum(f)
-        !   write(*,*) 'vof: ',vof*cell%volume
-        ! end if
       end if
     end do ! face loop
 
@@ -202,7 +194,7 @@ contains
     type(flux_vol_quantity) :: Flux_Vol
 
     mat_vol_flux = 0.0_r8
-!    write(*,*)
+
     do f = 1,nfc
       ! Flux volumes
       Flux_Vol%Fc  = f
@@ -220,21 +212,6 @@ contains
         
         ! For mixed donor cells, the face flux is in Int_Flux%Advection_Volume.
         Vp = truncate_volume(plane_cell, trunc_vol)
-        
-        ! write(*,*) 'face,vel,dist: ',f,face_fluxing_velocity(f),adv_dt*face_fluxing_velocity(f)
-        ! write(*,*) 'Fvol: ',flux_vol%vol
-        ! write(*,'(a,3es13.4)') 'no: ',plane_cell%node(:,1)
-        ! write(*,'(a,3es13.4)') 'no: ',plane_cell%node(:,2)
-        ! write(*,'(a,3es13.4)') 'xv: ',flux_vol%xv(:,1)
-        ! write(*,'(a,3es13.4)') 'xv: ',flux_vol%xv(:,2)
-        ! write(*,'(a,3es13.4)') 'xv: ',flux_vol%xv(:,3)
-        ! write(*,'(a,3es13.4)') 'xv: ',flux_vol%xv(:,4)
-        ! write(*,'(a,3es13.4)') 'xv: ',flux_vol%xv(:,5)
-        ! write(*,'(a,3es13.4)') 'xv: ',flux_vol%xv(:,6)
-        ! write(*,'(a,3es13.4)') 'xv: ',flux_vol%xv(:,7)
-        ! write(*,'(a,3es13.4)') 'xv: ',flux_vol%xv(:,8)
-        ! write(*,'(a,4es13.4)') 'interface, rho,n: ',plane_cell%rho, plane_cell%normal
-        ! write(*,*) 'Vp:   ',Vp
       else
         ! For clean donor cells, the entire Flux volume goes to the single donor material.
         if (vof >= (1.0_r8-cutvof)) then
@@ -281,20 +258,18 @@ contains
     nmat = size(vof, dim=1)
     
     ! Calculate the volume fraction gradient for each material
+    ! recall interface normal is in opposite direction of gradient
     do m = 1, nmat
-      interface_normal(:,m,:) = gradient (Vof(m,:), mesh, gmesh)
-      !write(*,*) 'gradient: ',m,interface_normal(:,m,501)
+      interface_normal(:,m,:) = -gradient (Vof(m,:), mesh, gmesh)
     end do
-    
-    ! The interface normal is in the opposite sense of the gradient
-    interface_normal = -interface_normal
     
     ! mmfran 07/22/11 --- begin changes
     ! bug fix for material order independent results
     ! consider special case the cell contains only two materials
     ! if cell has two materials only, their normal should be consistent
 
-    do n = 1,size(vof, dim=2)
+    !$omp parallel do default(private) shared(interface_normal,vof)
+    do n = 1,size(vof, dim=2) ! loop through cells
       nmat_in_cell = count(vof(:,n) > 0.0_r8)
       
       ! if there are more than 2 materials in the cell
@@ -323,15 +298,16 @@ contains
         Interface_Normal(:,mid(2),n) = - Interface_Normal(:,mid(1),n)
       end if
     end do ! cell loop
-
+    !$omp end parallel do
+        
     ! Eliminate noise from the gradient
     where (abs(Interface_Normal) < alittle) Interface_Normal = 0.0_r8
-
+        
     ! normalize the gradient
     do m = 1,nmat
       call normalize (interface_normal(:,m,:))
     end do
-
+    
   end function interface_normal
 
   subroutine normalize (n)
@@ -392,34 +368,49 @@ contains
     type(mesh_geom),  intent(in) :: gmesh
 
     integer  :: f,i
-    real(r8) :: Phi_f(mesh%ncell)
-    real(r8) :: Phi_vtx(mesh%nnode)
+    real(r8) :: Phi_f(mesh%nface)
 
-    ! Compute Phi_vtx, a vertex value of Phi
-    phi_vtx = vertex_avg (Phi, mesh, gmesh)
+    ! compute face average of phi
+    ! this is calculated through the average of node values at a face
+    ! the node values are calculated through the average of neighboring cell values
+    phi_f = face_avg (vertex_avg (Phi, mesh, gmesh), mesh)
 
-    ! green-gauss method
+    ! green-gauss method - this seems to be by far the most expensive loop
     ! Loop over faces, accumulating the product
     ! Phi_f*Face_Normal for each area vector component
     gradient = 0.0_r8
+    
+    !$omp parallel do default(private) shared(gradient,phi_f,mesh,gmesh)
     do i = 1,mesh%ncell
+      ! Accumulate the dot product
       do f = 1,nfc
-        ! Interpolate vertex values to this face (see note 1)
-        phi_f = sum(phi_vtx(mesh%fnode(:,mesh%cface(f,i)))) / 4.0_r8
-
-        ! Accumulate the dot product
-        Gradient(:,i) = Gradient(:,i) + gmesh%outnorm(:,f,i)*mesh%area(mesh%cface(f,i))*Phi_f
+        Gradient(:,i) = Gradient(:,i) + gmesh%outnorm(:,f,i)*mesh%area(mesh%cface(f,i))*Phi_f(mesh%cface(f,i))
       end do
 
       ! Normalize by cell volume
       Gradient(:,i) = Gradient(:,i) / mesh%volume(i)
-
+      
       ! Eliminate noise
       where (abs(gradient(:,i)) <= alittle) gradient(:,i) = 0.0_r8
     end do
-
+    !$omp end parallel do
+        
   end function gradient
 
+  function face_avg (x_vtx, mesh) result(x_face)
+    real(r8),         intent(in) :: x_vtx(:)
+    type(unstr_mesh), intent(in) :: mesh
+    real(r8)                     :: x_face(mesh%nface)
+
+    integer :: f
+
+    do f = 1,mesh%nface
+      ! Interpolate vertex values to this face (see note 1)
+      x_face(f) = sum(x_vtx(mesh%fnode(:,f))) / 4.0_r8
+    end do
+
+  end function face_avg
+  
   !=======================================================================
   ! Purpose(s):
   !

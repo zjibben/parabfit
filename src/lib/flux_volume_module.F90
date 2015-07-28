@@ -77,6 +77,7 @@ contains
          ! 2,1,  3,4,  6,5,  7,8,   & ! face 4 edges
          ! 1,5,  2,6,  3,7,  4,8,   & ! face 5 edges
          ! 5,1,  6,2,  7,3,  8,4 ], & ! face 6 edges
+         ! [2,nvf,nfc] )
          ! Edge_ends(2,nvf,nfc) = reshape( [ &
          ! 1,4,  2,3,  5,8,  6,7,   & ! face 1 edges
          ! 3,2,  4,1,  7,6,  8,5,   & ! face 2 edges
@@ -93,6 +94,14 @@ contains
          3,7,  4,8,  1,5,  2,6,   & ! face 5 edges
          7,3,  8,4,  5,1,  6,2 ], & ! face 6 edges
          [2,nvf,nfc] )
+         ! Edge_ends(2,nvf,nfc) = reshape( [ &
+         ! 2,3,  1,4,  6,7,  5,8,   & ! face 2 edges
+         ! 4,1,  3,2,  8,5,  7,6,   & ! face 1 edges
+         ! 3,4,  2,1,  7,8,  6,5,   & ! face 4 edges
+         ! 4,3,  1,2,  8,7,  5,6,   & ! face 3 edges
+         ! 7,3,  8,4,  5,1,  6,2,   & ! face 5 edges
+         ! 3,7,  4,8,  1,5,  2,6 ], & ! face 6 edges
+         ! [2,nvf,nfc] )
     real(r8)       :: Percnt(nvf), tmp(8)
     real(r8)       :: Uedge(ndim,nvf)
     real(r8)       :: Volume, Mult, ndotuedge
@@ -116,6 +125,14 @@ contains
     end do
 
     if (any(Percnt < 0.0_r8) .or. any(Percnt > 1.0_r8)) then
+      do e = 1,8
+        write(*,'(a,3es15.4)') 'flux nodes:',flux_vol%xv(:,e)
+      end do
+      write(*,*) dist
+      do e = 1,4
+        ndotuedge = sum(cell%face_normal(:,face) * Uedge(:,e))
+        write(*,'(a,3es15.4)') 'ndotuedge: ',ndotuedge, -dist/(ndotuedge+alittle),percnt(e)
+      end do
       write(errmsg,'(a,3es13.6)') 'FLUX_VOL_VERTICES: invalid flux volume or inverted element; cell centroid =', &
            sum( cell%node, dim=2 ) / real(nvc,r8)
       call LS_fatal (errmsg)

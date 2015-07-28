@@ -116,7 +116,9 @@ contains
     type(truncvol_data), dimension(nfc) :: trunc_vol
     
     ! Start the locate plane timer.
-    call start_timer ("Locate Plane")
+    ! WARNING: Need to figure out how to make this run in parallel with OpenMP.
+    !          Currently, the timer is a global variable.
+    !call start_timer ("Locate Plane")
 
     ! Bracket the correct value of Rho [Rho_Min,Rho_Max] to insure
     ! the subsequent iteration will converge efficiently
@@ -128,7 +130,7 @@ contains
     call rho_brent (this, iter, Rho_Min, Rho_Max, V_Min, V_Max, trunc_vol)
 
     ! Stop the locate plane timer.
-    call stop_timer("Locate Plane")
+    !call stop_timer("Locate Plane")
 
   end subroutine locate_plane
 
