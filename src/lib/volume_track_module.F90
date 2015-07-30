@@ -373,6 +373,7 @@ contains
     ! compute face average of phi
     ! this is calculated through the average of node values at a face
     ! the node values are calculated through the average of neighboring cell values
+    ! this could be modified and moved inside the following loop, although some effort would be duplicated that way
     phi_f = face_avg (vertex_avg (Phi, mesh, gmesh), mesh)
 
     ! green-gauss method - this seems to be by far the most expensive loop
@@ -404,10 +405,12 @@ contains
 
     integer :: f
 
+    !$omp parallel do default(private) shared(x_face,x_vtx,mesh)
     do f = 1,mesh%nface
       ! Interpolate vertex values to this face (see note 1)
       x_face(f) = sum(x_vtx(mesh%fnode(:,f))) / 4.0_r8
     end do
+    !$omp end parallel do
 
   end function face_avg
   
@@ -430,6 +433,8 @@ contains
 
     ! calculate the inverse sum of inverse volumes
     X_vertex = 0.0_r8; sum_rvol = 0.0_r8
+
+    !$omp parallel do default(private) shared(X_vertex, sum_rvol, X_cell, gmesh, mesh)
     do n = 1,mesh%nnode
       do i = 1,8
         if (gmesh%vcell(i,n) /= -1) then
@@ -438,6 +443,7 @@ contains
         end if
       end do
     end do
+    !$omp end parallel do
 
     ! X_vertex: Vertex-averaged X_cell
     X_vertex = X_vertex / sum_rvol

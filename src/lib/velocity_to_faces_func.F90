@@ -18,22 +18,23 @@ module velocity_to_faces_func
 
 contains
 
-  subroutine velocity_to_faces(fluxing_velocity, velocity_cc, mesh, t, prescribed, prescribed_case)
+  subroutine velocity_to_faces(fluxing_velocity, velocity_cc, mesh, gmesh, t, prescribed, prescribed_case)
     use unstr_mesh_type
     use prescribed_velocity_fields
-    use hex_types, only: calculate_outward_normal
+    use mesh_geom_type
     implicit none
 
     real(r8),          intent(inout) :: fluxing_velocity(:,:)
     real(r8),          intent(in)    :: velocity_cc(:,:)
     class(unstr_mesh), intent(in)    :: mesh
+    class(mesh_geom),  intent(in)    :: gmesh
     real(r8)         , intent(in)    :: t
     logical, intent(in), optional :: prescribed
     integer, intent(in), optional :: prescribed_case
 
     ! local variables
     logical  :: prescribedh
-    integer  :: f,fid,n
+    integer  :: f,n
     real(r8) :: face_center(3),cell_center(3),outward_normal(3)
 
     if (present(prescribed)) then
@@ -45,17 +46,19 @@ contains
     if (prescribedh) then
       if (.not.present(prescribed_case)) call LS_fatal ('velocity_to_faces expected prescribed field case')
 
+      !$omp parallel do default(private) shared(fluxing_velocity,mesh,gmesh,t,prescribed_case)
       do n = 1,mesh%ncell
         do f = 1,6
-          fid = mesh%cface(f,n)
-          face_center = sum( mesh%x(:,mesh%fnode(:,fid)), dim=2) / 4.0_r8 ! face center is the average of the face node positions
-          outward_normal = calculate_outward_normal( mesh%normal(:,fid) / mesh%area(fid), &
-               sum(mesh%x(:,mesh%cnode(:,n)), dim=2)/8.0_r8, face_center)
+          ! face center is the average of the face node positions
+          face_center = sum( mesh%x(:,mesh%fnode(:,mesh%cface(f,n))), dim=2) / 4.0_r8 
           
-          fluxing_velocity(f,n) = sum( prescribed_velocity (face_center, t, prescribed_case) * outward_normal )
-
+          fluxing_velocity(f,n) = sum( prescribed_velocity (face_center, t, prescribed_case) * gmesh%outnorm(:,f,n) )
         end do
       end do
+      !$omp end parallel do
+
+    else
+      call LS_fatal ('need to code center to face projection routine')
     end if
 
   end subroutine velocity_to_faces

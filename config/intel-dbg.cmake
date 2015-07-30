@@ -5,4 +5,5 @@ set(CMAKE_Fortran_COMPILER ifort CACHE STRING "Fortran Compiler")
 # on the compiler ID and build type.  Not so for Fortran Flags -- we must
 # specify them (or get none).
 set(CMAKE_BUILD_TYPE Debug CACHE STRING "Build type")
-set(CMAKE_Fortran_FLAGS "-O2 -g -traceback -check all -fp-stack-check -u -assume realloc_lhs -openmp" CACHE STRING "Fortran compile flags")
+#set(CMAKE_Fortran_FLAGS "-O3 -assume realloc_lhs" CACHE STRING "Fortran compile flags")
+#set(CMAKE_Fortran_FLAGS "-O2 -g -traceback -check all -fp-stack-check -u -assume realloc_lhs" CACHE STRING "Fortran compile flags")

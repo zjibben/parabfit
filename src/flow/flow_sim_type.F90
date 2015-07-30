@@ -176,7 +176,7 @@ contains
   ! this is the main driver, only separating dumps
   ! it calls a separate routine for flow subcycles
   subroutine run (this, stat, errmsg)
-    use velocity_to_faces_func
+    !use velocity_to_faces_func
 
     class(flow_sim), intent(inout) :: this
     integer, intent(out) :: stat
@@ -240,30 +240,30 @@ contains
     
     tlocal = 0.0_r8
     
-    ! set the flow timestep. this can be improved, probably needs to be corrected for non-cubic cell
-    call velocity_to_faces (this%vof_solver%fluxing_velocity, this%ns_solver%velocity, this%mesh, t, &
-         this%ns_solver%use_prescribed_velocity, this%ns_solver%prescribed_velocity_case)
-    ns_subcycles = ceiling(dt / (0.25_r8*minval(this%mesh%volume**(1.0_r8/3.0_r8))/maxval(this%vof_solver%fluxing_velocity))) 
-    flow_dt = dt / real(ns_subcycles,r8)
+    ! ! set the flow timestep. this can be improved, probably needs to be corrected for non-cubic cell
+    ! call velocity_to_faces (this%vof_solver%fluxing_velocity, this%ns_solver%velocity, this%mesh, this%gmesh, t, &
+    !      this%ns_solver%use_prescribed_velocity, this%ns_solver%prescribed_velocity_case)
+    ! ns_subcycles = ceiling(dt / (0.25_r8*minval(this%mesh%volume**(1.0_r8/3.0_r8))/maxval(this%vof_solver%fluxing_velocity))) 
+    ! flow_dt = dt / real(ns_subcycles,r8)
     
     do while (tlocal<dt)
       !call this%ns_solver%update_flowfield (flow_dt)
 
       ! project the cell centered velocity from the flowsolver to the faces
-      call velocity_to_faces (this%vof_solver%fluxing_velocity, this%ns_solver%velocity, this%mesh, t+tlocal, &
+      call velocity_to_faces (this%vof_solver%fluxing_velocity, this%ns_solver%velocity, this%mesh, this%gmesh, t+tlocal, &
            this%ns_solver%use_prescribed_velocity, this%ns_solver%prescribed_velocity_case)
-
-      ! advect material
-      call this%vof_solver%advect_mass (flow_dt)
-
-      ! increment the local time
-      tlocal = tlocal + flow_dt
 
       ! update the timestep
       ns_subcycles = max(&
            ceiling((dt-tlocal) / (0.25_r8*minval(this%mesh%volume**(1.0_r8/3.0_r8))/maxval(this%vof_solver%fluxing_velocity))),&
            1)
       flow_dt = (dt-tlocal) / real(ns_subcycles,r8)
+
+      ! advect material
+      call this%vof_solver%advect_mass (flow_dt)
+
+      ! increment the local time
+      tlocal = tlocal + flow_dt
     end do
 
   end subroutine step
@@ -275,8 +275,7 @@ contains
 
   subroutine write_solution (this, t)
     use unstr_mesh_gmv
-    use vof_tools
-
+    
     class(flow_sim), intent(inout) :: this
     real(r8), intent(in) :: t
 

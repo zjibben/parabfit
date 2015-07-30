@@ -270,7 +270,7 @@ contains
       ! ! the allowed range (0 <= Vof <= 1) and that all materials sum to one.
       ! call this%vof_bounds ()
 
-      write(*,*) 'completed subcycle'
+      !write(*,*) 'completed subcycle, dt =',adv_dt
     end do
 
     ! Stop the volume advection timer.
@@ -291,7 +291,7 @@ contains
   !
   !=======================================================================
   subroutine flux_renorm (Fluxing_Velocity, Vof_n, Volume_Flux_Tot, Volume_Flux_Sub, adv_dt, mesh)
-        use unstr_mesh_type
+    use unstr_mesh_type
 
     real(r8), intent(in)    :: fluxing_velocity(:,:), vof_n(:,:), adv_dt, volume_flux_tot(:,:,:)
     real(r8), intent(inout) :: volume_flux_sub(:,:,:)
