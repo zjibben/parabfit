@@ -1,24 +1,25 @@
+!=======================================================================
+! Purpose:
+!
+!   Define the main volume-tracking procedures.
+!
+!   Public Interface:
+!
+!     * call VOLUME_TRACK (Vof, Fluxing_Velocity, Volume_Flux_Sub)
+!
+!       Control routine for a piecewise-linear volume tracking of
+!       material interfaces, in which material interfaces are
+!       reconstructed as planes from local volume fraction data.
+!
+! Contains: VOLUME_TRACK
+!           INT_NORMAL
+!
+! Author(s): Stewart J. Mosso (sjm@lanl.gov)
+!            Douglas B. Kothe (dbk@lanl.gov)
+!            Matthew Williams (mww@lanl.gov)
+!=======================================================================
+
 module volume_track_module
-  !=======================================================================
-  ! Purpose:
-  !
-  !   Define the main volume-tracking procedures.
-  !
-  !   Public Interface:
-  !
-  !     * call VOLUME_TRACK (Vof, Fluxing_Velocity, Volume_Flux_Sub)
-  !
-  !       Control routine for a piecewise-linear volume tracking of
-  !       material interfaces, in which material interfaces are
-  !       reconstructed as planes from local volume fraction data.
-  !
-  ! Contains: VOLUME_TRACK
-  !           INT_NORMAL
-  !
-  ! Author(s): Stewart J. Mosso (sjm@lanl.gov)
-  !            Douglas B. Kothe (dbk@lanl.gov)
-  !            Matthew Williams (mww@lanl.gov)
-  !=======================================================================
   use kinds, only: r8
   use unstr_mesh_type
   use mesh_geom_type
@@ -32,17 +33,17 @@ module volume_track_module
   integer, parameter :: nvc = 8 ! number of vertices per cell
   integer, parameter :: alittle = epsilon(1.0_r8)
   integer, parameter :: cutvof = 1.0e-8_r8
-contains
 
+contains
   
-  subroutine material_flux_unit_test (plane_cell, face_fluxing_velocity, fluxex)
+  logical function material_flux_unit_test (plane_cell, face_fluxing_velocity, fluxex)
     use kinds, only: r8
     use hex_types, only: cell_data
     use locate_plane_module
     
     type(locate_plane_hex), intent(in) :: plane_cell
-    real(r8),               intent(in) :: fluxex, face_fluxing_velocity(:)
-
+    real(r8),               intent(in) :: fluxex(:), face_fluxing_velocity(:)
+    
     type(cell_data) :: cell
     real(r8)        :: mat_vol_flux(6), flux_vol_sum(6)
 
@@ -54,7 +55,10 @@ contains
     call material_volume_flux (mat_vol_flux, flux_vol_sum, plane_cell, cell, .true., face_fluxing_velocity, 1.0_r8, 0.5_r8)
     
     write(*,*) 'mat_vol_flux', mat_vol_flux,'exact: ',fluxex
-  end subroutine material_flux_unit_test
+
+    material_flux_unit_test = all(mat_vol_flux==fluxex)
+    
+  end function material_flux_unit_test
   
   !=======================================================================
   ! Purpose(s):
@@ -76,10 +80,10 @@ contains
     integer,          intent(in) :: nmat
     real(r8)                     :: volume_flux_sub(nmat, 6, mesh%ncell)
     
-    integer        :: ninterfaces, i
-    integer        :: nmat_in_cell(mesh%ncell)
-    real(r8)       :: int_norm(3,nmat,mesh%ncell)
+    integer         :: ninterfaces, i, nmat_in_cell(mesh%ncell)
+    real(r8)        :: int_norm(3,nmat,mesh%ncell)
     type(cell_data) :: cell
+    logical         :: verbose
     
     call start_timer ("Reconstruct/Advect")   ! Start the volume track timer
 
@@ -87,10 +91,15 @@ contains
     ninterfaces = maxval(Nmat_In_Cell) - 1         ! number of interfaces to process
     int_norm = interface_normal (Vof, mesh, gmesh) ! compute interface normal vectors for all the materials.
     
+    ! write(*,'(a,3es13.4)') 'norm1:     ',int_norm(:,1,8495)
+    ! write(*,'(a,3es13.4)') 'norm2:     ',int_norm(:,2,8495)
+    ! write(*,'(a,6es13.4)') 'flux_vel: ',fluxing_velocity(:,8495)
+    
     ! get the volume flux in every cell
     !$omp parallel do default(private) shared(volume_flux_sub,mesh,adv_dt,fluidRho,vof,int_norm,nmat_in_cell,nmat,fluxing_velocity,ninterfaces)
     do i = 1,mesh%ncell
-      call cell%init (mesh%x(:,mesh%cnode(:,i)), mesh%volume(i), mesh%area(mesh%cface(:,i)), mesh%normal(:,mesh%cface(:,i)))
+      verbose = .false.
+      call cell%init (mesh%x(:,mesh%cnode(:,i)), mesh%volume(i), mesh%area(mesh%cface(:,i)), mesh%normal(:,mesh%cface(:,i)), mesh%cfpar(i))
       volume_flux_sub(:,:,i) = cell_volume_flux (adv_dt, cell, fluidRho(i), vof(:,i), int_norm(:,:,i), nmat_in_cell(i), nmat, &
             fluxing_velocity(:,i), ninterfaces )
     end do ! cell loop
@@ -103,7 +112,6 @@ contains
   ! get the volume flux for every material in the given cell
   function cell_volume_flux (adv_dt, cell, fluidRho, vof, int_norm, nmat_in_cell, nmat, face_fluxing_velocity, ninterfaces)
     use hex_types,               only: cell_data
-    use truncate_volume_module,  only: truncvol_data
     use locate_plane_module,     only: locate_plane_hex
     use flux_volume_module,      only: flux_vol_quantity, flux_vol_vertices
     use logging_services
@@ -118,7 +126,6 @@ contains
     integer                 :: ni,f,locate_plane_niters,nlast
     logical                 :: is_mixed_donor_cell
     type(locate_plane_hex)  :: plane_cell
-    type(truncvol_data)     :: trunc_vol(nfc)
     type(flux_vol_quantity) :: Flux_Vol
     
     cell_volume_flux = 0.0_r8
@@ -148,6 +155,7 @@ contains
 
     ! get the id of the last material
     nlast = last_true_loc(vof > 0.0_r8)
+    if (nlast < 1) write(*,*) 'ERROR'
     
     ! Compute the advection volume for the last material.
     do f = 1,nfc
@@ -188,7 +196,7 @@ contains
     type(cell_data),        intent(in)    :: cell
     logical,                intent(in)    :: is_mixed_donor_cell
     
-    integer                 :: f,ff
+    integer                 :: f,ff, idbg
     real(r8)                :: vp, dvol
     type(truncvol_data)     :: trunc_vol(nfc)
     type(flux_vol_quantity) :: Flux_Vol
@@ -376,7 +384,7 @@ contains
     ! this could be modified and moved inside the following loop, although some effort would be duplicated that way
     phi_f = face_avg (vertex_avg (Phi, mesh, gmesh), mesh)
 
-    ! green-gauss method - this seems to be by far the most expensive loop
+    ! green-gauss method
     ! Loop over faces, accumulating the product
     ! Phi_f*Face_Normal for each area vector component
     gradient = 0.0_r8
@@ -449,8 +457,8 @@ contains
     X_vertex = X_vertex / sum_rvol
   end function vertex_avg
 
-
-  ! return the index of the last true element of mask
+  ! return the index of the last true element of a logical array
+  ! this function is used in a few different modules -- it may be a good idea to bring it into one module
   function last_true_loc (mask)
     logical, intent(in) :: mask(:)
     integer :: last_true_loc
@@ -460,10 +468,12 @@ contains
     do i = size(mask),1,-1
       if (mask(i)) then
         last_true_loc = i
-        exit
+        return
       end if
     end do
 
+    last_true_loc = 0
+    
   end function last_true_loc
   
 end module volume_track_module

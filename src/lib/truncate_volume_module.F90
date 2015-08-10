@@ -49,7 +49,7 @@ module truncate_volume_module
     real(r8) :: K(3)
     real(r8) :: Lambda, Nu, V1234
     real(r8) :: MUa(nvf), MUi(nvf)
-    real(r8) :: X(nvf,3)
+    real(r8) :: X(3,nvf)
     integer  :: MUp(nvf)
   end type truncvol_data
   
@@ -66,6 +66,7 @@ contains
   !=======================================================================
   type(truncvol_data) function face_param (cell, option, face, int_flux_vol_coord)
     use hex_types, only: reconstruction_hex, face_node
+    use cell_geometry, only: cross_product
     use logging_services
 
     class(reconstruction_hex), intent(in) :: cell
@@ -74,7 +75,7 @@ contains
     real(r8),     intent(in), optional :: int_flux_vol_coord(:,:)
 
     integer  :: i, j, n
-    real(r8) :: Tmp1(3), Tmp2(3)
+    real(r8) :: Tmp1(3)
 
     ! Store face vertices in an order that is
     !    counterclockwise relative to a direction
@@ -83,23 +84,18 @@ contains
     ! For option = 'full_cell', use the donor cell vertices (Cell_Coord)
     ! For option = 'flux_cell', use the vertices of the flux volume (Xv_flux)
     if (option == 'full_cell') then
-      face_param%X = transpose(cell%node(:,face_node(:,face)))
+      face_param%X = cell%node(:,face_node(:,face))
     else if (option == 'flux_cell') then
       if (.not.present(int_flux_vol_coord)) call LS_fatal('when calculating flux_cell face_param, int_flux_vol_coord is required')
-      face_param%X = transpose(int_flux_vol_coord(:,face_node(:,face)))
+      face_param%X = int_flux_vol_coord(:,face_node(:,face))
     end if
     
     ! Compute K   (the Area Vector of the ruled surface)
-    Tmp1(:) = face_param%X(3,:) - face_param%X(1,:)
-    Tmp2(:) = face_param%X(4,:) - face_param%X(2,:)
-
-    face_param%K(1) = Tmp1(2)*Tmp2(3) - Tmp1(3)*Tmp2(2)
-    face_param%K(2) = Tmp1(3)*Tmp2(1) - Tmp1(1)*Tmp2(3)
-    face_param%K(3) = Tmp1(1)*Tmp2(2) - Tmp1(2)*Tmp2(1)
-
+    face_param%K = cross_product (face_param%X(:,3)-face_param%X(:,1), face_param%X(:,4)-face_param%X(:,2))
+    
     ! Compute V1234
-    Tmp1(:) = face_param%X(1,:) - face_param%X(2,:) &
-         &  + face_param%X(3,:) - face_param%X(4,:)
+    Tmp1(:) = face_param%X(:,1) - face_param%X(:,2) &
+         +    face_param%X(:,3) - face_param%X(:,4)
     face_param%V1234 = 0.5_r8 * sum(Tmp1*face_param%K)
 
     ! Compute the Mu-i-s.  This is the normal of the interface dotted
@@ -109,7 +105,7 @@ contains
     ! pass through first, second, etc.  The variable Mu-p is the vertex
     ! number of the reordered distances.
     do j = 1,nvf
-      face_param%MUi(j) = sum(cell%Normal(:)*face_param%X(j,:))
+      face_param%MUi(j) = sum(cell%Normal(:)*face_param%X(:,j))
       face_param%MUp(j) = j
     end do
     face_param%MUa(:) = face_param%MUi(:)
@@ -164,14 +160,14 @@ contains
 
     ! The definition of Lambda is given in Eqn. 11.5 of Zemach-s notes.
     face_param%Lambda = face_param%MUi(2)*face_param%MUi(4) &
-         &            - face_param%MUi(1)*face_param%MUi(3)
+         -              face_param%MUi(1)*face_param%MUi(3)
 
     ! Nu is the face deviation vector dotted with the interface normal.
     ! If a face is a parallelogram, Nu (and B) will be zero.
     ! If a face is not a parallelogram, the magnitude of B measures
     ! the deviation from the parallelogram.
     face_param%Nu = face_param%MUi(1) - face_param%MUi(2) &
-         &        + face_param%MUi(3) - face_param%MUi(4)
+         +          face_param%MUi(3) - face_param%MUi(4)
   end function face_param
   
   !=======================================================================
@@ -216,7 +212,7 @@ contains
     real(r8) :: Y(nvf)
 
     Vf = 0.0_r8
-    Y = Y_function (cell, trunc_vol_face)
+    Y = Y_function (cell, trunc_vol_face%X)
 
     ! get intersection case
     if ( trunc_vol_face%MUa(1) < cell%rho .and. cell%Rho <= trunc_vol_face%MUa(2) .and. &
@@ -348,7 +344,7 @@ contains
 
     real(r8) :: Tmp(3)
 
-    Tmp = 0.25_r8*sum(trunc_vol_face%X(:,:), dim=1) - cell%rho*cell%normal(:)
+    Tmp = 0.25_r8*sum(trunc_vol_face%X(:,:), dim=2) - cell%rho*cell%normal(:)
     Q = sum( tmp * trunc_vol_face%K ) / 6.0_r8
 
   end function TRUNCATE_FACE_4
@@ -426,53 +422,86 @@ contains
   !
   ! This routine is called from truncate_face.
   !=======================================================================
-  function Y_FUNCTION (cell, trunc_vol_face)
+  function Y_FUNCTION (cell, x)
     use hex_types, only: reconstruction_hex
+    use cell_geometry, only: cross_product
 
     class(reconstruction_hex), intent(in) :: cell
-    type(truncvol_data),       intent(in) :: trunc_vol_face
+    real(r8),                  intent(in) :: x(:,:)
     real(r8)                              :: Y_FUNCTION(nvf)
 
-    integer, parameter :: ICMP = 1, JCMP = 2, KCMP = 3
-    real(r8), dimension(3) :: R1, R2, R3, R4, S1, S3
+    ! real(r8)           :: R1(3), R2(3), R3(3), R4(3), S1(3), S3(3)
+    
+    ! R4 = cell%rho * cell%normal
 
-    R4 = Cell%Rho * Cell%Normal
+    ! R1 = X(:,1) - R4
+    ! R2 = X(:,2) - R4
+    ! R3 = X(:,3) - R4
+    ! R4 = X(:,4) - R4
 
-    R1 = trunc_vol_face%X(1,:) - R4
-    R2 = trunc_vol_face%X(2,:) - R4
-    R3 = trunc_vol_face%X(3,:) - R4
-    R4 = trunc_vol_face%X(4,:) - R4
+    ! !  S1 = (X1 - Normal.Ro) X (X2 - Normal.Ro)
+    ! ! S1(1) = R1(2)*R2(3) - R1(3)*R2(2)
+    ! ! S1(2) = R1(3)*R2(1) - R1(1)*R2(3)
+    ! ! S1(3) = R1(1)*R2(2) - R1(2)*R2(1)
+    ! S1 = cross_product (R1,R2)
 
-    !  S1 = (X1 - Normal.Ro) X (X2 - Normal.Ro)
-    S1(ICMP) = R1(JCMP)*R2(KCMP) - R1(KCMP)*R2(JCMP)
-    S1(JCMP) = R1(KCMP)*R2(ICMP) - R1(ICMP)*R2(KCMP)
-    S1(KCMP) = R1(ICMP)*R2(JCMP) - R1(JCMP)*R2(ICMP)
+    ! !  S3 = (X3 - Normal.Ro) X (X4 - Normal.Ro)
+    ! ! S3(1) = R3(2)*R4(3) - R3(3)*R4(2)
+    ! ! S3(2) = R3(3)*R4(1) - R3(1)*R4(3)
+    ! ! S3(3) = R3(1)*R4(2) - R3(2)*R4(1)
+    ! S3 = cross_product (R3,R4)
 
-    !  S3 = (X3 - Normal.Ro) X (X4 - Normal.Ro)
-    S3(ICMP) = R3(JCMP)*R4(KCMP) - R3(KCMP)*R4(JCMP)
-    S3(JCMP) = R3(KCMP)*R4(ICMP) - R3(ICMP)*R4(KCMP)
-    S3(KCMP) = R3(ICMP)*R4(JCMP) - R3(JCMP)*R4(ICMP)
+    ! !  Y1 = (X4 - Normal.Ro) . (X1 - Normal.Ro) X (X2 - Normal.Ro)
+    ! Y_FUNCTION(1) = R4(1)*S1(1) + R4(2)*S1(2) + R4(3)*S1(3)
+
+    ! !  Y2 = (X1 - Normal.Ro) . (X2 - Normal.Ro) X (X3 - Normal.Ro)
+    ! !     However, we take advantage of the fact the vector identity:
+    ! !     A . B X C = C . A X B  which means that we don-t need to
+    ! !     compute the S2 vector as above.  We can use the S1 vector:
+    ! !     Y2 = (X3 - Normal.Ro) . (X1 - Normal.Ro) X (X2 - Normal.Ro)
+    ! Y_FUNCTION(2) = R3(1)*S1(1) + R3(2)*S1(2) + R3(3)*S1(3)
+
+    ! !  Y3 = (X2 - Normal.Ro) . (X3 - Normal.Ro) X (X4 - Normal.Ro)
+    ! Y_FUNCTION(3) = R2(1)*S3(1) + R2(2)*S3(2) + R2(3)*S3(3)
+
+    ! !  Y4 = (X3 - Normal.Ro) . (X4 - Normal.Ro) X (X1 - Normal.Ro)
+    ! !     However, we take advantage of the fact the vector identity:
+    ! !     A . B X C = C . A X B  which means that we don-t need to
+    ! !     compute the S4 vector as above.  We can use the S3 vector:
+    ! !     Y4 = (X1 - Normal.Ro) . (X3 - Normal.Ro) X (X4 - Normal.Ro)
+    ! Y_FUNCTION(4) = R1(1)*S3(1) + R1(2)*S3(2) + R1(3)*S3(3)
+    
+    integer  :: i
+    real(r8) :: R(3,4), S1(3), S3(3), tmp(3)
+
+    tmp = cell%rho*cell%normal
+    do i = 1,4
+      R(:,i) = x(:,i) - tmp
+    end do
+    
+    S1 = cross_product (R(:,1),R(:,2)) ! S1 = (X1 - Normal.Ro) X (X2 - Normal.Ro)
+    S3 = cross_product (R(:,3),R(:,4)) ! S3 = (X3 - Normal.Ro) X (X4 - Normal.Ro)
 
     !  Y1 = (X4 - Normal.Ro) . (X1 - Normal.Ro) X (X2 - Normal.Ro)
-    Y_FUNCTION(1) = R4(ICMP)*S1(ICMP) + R4(JCMP)*S1(JCMP) + R4(KCMP)*S1(KCMP)
+    Y_function(1) = sum( R(:,4)*S1 )
 
     !  Y2 = (X1 - Normal.Ro) . (X2 - Normal.Ro) X (X3 - Normal.Ro)
     !     However, we take advantage of the fact the vector identity:
     !     A . B X C = C . A X B  which means that we don-t need to
     !     compute the S2 vector as above.  We can use the S1 vector:
     !     Y2 = (X3 - Normal.Ro) . (X1 - Normal.Ro) X (X2 - Normal.Ro)
-    Y_FUNCTION(2) = R3(ICMP)*S1(ICMP) + R3(JCMP)*S1(JCMP) + R3(KCMP)*S1(KCMP)
+    Y_function(2) = sum( R(:,3)*S1 )
 
     !  Y3 = (X2 - Normal.Ro) . (X3 - Normal.Ro) X (X4 - Normal.Ro)
-    Y_FUNCTION(3) = R2(ICMP)*S3(ICMP) + R2(JCMP)*S3(JCMP) + R2(KCMP)*S3(KCMP)
+    Y_function(3) = sum( R(:,2)*S3 )
 
     !  Y4 = (X3 - Normal.Ro) . (X4 - Normal.Ro) X (X1 - Normal.Ro)
     !     However, we take advantage of the fact the vector identity:
     !     A . B X C = C . A X B  which means that we don-t need to
     !     compute the S4 vector as above.  We can use the S3 vector:
     !     Y4 = (X1 - Normal.Ro) . (X3 - Normal.Ro) X (X4 - Normal.Ro)
-    Y_FUNCTION(4) = R1(ICMP)*S3(ICMP) + R1(JCMP)*S3(JCMP) + R1(KCMP)*S3(KCMP)
-
+    Y_function(4) = sum( R(:,1)*S3 )
+    
   end function Y_FUNCTION
 
 end module truncate_volume_module

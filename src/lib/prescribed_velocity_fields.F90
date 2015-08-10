@@ -9,7 +9,6 @@
 !! June 2015
 !!
 
-
 module prescribed_velocity_fields
   use kinds, only: r8
   use logging_services
@@ -17,8 +16,6 @@ module prescribed_velocity_fields
   private
 
   public :: prescribed_velocity
-
-  !logical, public :: use_prescribed_velocity
 
 contains
 

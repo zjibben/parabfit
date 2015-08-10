@@ -125,22 +125,22 @@ contains
     end do
 
     if (any(Percnt < 0.0_r8) .or. any(Percnt > 1.0_r8)) then
-      do e = 1,8
-        write(*,'(a,3es15.4)') 'flux nodes:',flux_vol%xv(:,e)
-      end do
-      write(*,*) dist
-      do e = 1,4
-        ndotuedge = sum(cell%face_normal(:,face) * Uedge(:,e))
-        write(*,'(a,3es15.4)') 'ndotuedge: ',ndotuedge, -dist/(ndotuedge+alittle),percnt(e)
-      end do
+      ! do e = 1,8
+      !   write(*,'(a,3es15.4)') 'flux nodes:',flux_vol%xv(:,e)
+      ! end do
+      ! write(*,*) dist
+      ! do e = 1,4
+      !   ndotuedge = sum(cell%face_normal(:,face) * Uedge(:,e))
+      !   write(*,'(a,3es15.4)') 'ndotuedge: ',ndotuedge, -dist/(ndotuedge+alittle),percnt(e)
+      ! end do
       write(errmsg,'(a,3es13.6)') 'FLUX_VOL_VERTICES: invalid flux volume or inverted element; cell centroid =', &
            sum( cell%node, dim=2 ) / real(nvc,r8)
       call LS_fatal (errmsg)
     end if
 
     ! iterate to find the 4 other vertices that define the back end of the flux volume
-    mult = 1.0_r8
-    do iter = 1,flux_vol_iter_max
+    mult = 1.0_r8; iter = 1; volume = 1e10_r8;
+    do while (abs(flux_vol%vol - volume) > cutvof*cell%volume .and. iter<flux_vol_iter_max)
       ! loop over edges to adjust the vertices
       do e = 1,nvf
         ia = Edge_ends(1,e,face)
@@ -152,20 +152,19 @@ contains
       call eval_hex_volumes (flux_vol%xv, volume, tmp)
       ! volume = screwed_volume (Flux_Vol%Xv)
 
-      ! compare this volume with the actual Flux_Vol
-      if (abs(flux_vol%vol - volume) < cutvof*cell%volume) then
-        return
-      else ! increment multiplier for next iteration
-        Mult = Mult * Flux_Vol%Vol/volume
-      end if
+      ! increment multiplier for next iteration
+      Mult = Mult * Flux_Vol%Vol/volume
+      iter = iter+1
     end do
 
     ! print out a warning message if we iterated up to the maximum
-    write(errmsg,'(a,i0,a,es12.5,a,i0)') &
-         'Flux volume vertex iteration did not converge in ', flux_vol_iter_max,&
-         '. Maximum flux volume difference is ', abs(Flux_Vol%Vol-Volume) !,&
-    !' in cell '!, cell_index
-    call LS_warn (errmsg)
+    if (iter==flux_vol_iter_max) then
+      write(errmsg,'(a,i0,a,es12.5,a,i0)') &
+           'Flux volume vertex iteration did not converge in ', flux_vol_iter_max,&
+           '. Maximum flux volume difference is ', abs(Flux_Vol%Vol-Volume) !,&
+      !' in cell '!, cell_index
+      call LS_warn (errmsg)
+    end if
   end subroutine flux_vol_vertices
 
   ! <><><><><><><><><><><><> PRIVATE ROUTINES <><><><><><><><><><><><><><><>
@@ -190,21 +189,6 @@ contains
 
   !   ! Loop over the six faces of the flux volume
   !   do f = 1,6
-  !     ! select case (f)
-  !     ! case (1) ! Side 1 (vertices 4-8-7-3)
-  !     !   v1 = 8; v2 = 4; v3 = 7; v4 = 8; v5 = 3; v6 = 4
-  !     ! case (2) ! Side 2 (vertices 1-2-6-5)
-  !     !   v1 = 6; v2 = 2; v3 = 5; v4 = 6; v5 = 1; v6 = 2
-  !     ! case (3) ! Side 3 (vertices 4-1-5-8)
-  !     !   v1 = 5; v2 = 1; v3 = 8; v4 = 5; v5 = 4; v6 = 1
-  !     ! case (4) ! Side 4 (vertices 3-7-6-2)
-  !     !   v1 = 7; v2 = 3; v3 = 6; v4 = 7; v5 = 2; v6 = 3
-  !     ! case (5) ! Side 5 (vertices 4-3-2-1)
-  !     !   v1 = 3; v2 = 4; v3 = 2; v4 = 3; v5 = 1; v6 = 4
-  !     ! case (6) ! Side 6 (vertices 8-5-6-7)
-  !     !   v1 = 6; v2 = 5; v3 = 7; v4 = 6; v5 = 8; v6 = 5
-  !     ! end select
-      
   !     select case (f)
   !     case (1)
   !       v = face_node([2,1,3,2,4,1],f)
@@ -214,14 +198,11 @@ contains
   !       v = face_node([1,4,2,1,3,4],f)
   !     end select
       
-
   !     X1(:) = node(:,v(1)) + node(:,v(2))
   !     X2(:) = node(:,v(3)) + node(:,v(4))
   !     X3(:) = node(:,v(5)) + node(:,v(6))
 
-  !     Screwed_Volume = Screwed_Volume + X1(1)*(X2(2)*X3(3) - X3(2)*X2(3)) &
-  !          +                            X1(2)*(X3(1)*X2(3) - X2(1)*X3(3)) &
-  !          +                            X1(3)*(X2(1)*X3(2) - X3(1)*X2(2))
+  !     Screwed_Volume = Screwed_Volume + triple_product (x1,x2,x3)
   !   end do
 
   !   Screwed_Volume = Screwed_Volume / 12.0_r8
@@ -232,5 +213,5 @@ contains
   !     call LS_fatal (errmsg)
   !   end if
   ! end function screwed_volume
-
+  
 end module flux_volume_module

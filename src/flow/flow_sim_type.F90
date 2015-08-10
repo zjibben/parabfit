@@ -235,7 +235,7 @@ contains
     class(flow_sim), intent(inout) :: this
     real(r8), intent(in) :: dt,t
 
-    real(r8) :: flow_dt,tlocal
+    real(r8) :: flow_dt,tlocal,CFL
     integer :: ns_subcycles
     
     tlocal = 0.0_r8
@@ -254,8 +254,9 @@ contains
            this%ns_solver%use_prescribed_velocity, this%ns_solver%prescribed_velocity_case)
 
       ! update the timestep
+      CFL = 0.25_r8
       ns_subcycles = max(&
-           ceiling((dt-tlocal) / (0.25_r8*minval(this%mesh%volume**(1.0_r8/3.0_r8))/maxval(this%vof_solver%fluxing_velocity))),&
+           ceiling((dt-tlocal) / (CFL*minval(this%mesh%volume**(1.0_r8/3.0_r8))/maxval(this%vof_solver%fluxing_velocity))),&
            1)
       flow_dt = (dt-tlocal) / real(ns_subcycles,r8)
 
@@ -265,7 +266,7 @@ contains
       ! increment the local time
       tlocal = tlocal + flow_dt
     end do
-
+    
   end subroutine step
 
   !! This auxiliary subroutine writes the solution to a GMV format viz file.

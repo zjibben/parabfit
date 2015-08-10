@@ -50,9 +50,9 @@ contains
       do n = 1,mesh%ncell
         do f = 1,6
           ! face center is the average of the face node positions
-          face_center = sum( mesh%x(:,mesh%fnode(:,mesh%cface(f,n))), dim=2) / 4.0_r8 
+          face_center = sum(mesh%x(:,mesh%fnode(:,mesh%cface(f,n))), dim=2) / 4.0_r8 
           
-          fluxing_velocity(f,n) = sum( prescribed_velocity (face_center, t, prescribed_case) * gmesh%outnorm(:,f,n) )
+          fluxing_velocity(f,n) = sum(prescribed_velocity (face_center, t, prescribed_case) * gmesh%outnorm(:,f,n) )
         end do
       end do
       !$omp end parallel do

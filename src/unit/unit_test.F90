@@ -6,14 +6,15 @@ program unit_test
 
   type(locate_plane_hex) :: locate_plane
   real(r8) :: posXflow(6), posxyzn(3), posxyn(3), posxn(3)
+  logical  :: test_result
 
-  ! define face velocities
+  ! define face velocities [??, ??, -x, +x, ??, ??]
   posXflow = [ 0.0_r8, 0.0_r8, -1.0_r8, 1.0_r8, 0.0_r8, 0.0_r8 ]
 
   ! define normals
-  posxyzn = [1.0_r8, 1.0_r8, 1.0_r8] / sqrt(3.0_r8)
-  posxyn  = [1.0_r8, 1.0_r8, 0.0_r8] / sqrt(2.0_r8)
-  posxn   = [1.0_r8, 0.0_r8, 0.0_r8]
+  posxyzn = [1.0_r8, 1.0_r8, 1.0_r8] / sqrt(3.0_r8) ! positive x-y-z
+  posxyn  = [1.0_r8, 1.0_r8, 0.0_r8] / sqrt(2.0_r8) ! positive x-y plane
+  posxn   = [1.0_r8, 0.0_r8, 0.0_r8]                ! positive x-direction
 
   ! ! cube half filled along xyz diagonal
   ! call locate_plane%unit_test (posxyzn, 0.5_r8, sqrt(3.0_r8)/2.0_r8)
@@ -33,8 +34,31 @@ program unit_test
   
   ! cube 8/10ths filled in x direction
   write(*,*)
-  call locate_plane%unit_test (posxn, 0.8_r8, 0.8_r8)
-  call material_flux_unit_test (locate_plane,  0.25_r8*posXflow, 0.05_r8)
-  call material_flux_unit_test (locate_plane, -0.25_r8*posXflow, 0.25_r8)
+
+  test_result = locate_plane%unit_test (posxn, 0.8_r8, 0.8_r8)
+  write(*,*) 'passed locate_plane? ', test_result
   
+  test_result = material_flux_unit_test (locate_plane,  0.25_r8*posXflow, &
+       [0.0_r8, 0.0_r8, 0.0_r8, 0.05_r8, 0.0_r8, 0.0_r8])
+  write(*,*) 'passed material_flux +x? ', test_result
+
+  test_result = material_flux_unit_test (locate_plane, -0.25_r8*posXflow, &
+       [0.0_r8, 0.0_r8, 0.25_r8, 0.0_r8, 0.0_r8, 0.0_r8])
+  write(*,*) 'passed material_flux -x? ', test_result
+
+
+  ! cube 8/10ths filled in -x direction
+  write(*,*)
+  
+  test_result = locate_plane%unit_test (-posxn, 0.8_r8, -0.2_r8)
+  write(*,*) 'passed locate_plane? ', test_result
+  
+  test_result = material_flux_unit_test (locate_plane,  0.25_r8*posXflow, &
+       [0.0_r8, 0.0_r8, 0.0_r8, 0.25_r8, 0.0_r8, 0.0_r8])
+  write(*,*) 'passed material_flux +x? ', test_result
+
+  test_result = material_flux_unit_test (locate_plane, -0.25_r8*posXflow, &
+       [0.0_r8, 0.0_r8, 0.05_r8, 0.0_r8, 0.0_r8, 0.0_r8])
+  write(*,*) 'passed material_flux -x? ', test_result
+    
 end program unit_test

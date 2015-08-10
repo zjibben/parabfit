@@ -14,8 +14,6 @@ module hex_types
   implicit none
   private
 
-  public :: calculate_outward_normal ! this should really go somewhere else (maybe with the mesh?)
-  
   ! hex type to make divide and conquer algorithm simpler
   type, public :: base_hex
     real(r8) :: node(3,8), volume
@@ -79,10 +77,11 @@ module hex_types
   
 contains
   
-  subroutine init_cell_data (this, node, volume, face_area, face_normal)
+  subroutine init_cell_data (this, node, volume, face_area, face_normal, cfpar)
     class(cell_data), intent(out) :: this
     real(r8),         intent(in) :: node(3,8)
     real(r8),         intent(in), optional :: volume, face_area(6), face_normal(3,6)
+    integer,          intent(in), optional :: cfpar
 
     integer :: f
     
@@ -94,20 +93,16 @@ contains
       this%volume = this%calc_volume ()
     end if
 
-    if (present(face_area) .and. present(face_normal)) then
+    if (present(face_area) .and. present(face_normal) .and. present(cfpar)) then
       this%face_area = face_area
       do f = 1,6
         this%face_normal(:,f) = face_normal(:,f) / sqrt(sum(face_normal(:,f)**2)) ! normalize the input
+        if (btest(cfpar,f)) this%face_normal(:,f) = -this%face_normal(:,f) ! ensure the normals are outward facing
       end do
     else
       call this%calc_face_areas_and_normals ()
     end if
 
-    ! ensure the normals are outward facing
-    do f = 1,6
-      this%face_normal(:,f) = calculate_outward_normal (this%face_normal(:,f), sum(this%node, dim=2)/8.0_r8, &
-           sum(this%node(:,face_node(:,f)), dim=2)/4.0_r8)
-    end do
   end subroutine init_cell_data
 
   ! calculates the volume of a hex
@@ -129,6 +124,10 @@ contains
       this%face_normal(:,f) = quad_face_normal(this%node(:,face_node(:,f)))
       this%face_area(f) = vector_length(this%face_normal(:,f))
       this%face_normal(:,f) = this%face_normal(:,f) / sqrt(sum(this%face_normal(:,f)**2))
+
+      ! ensure the normals are outward facing
+      this%face_normal(:,f) = calculate_outward_normal (this%face_normal(:,f), sum(this%node, dim=2)/8.0_r8, &
+           sum(this%node(:,face_node(:,f)), dim=2)/4.0_r8)
     end do
     
   end subroutine calc_face_areas_and_normals

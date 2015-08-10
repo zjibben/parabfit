@@ -45,17 +45,12 @@ module locate_plane_module
 
 contains
 
-  subroutine unit_test (this, normal, vof, rhoex)
+  logical function unit_test (this, normal, vof, rhoex)
     class(locate_plane_hex), intent(out) :: this
     real(r8), intent(in) :: normal(3), vof, rhoex
 
     integer  :: iter
     real(r8) :: flux_vol_coord(3,8)
-
-    ! set a normal
-    this%normal = normal
-    !this%normal = [1.0_r8, 0.0_r8, 1.0_r8] / sqrt(2.0_r8)
-    !this%normal = [0.0_r8, 0.0_r8, 1.0_r8]
 
     ! set the nodes
     this%node(:,1) = [0.0_r8, 0.0_r8, 0.0_r8]
@@ -67,22 +62,23 @@ contains
     this%node(:,7) = [1.0_r8, 1.0_r8, 1.0_r8]
     this%node(:,8) = [0.0_r8, 1.0_r8, 1.0_r8]
 
-    ! set the volume
-    this%volume = this%calc_volume ()
-
-    ! set the vof
-    this%vof = vof
+    this%volume = this%calc_volume () ! set the volume
+    this%normal = normal              ! set the normal
+    this%vof = vof                    ! set the vof
 
     ! calculate the plane constant
     call this%locate_plane (iter)
 
     ! put a check here rather than a print
-    write(*,'(2(a,f14.10))') 'plane constant = ',this%rho,',     correct plane constant = ',rhoex
-  end subroutine unit_test
+    write(*,'(2(a,f14.10),L)') 'plane constant = ',this%rho,',     correct plane constant = ',rhoex
+    
+    unit_test = (this%rho==rhoex)
+    
+  end function unit_test
 
   subroutine init_locate_plane_hex (this, norm, vof, volume, node)
     class(locate_plane_hex), intent(out) :: this
-    real(r8),                intent(in) :: norm(3), vof, volume, node(3,8)
+    real(r8),                intent(in)  :: norm(3), vof, volume, node(3,8)
 
     this%normal = norm
     this%vof    = vof
@@ -113,7 +109,7 @@ contains
     integer,                 intent(out)   :: iter
 
     real(r8) :: Rho_Min, Rho_Max, V_Min, V_Max
-    type(truncvol_data), dimension(nfc) :: trunc_vol
+    type(truncvol_data) :: trunc_vol(nfc)
     
     ! Start the locate plane timer.
     ! WARNING: Need to figure out how to make this run in parallel with OpenMP.
@@ -151,9 +147,8 @@ contains
     real(r8), intent(out) :: Rho_Min, Rho_Max, V_min, V_max
     type(truncvol_data), intent(inout) :: trunc_vol(nfc)
 
-    integer :: f, n, v
-    real(r8), dimension(nvc) :: V_v
-    real(r8) :: Volume, Rho
+    integer  :: f, n, v
+    real(r8) :: V_v(nvc), Volume, Rho
 
     ! Initialize the bracketed values of truncation volume [V_Min,V_Max]
     ! and the associated plane constant [Rho_Min,Rho_Max]. 
@@ -269,9 +264,9 @@ contains
 
     ! Arguments
     class(locate_plane_hex), intent(inout)  :: this
-    integer                  , intent(out  )  :: iter
-    real(r8)             , intent(in)  :: Rho_Min, Rho_Max, V_Min, V_Max
-    type(truncvol_data), dimension(nfc), intent(in) :: trunc_vol
+    integer                , intent(out  )  :: iter
+    real(r8)           , intent(in)  :: Rho_Min, Rho_Max, V_Min, V_Max
+    type(truncvol_data), intent(in) :: trunc_vol(:)
 
     ! Local Variables
     integer, parameter :: volume_track_iter_max = 10
