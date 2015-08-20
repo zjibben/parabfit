@@ -237,6 +237,7 @@ contains
 
     real(r8) :: flow_dt,tlocal,CFL
     integer :: ns_subcycles
+    integer, save :: iter = 0
     
     tlocal = 0.0_r8
     
@@ -265,7 +266,9 @@ contains
 
       ! increment the local time
       tlocal = tlocal + flow_dt
+      iter = iter+1
     end do
+    write(*,*) 'cumulative iterations: ',iter
     
   end subroutine step
 

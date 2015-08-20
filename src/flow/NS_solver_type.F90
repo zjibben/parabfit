@@ -145,6 +145,170 @@ contains
     
   end subroutine set_initial_state
   
+  ! !=======================================================================
+  ! ! Purpose(s):
+  ! !
+  ! !   Navier-Stokes (NS) driver: increment NS equations by one time step.
+  ! !
+  ! !======================================================================
+  ! subroutine step (t)
+  !   use fluid_data_module,      only: fluid_flow, fluidRho, Solid_Face, &
+  !        isPureImmobile, fluidDeltaRho,      &
+  !        fluid_to_move, Fluxing_Velocity
+  !   use parameter_module,       only: ncells, nfc, ndim
+  !   use predictor_module,       only: PREDICTOR
+  !   use projection_data_module, only: Face_Density, mac_projection_iterations, &
+  !        prelim_projection_iterations
+  !   use projection_module,      only: PROJECTION
+  !   use property_module,        only: FLUID_PROPERTIES
+  !   use time_step_module,       only: cycle_number
+  !   use viscous_data_module,    only: prelim_viscous_iterations, &
+  !        viscous_iterations
+  !   use zone_module,            only: Zone
+
+  !   real(r8), intent(in) :: t
+    
+  !   integer :: status
+
+  !   if (.not.fluid_flow) return
+
+  !   allocate (Solid_Face(nfc,ncells), isPureImmobile(ncells), &
+  !        fluidDeltaRho(ncells), Face_Density(nfc,ncells), STAT = status)
+  !   if (status /= 0) call LS_fatal ('Navier-Stokes step: allocation failed')
+    
+  !   ! Evaluate cell properties excluding immobile materials, and
+  !   ! check that there are at least some flow equations to solve
+  !   fluidRho = 0.0_r8
+  !   call fluid_properties (fluid_to_move, t)
+
+  !   if (fluid_to_move) then
+  !     call predictor ()  ! Predictor Step
+  !     call projection () ! Projection Step
+      
+  !     if (cycle_number == 0) then
+  !       ! Special operations required during the prepass
+  !       prelim_projection_iterations = mac_projection_iterations
+  !       prelim_viscous_iterations = viscous_iterations
+  !       Zone%Vc = Zone%Vc_Old
+  !     end if
+  !   else
+  !     ! Everything solid; set velocities to zero and check again in the next timestep.
+  !     Fluxing_Velocity = 0
+  !     Zone%Vc = 0
+  !     Zone%Vc_Old = 0
+
+  !     if (cycle_number == 0) then
+  !       prelim_projection_iterations = 0
+  !       prelim_viscous_iterations = 0
+  !     end if
+  !   end if
+    
+  !   deallocate (Solid_Face,isPureImmobile,fluidDeltaRho,Face_Density)
+
+  ! end subroutine step
+  
+  ! !===============================================================================
+  ! ! Purpose(s):
+  ! !
+  ! !   Predictor phase of the incompressible Navier-Stokes solution
+  ! !   algorithm. This routine is the main driver for advancing the
+  ! !   cell-centered velocity from time "n" to time "*". The "*" time
+  ! !   level velocity field is an estimate of the "n+1" velocity field
+  ! !   without regard for the solenoidal constraint.
+  ! !
+  ! !   This routine basically completes the entire RHS for the momentum equations,
+  ! !   then calls SOLVE_FOR_VELOCITY to get the predicited velocity, i.e., the *
+  ! !   state.
+  ! !
+  ! !===============================================================================
+  ! subroutine predictor (dt)
+  !   use advection_module,        only: ADVECT_MOMENTUM
+  !   use body_data_module,        only: body_force_face_method
+  !   use body_force_module,       only: add_cell_body_force
+  !   use fluid_data_module,       only: fluidRho_n,           &
+  !        fluidVof, fluidVof_n,           &
+  !        Drag_Coefficient,               &
+  !        Mom_Delta,                      &
+  !        momentum_solidify_implicitness
+  !   use flow_phase_change,       only: have_solidifying_flow, solidified_rho
+  !   use parameter_module,        only: ncells, ndim
+  !   use porous_drag_data,        only: porous_flow
+  !   use porous_drag_module,      only: POROUS_DRAG
+  !   use timing_tree
+  !   use turbulence_module,       only: turbulence_model, TURBULENCE
+  !   use viscous_data_module,     only: inviscid, stokes, viscous_implicitness
+  !   use viscous_module,          only: viscousExplicit,viscousCleanup
+  !   use zone_module,             only: Zone
+  !   use surface_tension_module,  only: CSF, csf_tangential
+
+  !   real(r8), intent(in) :: dt
+
+  !   integer :: i, n
+  !   real(r8) :: tweight
+  !   logical :: solidifying_flow
+
+  !   call start_timer ("Predictor")
+
+  !   ! Initialize
+  !   Mom_Delta        = 0
+  !   Drag_Coefficient = 0
+
+  !   call predictorSetup (dt, Mom_Delta)
+
+  !   ! Explicit Pressure Gradient and Buoyant Force
+  !   call PressureExplicit (dt, Mom_Delta)
+
+  !   ! Explicit Viscous Stress.
+  !   if (.not.inviscid) then
+  !     call turbulence (turbulence_model)
+      
+  !     ! Add in the explicit evaluation of the Standard Newtonian stress tensor.
+  !     if (viscous_implicitness < 1) call viscousExplicit (dt, Mom_Delta)
+  !   end if
+    
+  !   ! MAC note: Here, there can be problems with the explicit term of the
+  !   ! momentum  sink due to solidification.  If the fluid velocity at time
+  !   ! level n is zero, there is no contribution to the sink term.  For this
+  !   ! reason, the recommended practice, for now, is to use
+  !   ! momentum_solidify_implicitness = 1.0.  This is the default.
+  !   tweight = 1.0 - momentum_solidify_implicitness
+  !   solidifying_flow = have_solidifying_flow ()
+    
+  !   do i = 1, mesh%ncell
+  !     ! Multiply Pressure Gradient and Viscous Stress by FluidVof
+  !     ! (This is a crude way to account for solid material within the cell.
+  !     ! In SOLVE_FOR_VELOCITY we also divide by FluidVof to account for
+  !     ! the mass of fluid in the cell, more or less canceling out this
+  !     ! term.  Momentum advection is specifically excluded because the VOF
+  !     ! is already accounting for the solid material.)
+  !     Mom_Delta(:,i) = FluidVof(i)*Mom_Delta(:,i)
+      
+  !     ! Advect Momentum... No real advection is done here, instead, the increment from
+  !     ! momentum advection is just accumulated into Mom_Delta.
+  !     if (.not.stokes) mom_delta(:,i) = mom_delta(:,i) + momentum_delta(:,i)
+      
+  !     ! calculate the RHS momentum change due to the solidification of fluid
+  !     if (solidifying_flow) Mom_Delta(:,i) = Mom_Delta(:,i) - tweight*solidified_rho(i)*Zone(i)%Vc(:)
+  !   end do
+
+  !   if (csf_tangential) call CSF (dt, Mom_Delta)      ! Tangential surface tension 
+  !   if (porous_flow) call porous_drag (dt, Mom_Delta) ! Porous drag
+  !   if (.not.body_force_face_method) call add_cell_body_force (dt, Mom_Delta) ! Add in the simple cell-centered body force
+
+  !   ! Complete the RHS terms in Mom_Delta by including the momentum at time 'n'
+  !   do i = 1, ncells
+  !     Mom_Delta(:,i) = Mom_Delta(:,i) + fluidRho_n(i)*fluidVof_n(i)*Zone(i)%Vc_old(:)
+  !   end do
+
+  !   ! Solve for Star time velocity 
+  !   call solve_for_velocity(Mom_Delta)
+
+  !   if (.not.inviscid) call viscousCleanup()
+
+  !   call stop_timer("Predictor")
+
+  ! end subroutine predictor
+
   ! subroutine test_initial_state (this, t, temp, dt, u, udot)
 
   !   class(NS_solver), intent(inout) :: this

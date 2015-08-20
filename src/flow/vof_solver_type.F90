@@ -102,7 +102,7 @@ contains
     ! these needs to be done appropriately and elsewhere
     ! for right now, this just exists so that we can run simple tests,
     ! without removing the branches of code that deal with more complex scenarios
-    allocate(boundary_flag(this%mesh%nface,this%mesh%ncell), is_void(this%nmat))
+    allocate(boundary_flag(6,this%mesh%ncell), is_void(this%nmat))
     boundary_flag = 0
     is_void = .false.
 

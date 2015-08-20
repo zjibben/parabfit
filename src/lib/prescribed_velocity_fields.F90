@@ -38,6 +38,8 @@ contains
       prescribed_velocity(1) = 0.5_r8 / 3.0_r8
     case (3) ! advecting plane in y-direction
       prescribed_velocity(2) = 0.5_r8 / 3.0_r8
+    case (4) ! constant in x-y-z direction
+      prescribed_velocity = 1.0_r8 / sqrt(3.0_r8)
     case default
       call LS_fatal ('unrecognized prescribed velocity field case')
     end select

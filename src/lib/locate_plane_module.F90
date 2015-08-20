@@ -33,7 +33,10 @@ module locate_plane_module
   integer, parameter :: ndim = 3
   integer, parameter :: nfc = 6 ! number of faces per cell
   integer, parameter :: nvc = 8 ! number of vertices per cell
-  
+  integer, parameter  :: volume_track_iter_max = 10
+  real(r8), parameter :: volume_track_iter_tol = 1.0d-8
+  real(r8), parameter :: alittle = epsilon(1.0_r8)
+
   type, extends(reconstruction_hex), public :: locate_plane_hex
   contains
     procedure :: unit_test
@@ -141,93 +144,65 @@ contains
   !   University Press, 1986), p. 253
   !=======================================================================
   subroutine rho_bracket (this, Rho_Min, Rho_Max, V_Min, V_Max, trunc_vol)
-    use truncate_volume_module, only: truncate_face,face_param,truncvol_data
+    use truncate_volume_module, only: truncate_volume,face_param,truncvol_data
 
     class(locate_plane_hex), intent(inout) :: this
-    real(r8), intent(out) :: Rho_Min, Rho_Max, V_min, V_max
-    type(truncvol_data), intent(inout) :: trunc_vol(nfc)
+    real(r8),                intent(out) :: Rho_Min, Rho_Max, V_min, V_max
+    type(truncvol_data),     intent(out) :: trunc_vol(:)
 
-    integer  :: f, n, v
-    real(r8) :: V_v(nvc), Volume, Rho
+    integer  :: f,v,i
+    real(r8) :: V_v(nvc), tmp
 
     ! Initialize the bracketed values of truncation volume [V_Min,V_Max]
-    ! and the associated plane constant [Rho_Min,Rho_Max]. 
-    V_v = 0.0_r8
-
-    ! Compute volumes truncated by the interface passing through each of the vertices.
-    FACE_LOOP: do f = 1,nfc
-
-      ! Compute and store face parameters.
-      trunc_vol(f) = face_param (this, 'full_cell', f)
-
-      VERTEX_LOOP: do v = 1,nvc
-
-        ! Get the value of Rho for this vertex.
-        This%Rho = sum(This%node(:,v) * This%Normal(:))
-
-        ! Get this face's contribution to the truncation volume.
-        Volume = truncate_face (this, trunc_vol(f))
-
-        V_v(v) = V_v(v) + Volume
-
-      end do VERTEX_LOOP
-
-    end do FACE_LOOP
-
+    ! and the associated plane constant [Rho_Min,Rho_Max]
+    
     ! Set up the limits on the volume bracketing. Make sure that
     ! V_v is bounded zero = V_Min <= V_v <= V_Max = Cell Volume.
     ! If V_v > Cell Volume (because of roundoff), set V_v = Cell Volume
-
     V_Min = 0.0_r8
     V_Max = This%Volume
-    Rho_Max = -HUGE(0.0_r8)
-    Rho_Min =  HUGE(0.0_r8)
 
-    ! If any V_v is outside of allowed bounds, force V_min <= V_v <= V_max
-    do v = 1,nvc
-      if (V_v(v) > V_Max )  V_v(v) = V_Max
-      if (V_v(v) < 0.0_r8)  V_v(v) = V_Min
-      Rho_Max = MAX(Rho_Max,V_v(v))
-      Rho_Min = MIN(Rho_Min,V_v(v))
+    ! Compute volumes truncated by the interface passing through each of the vertices.
+    do f = 1,nfc
+      ! Compute and store face parameters.
+      trunc_vol(f) = face_param (this, 'full_cell', f)
     end do
+    
+    do v = 1,nvc
+      ! Get the value of Rho for this vertex.
+      this%rho = sum(this%node(:,v) * this%normal(:))
 
-    ! Make sure that V_v = V_max for at least one vertex.
-    ! If not, then set the maximum V_v to V_max.
-    if (Rho_Max < V_Max) then
-      do v = 1,nvc
-        if (V_v(v) == Rho_Max) V_v(v) = V_Max
-      end do
-    end if
-
-    ! Make sure that V_v = V_min for at least one vertex.
-    ! If not, then set the minimum V_v to V_min.
-    if (Rho_Min > V_Min) then
-      do v = 1,nvc
-        if (V_v(v) == Rho_Min) V_v(v) = V_Min
-      end do
-    end if
+      ! get this vertex's truncation volume, and force it to lie between V_min and V_max
+      V_v(v) = min(max(truncate_volume (this, trunc_vol), V_min), V_max)
+    end do
+    
+    ! Make sure that V_v = V_max for at least one vertex,
+    ! and            V_v = V_min for at least one vertex
+    ! If not, then set the maximum V_v to V_max
+    ! and              the minimum V_v to V_min
+    if (maxval(V_v) < V_max) V_v( maxloc(V_v, dim=1) ) = V_max
+    if (minval(V_v) > V_min) V_v( minloc(V_v, dim=1) ) = V_min
 
     ! Now bracket Rho.
-    Rho_Max  =  HUGE(0.0_r8)
-    Rho_Min  = -HUGE(0.0_r8)
+    Rho_Max =  huge(0.0_r8)
+    Rho_Min = -huge(0.0_r8)
 
+    ! i = maxval(V_v, dim=1, mask = V_v<=this%vof*this%volume)
+    ! Rho_min = sum(this%node(:,i)*this%normal)
+    ! V_min = V_v(i)
+    
+    ! i = minval(V_v, dim=1, mask = V_v>this%vof*this%volume)
+    ! Rho_max = sum(this%node(:,i)*this%normal)
+    ! V_max = V_v(i)
+    
     do v = 1,nvc
-
-      ! Get the value of Rho for this vertex.
-      This%Rho = sum(This%node(:,v) * This%Normal(:))
-
-      if ((V_v(v) <= This%Vof*This%Volume .and. V_v(v) > V_Min) &
-           .or. V_v(v) == V_Min) then
-        Rho_Min = This%Rho
+      if ((V_min < V_v(v) .and. V_v(v) <= this%vof*this%volume) .or. V_v(v) == V_min) then
+        Rho_Min = sum(this%node(:,v)*this%normal) ! the value of rho for this vertex
         V_Min = V_v(v)
-      end if
-
-      if ((V_v(v) > This%Vof*This%Volume .and. V_v(v) < V_Max) &
-           .or. V_v(v) == V_Max) then
-        Rho_Max = This%Rho
+      else if ((this%vof*this%volume < V_v(v) .and. V_v(v) < V_max) .or. V_v(v) == V_max) then
+        Rho_Max = sum(this%node(:,v)*this%normal) ! the value of rho for this vertex
         V_Max = V_v(v)
       end if
-
     end do
 
     ! At this point, [V_Min,V_Max] brackets V_v, and [Rho_Min,Rho_Max]
@@ -235,51 +210,41 @@ contains
     ! bracketed volumes are monotonic, but the Rho's aren't necessarily
     ! monotonic, so make sure that Rho_Min < R_Max. Be sure to interchange
     ! V_Min and V_Max if R_Min and R_Max have to be interchanged.
-
-    if (Rho_Max < Rho_Min) then
-      Rho = Rho_Max
-      Volume = V_Max
-      Rho_Max = Rho_Min
-      V_Max = V_Min
-      Rho_Min = Rho
-      V_Min = Volume
+    if (Rho_max < Rho_min) then
+      tmp = Rho_max
+      Rho_max = Rho_min
+      Rho_min = tmp
+      
+      tmp = V_max
+      V_max = V_min
+      V_min = tmp
     end if
 
     ! If we haven't properly set Rho everywhere, punt.
-    if (Rho_Min == -HUGE(0.0_r8) .or. Rho_Max == HUGE(0.0_r8)) &
+    if (Rho_min == -huge(0.0_r8) .or. Rho_max == huge(0.0_r8)) &
          call LS_fatal ('RHO_BRACKET: unable to bracket plane constant Rho')
 
   end subroutine rho_bracket
-
+  
+  !=======================================================================
+  ! PURPOSE -
+  !   Compute the plane parameter Rho in the plane equation:
+  !                    X*Normal - Rho = 0
+  !   iteratively using Brents method as documented in Numerical
+  !   Recipes (Press, Flannery, Teukolsky and Vetterling; Cambridge
+  !   University Press, 1986), p. 253
+  !=======================================================================
   subroutine rho_brent (this, iter, Rho_Min, Rho_Max, V_Min, V_Max, trunc_vol)
-    !=======================================================================
-    ! PURPOSE -
-    !   Compute the plane parameter Rho in the plane equation:
-    !                    X*Normal - Rho = 0
-    !   iteratively using Brents method as documented in Numerical
-    !   Recipes (Press, Flannery, Teukolsky and Vetterling; Cambridge
-    !   University Press, 1986), p. 253
-    !=======================================================================
     use truncate_volume_module, only: truncate_volume, truncvol_data
 
-    ! Arguments
-    class(locate_plane_hex), intent(inout)  :: this
-    integer                , intent(out  )  :: iter
-    real(r8)           , intent(in)  :: Rho_Min, Rho_Max, V_Min, V_Max
-    type(truncvol_data), intent(in) :: trunc_vol(:)
-
-    ! Local Variables
-    integer, parameter :: volume_track_iter_max = 10
-    real(r8), parameter :: volume_track_iter_tol = 1.0d-8
-    real(r8), parameter :: alittle = epsilon(1.0_r8)
+    class(locate_plane_hex), intent(inout) :: this
+    integer,                 intent(out)   :: iter
+    real(r8),                intent(in)    :: Rho_Min, Rho_Max, V_Min, V_Max
+    type(truncvol_data),     intent(in)    :: trunc_vol(:)
 
     integer :: i
-    logical  :: Quad_intrp
-    real(r8) :: Rho_a, Rho_b, Rho_c, Rho_d,   &
-         Rho_e, Rho_mid, Rho_tol, V_a, &
+    real(r8) :: Rho_a, Rho_b, Rho_c, Rho_d, Rho_e, Rho_mid, Rho_tol, V_a, &
          V_b, V_c, P, Q, R, S
-
-    ! <><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><><>
 
     ! Initialize values before the iteration loop
     i = 0
@@ -296,14 +261,9 @@ contains
     V_a = V_Min - this%Vof*this%Volume
     V_b = V_Max - this%Vof*this%Volume
     V_c = V_b
-    Quad_intrp = .false.
-
+    
     ! Main iteration loop
-    do while (abs(V_b/max(this%Volume,alittle)) > volume_track_iter_tol &
-         .and. i < volume_track_iter_Max)
-
-      i = i + 1
-
+    do while (abs(V_b/max(this%Volume,alittle)) > volume_track_iter_tol .and. i < volume_track_iter_Max)
       if (V_b*V_c > 0.0_r8) then
         Rho_c = Rho_a
         V_c = V_a
@@ -311,7 +271,7 @@ contains
         Rho_e = Rho_d
       end if
 
-      if (ABS(V_c) < ABS(V_b)) then
+      if (abs(V_c) < abs(V_b)) then
         Rho_a = Rho_b
         Rho_b = Rho_c
         Rho_c = Rho_a
@@ -320,43 +280,37 @@ contains
         V_c = V_a
       end if
 
-      Rho_tol = 2.0_r8*alittle*ABS(Rho_b) + 0.5_r8*volume_track_iter_tol
+      Rho_tol = 2.0_r8*alittle*abs(Rho_b) + 0.5_r8*volume_track_iter_tol
       Rho_mid = 0.5_r8*(Rho_c - Rho_b)
 
-      if (ABS(Rho_mid) > Rho_tol .and. V_b /= 0.0_r8) Iter = i
+      if (abs(Rho_mid) > Rho_tol .and. V_b /= 0.0_r8) iter = i
 
-      Quad_intrp = ABS(Rho_e) >= Rho_tol .and. ABS(V_a) > ABS(V_b)
+      if (abs(Rho_e) >= Rho_tol .and. abs(V_a) > abs(V_b)) then
+        S = V_b/V_a
 
-      if (Quad_intrp) S = V_b/V_a
+        if (Rho_a == Rho_c) then
+          P = 2.0_r8*Rho_mid*S
+          Q = 1.0_r8 - S
+        else
+          Q = V_a/V_c
+          R = V_b/V_c
+          P = S*(2.0_r8*Rho_mid*Q*(Q - R) - (Rho_b - Rho_a)*(R - 1.0_r8))
+          Q = (Q - 1.0_r8)*(R - 1.0_r8)*(S - 1.0_r8)
+        end if
 
-      if (Quad_intrp .and. Rho_a == Rho_c) then
-        P = 2.0_r8*Rho_mid*S
-        Q = 1.0_r8 - S
-      end if
+        if (P > 0.0_r8)  Q = -Q
+        
+        P = abs(P)
+        R = min(3.0_r8*Rho_mid*Q - abs(Rho_tol*Q), abs(Rho_e*Q))
 
-      if (Quad_intrp .and. Rho_a /= Rho_c) then
-        Q = V_a/V_c
-        R = V_b/V_c
-        P = S*(2.0_r8*Rho_mid*Q*(Q - R) - (Rho_b - Rho_a)*(R - 1.0_r8))
-        Q = (Q - 1.0_r8)*(R - 1.0_r8)*(S - 1.0_r8)
-      end if
-
-      if (Quad_intrp .and. P > 0.0_r8) Q = -Q
-      if (Quad_intrp) P = ABS(P)
-
-      if (Quad_intrp) R = MIN(3.0_r8*Rho_mid*Q - ABS(Rho_tol*Q), ABS(Rho_e*Q))
-
-      if (Quad_intrp .and. 2.0_r8*P < R) then
-        Rho_e = Rho_d
-        Rho_d = P/Q
-      end if
-
-      if (Quad_intrp .and. 2.0_r8*P >= R) then
-        Rho_d = Rho_mid
-        Rho_e = Rho_d
-      end if
-
-      if (.not. Quad_intrp) then
+        if (2.0_r8*P < R) then
+          Rho_e = Rho_d
+          Rho_d = P/Q
+        else
+          Rho_d = Rho_mid
+          Rho_e = Rho_d
+        end if
+      else
         Rho_d = Rho_mid
         Rho_e = Rho_d
       end if
@@ -364,14 +318,15 @@ contains
       Rho_a = Rho_b ! Move last best guess to A
       V_a  = V_b
 
-      if (ABS(Rho_d) > Rho_tol) then ! Evaluate new trial root
+      if (abs(Rho_d) > Rho_tol) then ! Evaluate new trial root
         Rho_b = Rho_b + Rho_d
       else
-        Rho_b = Rho_b + SIGN(Rho_tol,Rho_mid)
+        Rho_b = Rho_b + sign(Rho_tol,Rho_mid)
       end if
       this%Rho = Rho_b
 
       V_b = truncate_volume (this, trunc_vol) - this%Vof*this%Volume
+      i = i + 1
     end do
 
     this%Rho = Rho_b

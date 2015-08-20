@@ -50,7 +50,7 @@ contains
     real(r8) :: tolerance
     type(dnc_hex) :: hex
     type(material_geometry) :: matl_init_geometry
-
+    
     ! first, determine the initial state provided by the user, and assign
     ! the function which will determine what points are inside the materials
     call matl_init_geometry%init(plist, matl_ids)

@@ -51,6 +51,7 @@ program flow_main
   close(inlun)
 
   !! Set up the simulation and run it.
+  call set_timer_type (realtime_timing)
   call start_timer ('simulation')
   call sim%init (params)
   call sim%run (stat, errmsg)

@@ -83,30 +83,27 @@ contains
     integer         :: ninterfaces, i, nmat_in_cell(mesh%ncell)
     real(r8)        :: int_norm(3,nmat,mesh%ncell)
     type(cell_data) :: cell
-    logical         :: verbose
     
-    call start_timer ("Reconstruct/Advect")   ! Start the volume track timer
+    call start_timer ("reconstruct/advect")   ! Start the volume track timer
 
     nmat_in_cell = count(vof > 0.0_r8, dim=1)      ! count the number of materials in each cell
-    ninterfaces = maxval(Nmat_In_Cell) - 1         ! number of interfaces to process
-    int_norm = interface_normal (Vof, mesh, gmesh) ! compute interface normal vectors for all the materials.
-    
-    ! write(*,'(a,3es13.4)') 'norm1:     ',int_norm(:,1,8495)
-    ! write(*,'(a,3es13.4)') 'norm2:     ',int_norm(:,2,8495)
-    ! write(*,'(a,6es13.4)') 'flux_vel: ',fluxing_velocity(:,8495)
+    ninterfaces = maxval(nmat_in_cell) - 1         ! number of interfaces to process
+    int_norm = interface_normal (vof, mesh, gmesh) ! compute interface normal vectors for all the materials.
     
     ! get the volume flux in every cell
-    !$omp parallel do default(private) shared(volume_flux_sub,mesh,adv_dt,fluidRho,vof,int_norm,nmat_in_cell,nmat,fluxing_velocity,ninterfaces)
+    !$omp parallel do default(private) shared(volume_flux_sub,mesh,adv_dt,fluidRho,vof,int_norm) &
+    !$omp shared(nmat_in_cell,nmat,fluxing_velocity,ninterfaces)
     do i = 1,mesh%ncell
-      verbose = .false.
-      call cell%init (mesh%x(:,mesh%cnode(:,i)), mesh%volume(i), mesh%area(mesh%cface(:,i)), mesh%normal(:,mesh%cface(:,i)), mesh%cfpar(i))
-      volume_flux_sub(:,:,i) = cell_volume_flux (adv_dt, cell, fluidRho(i), vof(:,i), int_norm(:,:,i), nmat_in_cell(i), nmat, &
-            fluxing_velocity(:,i), ninterfaces )
+      call cell%init (mesh%x(:,mesh%cnode(:,i)), mesh%volume(i), mesh%area(mesh%cface(:,i)), &
+           mesh%normal(:,mesh%cface(:,i)), mesh%cfpar(i))
+      volume_flux_sub(:,:,i) = cell_volume_flux (adv_dt, cell, fluidRho(i), vof(:,i), &
+           int_norm(:,:,i), nmat_in_cell(i), nmat, &
+           fluxing_velocity(:,i), ninterfaces )
     end do ! cell loop
     !$omp end parallel do
         
-    call stop_timer ("Reconstruct/Advect") ! Stop the volume track timer
-
+    call stop_timer ("reconstruct/advect") ! Stop the volume track timer
+    
   end function volume_track
 
   ! get the volume flux for every material in the given cell
@@ -145,7 +142,6 @@ contains
       if (is_mixed_donor_cell) then
         call plane_cell%init (int_norm(:,ni), vofint, cell%volume, cell%node)
         call plane_cell%locate_plane (locate_plane_niters)
-        !plane_cell%normal = -plane_cell%normal ! flux routines want the negative of the normal for some reason -zjibben
       end if
       
       ! calculate delta advection volumes for this material at each donor face and accumulate the sum
@@ -155,7 +151,6 @@ contains
 
     ! get the id of the last material
     nlast = last_true_loc(vof > 0.0_r8)
-    if (nlast < 1) write(*,*) 'ERROR'
     
     ! Compute the advection volume for the last material.
     do f = 1,nfc
@@ -256,12 +251,16 @@ contains
   !
   !=======================================================================
   function interface_normal (Vof, mesh, gmesh)
+    use timer_tree_type
+
     real(r8), intent(IN)  :: Vof(:,:)
     real(r8)              :: interface_normal(3,size(vof,1),size(vof,2))
     type(unstr_mesh), intent(in) :: mesh
     type(mesh_geom),  intent(in) :: gmesh
 
     integer :: m, n, mi, mid(2), nmat, nmat_in_cell
+
+    call start_timer ("normal calculation")
 
     nmat = size(vof, dim=1)
     
@@ -305,48 +304,43 @@ contains
         
         Interface_Normal(:,mid(2),n) = - Interface_Normal(:,mid(1),n)
       end if
+
+      do m = 1,nmat
+        ! Eliminate noise from the gradient
+        if (abs(Interface_Normal(1,m,n)) < alittle) Interface_Normal(1,m,n) = 0.0_r8
+        if (abs(Interface_Normal(2,m,n)) < alittle) Interface_Normal(2,m,n) = 0.0_r8
+        if (abs(Interface_Normal(3,m,n)) < alittle) Interface_Normal(3,m,n) = 0.0_r8
+
+        ! normalize
+        call normalize (interface_normal(:,m,n))
+      end do
+
     end do ! cell loop
     !$omp end parallel do
-        
-    ! Eliminate noise from the gradient
-    where (abs(Interface_Normal) < alittle) Interface_Normal = 0.0_r8
-        
-    ! normalize the gradient
-    do m = 1,nmat
-      call normalize (interface_normal(:,m,:))
-    end do
+
+    call stop_timer ("normal calculation")
     
   end function interface_normal
 
   subroutine normalize (n)
-    real(r8), intent(inout) :: n(:,:)
+    real(r8), intent(inout) :: n(:)
 
-    real(r8) :: tmp(size(n, dim=2))
+    real(r8) :: tmp
+    integer :: i
 
     ! calculate the denominator
-    tmp = sqrt(n(1,:)**2 + n(2,:)**2 + n(3,:)**2)
+    tmp = sqrt(sum(n**2))
 
     ! invert when it won't blow up
-    where (abs(tmp) > alittle)
-      tmp = 1.0_r8/Tmp
-    elsewhere
-      tmp = 1.0_r8
-    end where
-
-    ! normalize
-    n(1,:) = n(1,:) * tmp
-    n(2,:) = n(2,:) * tmp
-    n(3,:) = n(3,:) * tmp
-
+    if (abs(tmp) > alittle)  n = n/tmp
+    
     ! set tiny components to zero
-    where (abs(n) < 1.0d-6) n = 0.0_r8
+    if (abs(n(1)) < 1.0d-6)  n(1) = 0.0_r8
+    if (abs(n(2)) < 1.0d-6)  n(2) = 0.0_r8
+    if (abs(n(3)) < 1.0d-6)  n(3) = 0.0_r8
 
     ! set all components to 1.0 in pure cells
-    where (n(1,:) == 0.0_r8 .and. n(2,:) == 0.0_r8 .and. n(3,:) == 0.0_r8)
-      n(1,:) = 1.0_r8
-      n(2,:) = 1.0_r8
-      n(3,:) = 1.0_r8
-    end where
+    if (all(n == 0.0_r8)) n = 1.0_r8
     
   end subroutine normalize
 
@@ -370,6 +364,8 @@ contains
   !
   !=======================================================================
   function gradient (Phi, mesh, gmesh)
+    use timer_tree_type
+
     real(r8), intent(in)         :: Phi(:)
     real(r8)                     :: gradient(3,size(phi))
     type(unstr_mesh), intent(in) :: mesh
@@ -377,6 +373,8 @@ contains
 
     integer  :: f,i
     real(r8) :: Phi_f(mesh%nface)
+
+    call start_timer("gradient")
 
     ! compute face average of phi
     ! this is calculated through the average of node values at a face
@@ -387,23 +385,28 @@ contains
     ! green-gauss method
     ! Loop over faces, accumulating the product
     ! Phi_f*Face_Normal for each area vector component
-    gradient = 0.0_r8
     
     !$omp parallel do default(private) shared(gradient,phi_f,mesh,gmesh)
     do i = 1,mesh%ncell
       ! Accumulate the dot product
+      gradient(:,i) = 0.0_r8
       do f = 1,nfc
         Gradient(:,i) = Gradient(:,i) + gmesh%outnorm(:,f,i)*mesh%area(mesh%cface(f,i))*Phi_f(mesh%cface(f,i))
+        !Gradient(:,i) = Gradient(:,i) + gmesh%outnorm(:,f,i)*mesh%area(mesh%cface(f,i))* face_avg2(phi,mesh%cface(f,i), mesh, gmesh)
       end do
 
       ! Normalize by cell volume
       Gradient(:,i) = Gradient(:,i) / mesh%volume(i)
       
       ! Eliminate noise
-      where (abs(gradient(:,i)) <= alittle) gradient(:,i) = 0.0_r8
+      if (abs(gradient(1,i)) <= alittle) gradient(1,i) = 0.0_r8
+      if (abs(gradient(2,i)) <= alittle) gradient(2,i) = 0.0_r8
+      if (abs(gradient(3,i)) <= alittle) gradient(3,i) = 0.0_r8
     end do
     !$omp end parallel do
-        
+
+    call stop_timer("gradient")
+
   end function gradient
 
   function face_avg (x_vtx, mesh) result(x_face)
@@ -421,6 +424,24 @@ contains
     !$omp end parallel do
 
   end function face_avg
+
+  real(r8) function face_avg2 (x_cell, f, mesh, gmesh)
+    real(r8), intent(in) :: x_cell(:)
+    integer, intent(in) :: f
+    type(unstr_mesh), intent(in) :: mesh
+    type(mesh_geom), intent(in) :: gmesh
+    
+    integer :: v,n
+
+    face_avg2 = 0.0_r8
+    do v = 1,4
+      n = mesh%fnode(v,f)
+      face_avg2 = face_avg2 + sum( X_cell(gmesh%vcell(:,n)) / mesh%volume(gmesh%vcell(:,n)), mask=gmesh%vcell(:,n) /= -1) &
+           /                  sum(                   1.0_r8 / mesh%volume(gmesh%vcell(:,n)), mask=gmesh%vcell(:,n) /= -1)
+    end do
+    face_avg2 = face_avg2 / 4.0_r8
+    
+  end function face_avg2
   
   !=======================================================================
   ! Purpose(s):
@@ -436,25 +457,16 @@ contains
     type(mesh_geom),  intent(in) :: gmesh
     real(r8)                     :: X_vertex(mesh%nnode)
 
-    integer  :: i,n
-    real(r8) :: sum_rvol(mesh%nnode)
+    integer  :: n
 
     ! calculate the inverse sum of inverse volumes
-    X_vertex = 0.0_r8; sum_rvol = 0.0_r8
-
-    !$omp parallel do default(private) shared(X_vertex, sum_rvol, X_cell, gmesh, mesh)
+    !$omp parallel do default(private) shared(X_vertex, X_cell, gmesh, mesh)
     do n = 1,mesh%nnode
-      do i = 1,8
-        if (gmesh%vcell(i,n) /= -1) then
-          X_vertex(n) = X_vertex(n) + X_cell(gmesh%vcell(i,n)) / mesh%volume(gmesh%vcell(i,n))
-          sum_rvol(n) = sum_rvol(n) + 1.0_r8 / mesh%volume(gmesh%vcell(i,n))
-        end if
-      end do
+      X_vertex(n) = sum( X_cell(gmesh%vcell(:,n)) / mesh%volume(gmesh%vcell(:,n)), mask=gmesh%vcell(:,n) /= -1) &
+           /        sum(                   1.0_r8 / mesh%volume(gmesh%vcell(:,n)), mask=gmesh%vcell(:,n) /= -1)
     end do
     !$omp end parallel do
-
-    ! X_vertex: Vertex-averaged X_cell
-    X_vertex = X_vertex / sum_rvol
+    
   end function vertex_avg
 
   ! return the index of the last true element of a logical array
