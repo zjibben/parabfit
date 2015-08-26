@@ -119,7 +119,7 @@ contains
     class(cell_data), intent(inout) :: this
 
     integer :: f
-
+    
     do f = 1,6
       this%face_normal(:,f) = quad_face_normal(this%node(:,face_node(:,f)))
       this%face_area(f) = vector_length(this%face_normal(:,f))

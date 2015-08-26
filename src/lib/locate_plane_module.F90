@@ -114,7 +114,6 @@ contains
     real(r8) :: Rho_Min, Rho_Max, V_Min, V_Max
     type(truncvol_data) :: trunc_vol(nfc)
     
-    ! Start the locate plane timer.
     ! WARNING: Need to figure out how to make this run in parallel with OpenMP.
     !          Currently, the timer is a global variable.
     !call start_timer ("Locate Plane")
@@ -128,7 +127,6 @@ contains
     ! using Brents method iteration
     call rho_brent (this, iter, Rho_Min, Rho_Max, V_Min, V_Max, trunc_vol)
 
-    ! Stop the locate plane timer.
     !call stop_timer("Locate Plane")
 
   end subroutine locate_plane
