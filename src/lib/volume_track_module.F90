@@ -34,6 +34,8 @@ module volume_track_module
   integer, parameter :: alittle = epsilon(1.0_r8)
   integer, parameter :: cutvof = 1.0e-8_r8
 
+  logical, parameter :: using_mic = .false.
+
 contains
   
   logical function material_flux_unit_test (plane_cell, face_fluxing_velocity, fluxex)
@@ -73,49 +75,61 @@ contains
   subroutine volume_track (volume_flux_sub, adv_dt, mesh, gmesh, Vof, fluxing_velocity, nmat, fluidRho) !result(volume_flux_sub)
     use timer_tree_type
     use hex_types, only: cell_data
+    !use devices,   only: using_mic
     
     real(r8),         intent(in) :: adv_dt, vof(:,:), fluxing_velocity(:,:), fluidrho(:)
     type(unstr_mesh), intent(in) :: mesh
     type(mesh_geom),  intent(in) :: gmesh
     integer,          intent(in) :: nmat
-    real(r8),         intent(out) :: volume_flux_sub(nmat, 6, mesh%ncell)
+    real(r8),         intent(out) :: volume_flux_sub(:,:,:)
+    !real(r8)                      :: volume_flux_sub(nmat, 6, mesh%ncell)
     
-    integer         :: ninterfaces, i, nmat_in_cell
-    !real(r8)        :: int_norm(3,nmat,mesh%ncell)
-    real(r8)        :: int_norm(3,nmat)
+    integer         :: ninterfaces, i, nmat_in_cell !(mesh%ncell)
+    real(r8), allocatable :: int_norm_global(:,:,:)
+    
+    real(r8)        :: int_norm(3,nmat) !, int_norm_global(3,nmat,mesh%ncell)
     type(cell_data) :: cell
 
-    !call start_timer ("reconstruct/advect")   ! Start the volume track timer
+    !!$omp barrier
 
     !nmat_in_cell = count(vof > 0.0_r8, dim=1)      ! count the number of materials in each cell
-    ninterfaces = size(vof, dim=1) !maxval(nmat_in_cell) - 1         ! number of interfaces to process
-    !int_norm = interface_normal (vof, mesh, gmesh) ! compute interface normal vectors for all the materials.
+    !ninterfaces  = maxval(nmat_in_cell) - 1         ! number of interfaces to process
+    ninterfaces = size(vof, dim=1) - 1
     
     ! get the volume flux in every cell
-    !!$omp parallel do default(private) shared(volume_flux_sub,mesh,adv_dt,fluidRho,vof,int_norm) &
-    !!$omp parallel do default(private) shared(volume_flux_sub,mesh,adv_dt,fluidRho,vof,gmesh) &
-    !!$omp shared(nmat_in_cell,nmat,fluxing_velocity,ninterfaces)
-    !$omp do
-    do i = 1,mesh%ncell
-      nmat_in_cell = count(vof(:,i) > 0.0_r8)
-      int_norm = interface_normal_cell (vof, i, mesh, gmesh)
-      call cell%init (mesh%x(:,mesh%cnode(:,i)), mesh%volume(i), mesh%area(mesh%cface(:,i)), &
-           mesh%normal(:,mesh%cface(:,i)), mesh%cfpar(i))
-      volume_flux_sub(:,:,i) = cell_volume_flux (adv_dt, cell, fluidRho(i), vof(:,i), &
-           int_norm(:,:), nmat_in_cell, nmat, &
-           fluxing_velocity(:,i), ninterfaces )
-      ! if (i==32713) then
-      !   write(*,*) 'fl',volume_flux_sub(:,:,i)
-      !   write(*,*) 'dt',adv_dt
-      !   write(*,*) 'n',int_norm
-      !   write(*,*) 'v',fluxing_velocity(:,i)*adv_dt
-      !   write(*,*) 'vof',vof(:,i)
-      ! end if
-    end do
-    !$omp end do nowait
-    !!$omp end parallel do
+    if (using_mic) then
+      !$omp do
+      do i = 1,mesh%ncell
+        nmat_in_cell = count(vof(:,i) > 0.0_r8)
+        int_norm = interface_normal_cell (vof, i, mesh, gmesh)
+        call cell%init (mesh%x(:,mesh%cnode(:,i)), mesh%volume(i), mesh%area(mesh%cface(:,i)), &
+             mesh%normal(:,mesh%cface(:,i)), mesh%cfpar(i))
+        volume_flux_sub(:,:,i) = cell_volume_flux (adv_dt, cell, fluidRho(i), vof(:,i), &
+             int_norm(:,:), nmat_in_cell, nmat, &
+             fluxing_velocity(:,i), ninterfaces )
+      end do
+      !$omp end do nowait
+    else
+      allocate(int_norm_global(3,nmat,mesh%ncell))
+      int_norm_global = interface_normal (vof, mesh, gmesh) ! compute interface normal vectors for all the materials.
+      call start_timer ("reconstruct/advect")   ! Start the volume track timer
 
-    !call stop_timer ("reconstruct/advect") ! Stop the volume track timer
+      ! !$omp parallel do default(private) shared(volume_flux_sub,mesh,adv_dt,fluidRho,vof,gmesh) &
+      !$omp parallel do default(private) shared(volume_flux_sub,mesh,adv_dt,fluidRho,vof,int_norm_global) &
+      !$omp shared(nmat,fluxing_velocity,ninterfaces) !,nmat_in_cell)
+      do i = 1,mesh%ncell
+        nmat_in_cell = count(vof(:,i) > 0.0_r8)
+        call cell%init (mesh%x(:,mesh%cnode(:,i)), mesh%volume(i), mesh%area(mesh%cface(:,i)), &
+             mesh%normal(:,mesh%cface(:,i)), mesh%cfpar(i))
+        volume_flux_sub(:,:,i) = cell_volume_flux (adv_dt, cell, fluidRho(i), vof(:,i), &
+             int_norm_global(:,:,i), nmat_in_cell, nmat, &
+             fluxing_velocity(:,i), ninterfaces )
+      end do
+      !$omp end parallel do
+
+      deallocate(int_norm_global)
+      call stop_timer ("reconstruct/advect") ! Stop the volume track timer
+    end if
     
   end subroutine volume_track
 
@@ -125,9 +139,10 @@ contains
     use locate_plane_module, only: locate_plane_hex
     use flux_volume_module,  only: flux_vol_quantity, flux_vol_vertices
     use logging_services
-    
-    real(r8), intent(in)        :: adv_dt, int_norm(:,:), vof(:), fluidRho, face_fluxing_velocity(6)
-    integer,  intent(in)        :: ninterfaces, nmat_in_cell, nmat
+    use timer_tree_type
+
+    real(r8),        intent(in) :: adv_dt, int_norm(:,:), vof(:), fluidRho, face_fluxing_velocity(6)
+    integer,         intent(in) :: ninterfaces, nmat_in_cell, nmat
     type(cell_data), intent(in) :: cell
     real(r8)                    :: cell_volume_flux(nmat,6)
 
@@ -137,7 +152,9 @@ contains
     logical                 :: is_mixed_donor_cell
     type(locate_plane_hex)  :: plane_cell
     type(flux_vol_quantity) :: Flux_Vol
-    
+
+    !call start_timer ("ra_cell")
+
     cell_volume_flux = 0.0_r8
     flux_vol_sum = 0.0_r8
 
@@ -164,7 +181,8 @@ contains
 
     ! get the id of the last material
     nlast = last_true_loc(vof > 0.0_r8)
-    
+
+    !call start_timer ("last_loop")
     ! Compute the advection volume for the last material.
     do f = 1,nfc
       ! Recalculate the total flux volume for this face.
@@ -187,6 +205,9 @@ contains
         if (dvol > cutvof*cell%volume) cell_volume_flux(nlast,f) = dvol
       end if
     end do ! face loop
+    !call stop_timer ("last_loop")
+
+    !call stop_timer ("ra_cell")
 
   end function cell_volume_flux
 
@@ -196,7 +217,8 @@ contains
     use locate_plane_module,    only: locate_plane_hex
     use truncate_volume_module, only: truncate_volume, face_param, truncvol_data
     use flux_volume_module,     only: flux_vol_quantity, flux_vol_vertices
-    
+    use timer_tree_type
+
     real(r8),               intent(out)   :: mat_vol_flux(:)
     real(r8),               intent(inout) :: flux_vol_sum(:)
     real(r8),               intent(in)    :: face_fluxing_velocity(:), adv_dt, vof
@@ -208,6 +230,8 @@ contains
     real(r8)                :: vp, dvol
     type(truncvol_data)     :: trunc_vol(nfc)
     type(flux_vol_quantity) :: Flux_Vol
+
+    !call start_timer ("material_flux_vol")
 
     mat_vol_flux = 0.0_r8
 
@@ -253,7 +277,9 @@ contains
       mat_vol_flux(f) = dvol
       Flux_Vol_Sum(f) = Flux_Vol_Sum(f) + dvol
     end do ! face loop
-    
+
+    !call stop_timer ("material_flux_vol")
+
   end subroutine material_volume_flux
   
   !=======================================================================

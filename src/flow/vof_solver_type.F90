@@ -55,6 +55,8 @@ module vof_solver_type
   logical, allocatable :: is_void(:)
   real(r8), parameter :: cutvof = 1.0e-8_r8
   integer, parameter :: nfc = 6 ! number of faces per cell
+
+  logical, parameter :: using_mic = .false.
   
   ! local warning message flags
   integer,  save :: WLimit     = 10
@@ -257,30 +259,25 @@ contains
     real(r8) :: Volume_Flux_Sub(this%nmat, 6, this%mesh%ncell) ! keeps track of volume changes in every subcycle
     real(r8) :: volume_flux_tot(this%nmat, 6, this%mesh%ncell)
     
-    ! Start the volume advection timer.
     call start_timer("Volume Tracking")
     
-    ! Zero the total flux array.
+    ! Zero the total flux array
     volume_flux_tot = 0.0_r8
 
     ! Set the advection timestep. this can be improved.
     volume_track_subcycles = 2
     adv_dt = dt/real(volume_track_subcycles,r8)
-    
-    do p = 1,volume_track_subcycles
 
-      !!$omp parallel default(private) shared(adv_dt, this%mesh, this%gmesh, this%vof, this%fluxing_velocity) &
-      !!$omp shared(this%nmat, this%fluidRho, vof_n, volume_flux_tot, volume_flux_sub)
-      
-      !$omp parallel default(private) shared(adv_dt, this, vof_n, volume_flux_tot, volume_flux_sub)
+    !!$omp parallel if(using_mic) default(private) shared(adv_dt, this, vof_n, volume_flux_tot, volume_flux_sub, volume_track_subcycles)
+    do p = 1,volume_track_subcycles
       
       ! Get the donor fluxes.
       call volume_track (volume_flux_sub, adv_dt, this%mesh, this%gmesh, this%vof, this%fluxing_velocity, this%nmat, this%fluidRho)
+      
+      !$omp parallel if(.not.using_mic) default(private) shared(adv_dt, this, vof_n, volume_flux_tot, volume_flux_sub)
 
-      !write(*,*) 'here'
       ! Normalize the donor fluxes.
       call flux_renorm (this%fluxing_velocity, Vof_n, Volume_Flux_Tot, Volume_Flux_Sub, adv_dt, this%mesh)
-      !write(*,*) 'here2'
       
       ! Compute the acceptor fluxes.
       call flux_acceptor (volume_flux_sub, this%gmesh)
@@ -288,20 +285,18 @@ contains
       ! Compute BC (inflow) fluxes.
       call flux_bc (this%fluxing_velocity, vof_n, volume_flux_sub, adv_dt, this%mesh, this%gmesh)
       
-      ! Add the volume fluxes from this subcycle (Volume_Flux_Sub) to the
-      ! total flux array (Volume_Flux_Tot), and update the volume fraction array (Vof).
+      ! Add the volume fluxes from this subcycle to the  total flux array and update the volume fraction array
       call volume_advance (Volume_Flux_Sub, volume_flux_tot, this%vof, this%mesh%volume)
       
-      ! Make sure volume fractions of a particular material are within
-      ! the allowed range (0 <= Vof <= 1) and that all materials sum to one.
+      ! Ensure volume fractions of each material are within 0 and 1 and that all materials sum to one
       call vof_bounds (this%vof, volume_flux_tot, this%mesh)
 
       !$omp end parallel
-      
+            
       !write(*,*) 'completed subcycle, dt =',adv_dt
     end do
+    !!$omp end parallel
 
-    ! Stop the volume advection timer.
     call stop_timer("Volume Tracking")
 
   end subroutine advect_volume
@@ -327,7 +322,7 @@ contains
 
     integer :: n,ierr
 
-    !$omp do !default(private) shared(volume_flux_sub, volume_flux_tot, fluxing_velocity, vof_n, adv_dt, mesh)
+    !$omp do
     do n = 1,mesh%ncell
       call renorm_cell (volume_flux_sub(:,:,n), volume_flux_tot(:,:,n), vof_n(:,n), &
            adv_dt*Fluxing_Velocity(:,n)*mesh%area(mesh%cnode(:,n)), mesh%volume(n), ierr)
@@ -337,7 +332,7 @@ contains
         call LS_fatal ('FLUX_RENORM: cannot reassign face flux to any other material')
       end if
     end do ! cell loop
-    !$omp end do
+    !$omp end do nowait
     
   end subroutine flux_renorm
 
@@ -467,7 +462,7 @@ contains
     real(r8) :: flux_vol
     integer  :: f,n,fid
 
-    !$omp do !default(private) shared(mesh,gmesh,adv_dt,fluxing_velocity,volume_flux_sub,vof_n)
+    !$omp do
     do n = 1,mesh%ncell ! loop over all cells and faces
       do f = 1,6
         fid = mesh%cface(f,n)
@@ -501,10 +496,10 @@ contains
 
     real(r8) :: acceptor_flux
     integer :: m,n,f,nf,nc
-
+    
     !$omp barrier
-
-    !$omp do !default(private) shared(volume_flux_sub,gmesh)
+    
+    !$omp do
     do n = 1,size(volume_flux_sub, dim=3) ! loop through cells
       do f = 1,6                          ! loop through faces
         nc = gmesh%cneighbor(f,n)         ! neighbor cell id
@@ -529,7 +524,7 @@ contains
 
     integer :: f,m,n
     
-    !$omp do !default(private) shared(vof,volume_flux_sub,volume,volume_flux_tot)
+    !$omp do
     do n = 1,size(vof, dim=2)
 
       volume_flux_tot(:,:,n) = volume_flux_tot(:,:,n) + volume_flux_sub(:,:,n)
@@ -541,7 +536,7 @@ contains
       end do
     end do
     !$omp end do nowait
-
+    
   end subroutine volume_advance
   
   !=======================================================================
@@ -560,7 +555,7 @@ contains
 
     nmat = size(vof,dim=1)
 
-    !$omp do !default(private) shared(vof,mesh,volume_flux_tot)
+    !$omp do
     do n = 1,mesh%ncell
       ! make sure individual material vofs are within bounds
       do m = 1,nmat
@@ -628,7 +623,7 @@ contains
 
     end do ! cells
     !$omp end do nowait
-
+    
   end subroutine vof_bounds
     
   !=======================================================================

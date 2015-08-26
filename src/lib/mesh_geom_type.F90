@@ -80,14 +80,18 @@ contains
 
     j = 1
     cells_neighboring_vertices = -1 
-
+    
+    !!$omp parallel do default(private) shared(mesh,cells_neighboring_vertices,j)
     do i = 1,mesh%ncell ! loop through all cells
       do n = 1,8 ! loop through every node on that cell
         nid = mesh%cnode(n,i)
         cells_neighboring_vertices(j(nid),nid) = i
+
+        !!$omp atomic
         j(nid) = j(nid) + 1
       end do
     end do
+    !!$omp end parallel do
 
   end function cells_neighboring_vertices
 
@@ -103,7 +107,8 @@ contains
     integer :: cell,face,i,f,il,fid, fcell(2,mesh%nface),flid(2,mesh%nface)
 
     call cells_connected_to_faces(fcell,flid,mesh)
-
+    
+    !$omp parallel do default(private) shared(fneighbor,cneighbor,mesh,fcell,flid)
     do i = 1,mesh%ncell
       do f = 1,6
         fid = mesh%cface(f,i)
@@ -119,6 +124,7 @@ contains
         cneighbor(f,i) = fcell(il,fid)
       end do
     end do
+    !$omp end parallel do
 
   end subroutine neighbor_ids
 
