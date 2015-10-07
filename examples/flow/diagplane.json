@@ -1,0 +1,40 @@
+// plane unit test
+
+{
+    
+    "mesh": {
+	"corner-min": [-0.5, -0.5, -0.5],
+	"corner-max": [ 0.5,  0.5,  0.5],
+	//"intervals" : [  4,   4,   4]
+	"intervals" : [ 32,  32,  32]
+	//"intervals" : [8,8,8]
+	//"intervals" : [ 64,  64,  64]
+	
+    },
+    
+    "sim-control": {
+    	"initial-time": 0.0,
+    	"initial-time-step": 1.0e-6,
+    	"min-time-step": 1.0e-8,
+        //"output-times": [0.1]
+    	"output-times": [0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.8660254]
+    },
+    
+    "ns-solver": {
+    	"prescribed-velocity": 4
+    },
+    
+    "vof-solver": {
+        "materials": [1, 2],
+    	"initial-vof": {
+    	    "plane": {
+    		"material-id": 2,
+                "normal": [1.0, 1.0, 1.0],
+    		"plane-const": 0.0
+    	    },
+	    "all": {
+    		"material-id": 1
+            }
+    	}
+    }
+}

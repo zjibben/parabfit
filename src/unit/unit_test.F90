@@ -1,7 +1,9 @@
 program unit_test
-  use kinds, only: r8
-  use locate_plane_module
+  use kinds,               only: r8
   use volume_track_module, only: material_flux_unit_test
+  use polyhedron_type,     only: polyhedron_unit_test
+  use surface_type,        only: surface_unit_test
+  use locate_plane_module
   implicit none
 
   type(locate_plane_hex) :: locate_plane
@@ -60,5 +62,9 @@ program unit_test
   test_result = material_flux_unit_test (locate_plane, -0.25_r8*posXflow, &
        [0.0_r8, 0.0_r8, 0.05_r8, 0.0_r8, 0.0_r8, 0.0_r8])
   write(*,*) 'passed material_flux -x? ', test_result
-    
+
+  
+  call polyhedron_unit_test ()
+  call surface_unit_test ()
+
 end program unit_test

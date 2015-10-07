@@ -6,13 +6,9 @@
 !   Public Interface:
 !
 !     * call VOLUME_TRACK (Vof, Fluxing_Velocity, Volume_Flux_Sub)
-!
 !       Control routine for a piecewise-linear volume tracking of
 !       material interfaces, in which material interfaces are
 !       reconstructed as planes from local volume fraction data.
-!
-! Contains: VOLUME_TRACK
-!           INT_NORMAL
 !
 ! Author(s): Stewart J. Mosso (sjm@lanl.gov)
 !            Douglas B. Kothe (dbk@lanl.gov)
@@ -26,20 +22,20 @@ module volume_track_module
   implicit none
   private
 
-  public :: volume_track, material_flux_unit_test
+  public :: volume_track, material_flux_unit_test, interface_normal ! need interface_normal for initial plane reconstruction dump
 
-  integer, parameter :: ndim = 3
-  integer, parameter :: nfc = 6 ! number of faces per cell
-  integer, parameter :: nvc = 8 ! number of vertices per cell
-  integer, parameter :: alittle = epsilon(1.0_r8)
-  integer, parameter :: cutvof = 1.0e-8_r8
+  integer,  parameter :: ndim = 3 ! number of dimensions
+  integer,  parameter :: nfc  = 6 ! number of faces per cell
+  integer,  parameter :: nvc  = 8 ! number of vertices per cell
+  real(r8), parameter :: alittle = epsilon(1.0_r8)
+  real(r8), parameter :: cutvof  = 1e-8_r8
 
-  logical, parameter :: using_mic = .false.
+  logical,  parameter :: using_mic = .false. ! flag to select mic-optimized segments of code (currently unneeded)
 
 contains
   
   logical function material_flux_unit_test (plane_cell, face_fluxing_velocity, fluxex)
-    use kinds, only: r8
+    use kinds,     only: r8
     use hex_types, only: cell_data
     use locate_plane_module
     
@@ -56,9 +52,8 @@ contains
     
     call material_volume_flux (mat_vol_flux, flux_vol_sum, plane_cell, cell, .true., face_fluxing_velocity, 1.0_r8, 0.5_r8)
     
-    write(*,*) 'mat_vol_flux', mat_vol_flux,'exact: ',fluxex
-
-    material_flux_unit_test = all(mat_vol_flux==fluxex)
+    !write(*,*) 'mat_vol_flux', mat_vol_flux,'exact: ',fluxex
+    material_flux_unit_test = all(abs(mat_vol_flux-fluxex) < 1e4_r8*alittle)
     
   end function material_flux_unit_test
   
@@ -72,16 +67,20 @@ contains
   !   at all relevant cell faces.
   !
   !=======================================================================
-  subroutine volume_track (volume_flux_sub, adv_dt, mesh, gmesh, Vof, fluxing_velocity, nmat, fluidRho) !result(volume_flux_sub)
+  subroutine volume_track (volume_flux_sub, adv_dt, mesh, gmesh, Vof, fluxing_velocity, nmat, fluidRho, &
+       intrec, dump_intrec) !result(volume_flux_sub)
     use timer_tree_type
     use hex_types, only: cell_data
+    use surface_type
     !use devices,   only: using_mic
     
-    real(r8),         intent(in) :: adv_dt, vof(:,:), fluxing_velocity(:,:), fluidrho(:)
-    type(unstr_mesh), intent(in) :: mesh
-    type(mesh_geom),  intent(in) :: gmesh
-    integer,          intent(in) :: nmat
+    real(r8),         intent(in)  :: adv_dt, vof(:,:), fluxing_velocity(:,:), fluidrho(:)
+    type(unstr_mesh), intent(in)  :: mesh
+    type(mesh_geom),  intent(in)  :: gmesh
+    integer,          intent(in)  :: nmat
     real(r8),         intent(out) :: volume_flux_sub(:,:,:)
+    type(surface),    intent(out) :: intrec
+    logical,          intent(in)  :: dump_intrec
     !real(r8)                      :: volume_flux_sub(nmat, 6, mesh%ncell)
     
     integer         :: ninterfaces, i, nmat_in_cell !(mesh%ncell)
@@ -95,6 +94,8 @@ contains
     !nmat_in_cell = count(vof > 0.0_r8, dim=1)      ! count the number of materials in each cell
     !ninterfaces  = maxval(nmat_in_cell) - 1         ! number of interfaces to process
     ninterfaces = size(vof, dim=1) - 1
+
+    if (dump_intrec) call intrec%purge ()
     
     ! get the volume flux in every cell
     if (using_mic) then
@@ -106,24 +107,24 @@ contains
              mesh%normal(:,mesh%cface(:,i)), mesh%cfpar(i))
         volume_flux_sub(:,:,i) = cell_volume_flux (adv_dt, cell, fluidRho(i), vof(:,i), &
              int_norm(:,:), nmat_in_cell, nmat, &
-             fluxing_velocity(:,i), ninterfaces )
+             fluxing_velocity(:,i), ninterfaces, intrec, dump_intrec)
       end do
       !$omp end do nowait
     else
       allocate(int_norm_global(3,nmat,mesh%ncell))
       int_norm_global = interface_normal (vof, mesh, gmesh) ! compute interface normal vectors for all the materials.
       call start_timer ("reconstruct/advect")   ! Start the volume track timer
-
+      
       ! !$omp parallel do default(private) shared(volume_flux_sub,mesh,adv_dt,fluidRho,vof,gmesh) &
       !$omp parallel do default(private) shared(volume_flux_sub,mesh,adv_dt,fluidRho,vof,int_norm_global) &
-      !$omp shared(nmat,fluxing_velocity,ninterfaces) !,nmat_in_cell)
+      !$omp shared(nmat,fluxing_velocity,ninterfaces, intrec, dump_intrec) !,nmat_in_cell)
       do i = 1,mesh%ncell
         nmat_in_cell = count(vof(:,i) > 0.0_r8)
         call cell%init (mesh%x(:,mesh%cnode(:,i)), mesh%volume(i), mesh%area(mesh%cface(:,i)), &
              mesh%normal(:,mesh%cface(:,i)), mesh%cfpar(i))
         volume_flux_sub(:,:,i) = cell_volume_flux (adv_dt, cell, fluidRho(i), vof(:,i), &
              int_norm_global(:,:,i), nmat_in_cell, nmat, &
-             fluxing_velocity(:,i), ninterfaces )
+             fluxing_velocity(:,i), ninterfaces, intrec, dump_intrec)
       end do
       !$omp end parallel do
 
@@ -134,23 +135,30 @@ contains
   end subroutine volume_track
 
   ! get the volume flux for every material in the given cell
-  function cell_volume_flux (adv_dt, cell, fluidRho, vof, int_norm, nmat_in_cell, nmat, face_fluxing_velocity, ninterfaces)
-    use hex_types,           only: cell_data
+  function cell_volume_flux (adv_dt, cell, fluidRho, vof, int_norm, nmat_in_cell, nmat, &
+       face_fluxing_velocity, ninterfaces, intrec, dump_intrec)
+    use hex_types,           only: cell_data, hex_f, hex_e
     use locate_plane_module, only: locate_plane_hex
     use flux_volume_module,  only: flux_vol_quantity, flux_vol_vertices
+    use array_utils,         only: last_true_loc
+    use surface_type
+    use polyhedron_type
     use logging_services
     use timer_tree_type
 
-    real(r8),        intent(in) :: adv_dt, int_norm(:,:), vof(:), fluidRho, face_fluxing_velocity(6)
-    integer,         intent(in) :: ninterfaces, nmat_in_cell, nmat
-    type(cell_data), intent(in) :: cell
-    real(r8)                    :: cell_volume_flux(nmat,6)
+    real(r8),        intent(in)    :: adv_dt, int_norm(:,:), vof(:), fluidRho, face_fluxing_velocity(6)
+    integer,         intent(in)    :: ninterfaces, nmat_in_cell, nmat
+    type(cell_data), intent(in)    :: cell
+    type(surface),   intent(inout) :: intrec
+    logical,         intent(in)    :: dump_intrec
+    real(r8)                       :: cell_volume_flux(nmat,6)
 
     real(r8)                :: Vofint, vp, dvol
     real(r8)                :: flux_vol_sum(nfc)
     integer                 :: ni,f,locate_plane_niters,nlast
     logical                 :: is_mixed_donor_cell
     type(locate_plane_hex)  :: plane_cell
+    type(polyhedron)        :: poly
     type(flux_vol_quantity) :: Flux_Vol
 
     !call start_timer ("ra_cell")
@@ -158,7 +166,8 @@ contains
     cell_volume_flux = 0.0_r8
     flux_vol_sum = 0.0_r8
 
-    ! Here, I am not certain the conversion from pri_ptr to direct material indices worked properly. -zjibben
+    ! Here, I am not certain the conversion from pri_ptr to direct material indices worked properly.
+    ! This will be clear when trying 3 or more materials. -zjibben
     
     ! Loop over the interfaces in priority order
     do ni = 1,ninterfaces
@@ -166,12 +175,16 @@ contains
       ! First accumulate the volume fraction of this material and materials with lower priorities.
       ! Force 0.0 <= Vofint <= 1.0
       Vofint = min(max(sum(vof(1:ni)), 0.0_r8), 1.0_r8)
-      is_mixed_donor_cell = (0.0_r8 + cutvof) < Vofint .and. Vofint < (1.0_r8 - cutvof) .and. .not.fluidRho<alittle
+      is_mixed_donor_cell = cutvof < Vofint .and. Vofint < (1.0_r8 - cutvof) .and. .not.fluidRho<alittle
 
       ! locate each interface plane by computing the plane constant
       if (is_mixed_donor_cell) then
         call plane_cell%init (int_norm(:,ni), vofint, cell%volume, cell%node)
         call plane_cell%locate_plane (locate_plane_niters)
+        if (dump_intrec) then
+          call poly%init (plane_cell%node, hex_f, hex_e)
+          call intrec%append (poly%intersection_verts (plane_cell%P, vofint))
+        end if
       end if
       
       ! calculate delta advection volumes for this material at each donor face and accumulate the sum
@@ -180,7 +193,7 @@ contains
     end do ! interface loop
 
     ! get the id of the last material
-    nlast = last_true_loc(vof > 0.0_r8)
+    nlast = last_true_loc (vof > 0.0_r8)
 
     !call start_timer ("last_loop")
     ! Compute the advection volume for the last material.
@@ -292,10 +305,10 @@ contains
   function interface_normal (Vof, mesh, gmesh)
     use timer_tree_type
 
-    real(r8), intent(IN)  :: Vof(:,:)
-    real(r8)              :: interface_normal(3,size(vof,1),size(vof,2))
+    real(r8),         intent(in) :: Vof(:,:)
     type(unstr_mesh), intent(in) :: mesh
     type(mesh_geom),  intent(in) :: gmesh
+    real(r8)                     :: interface_normal(3,size(vof,1),size(vof,2))
 
     integer :: m, n, mi, mid(2), nmat, nmat_in_cell
 
@@ -418,7 +431,7 @@ contains
     
   end function interface_normal_cell
 
-  subroutine normalize (n)
+  pure subroutine normalize (n)
     real(r8), intent(inout) :: n(:)
 
     real(r8) :: tmp
@@ -460,10 +473,10 @@ contains
   function gradient (Phi, mesh, gmesh)
     use timer_tree_type
 
-    real(r8), intent(in)         :: Phi(:)
-    real(r8)                     :: gradient(3,size(phi))
+    real(r8),         intent(in) :: Phi(:)
     type(unstr_mesh), intent(in) :: mesh
     type(mesh_geom),  intent(in) :: gmesh
+    real(r8)                     :: gradient(3,size(phi))
 
     integer  :: f,i
     real(r8) :: Phi_f(mesh%nface)
@@ -488,7 +501,7 @@ contains
         Gradient(:,i) = Gradient(:,i) + gmesh%outnorm(:,f,i)*mesh%area(mesh%cface(f,i))*Phi_f(mesh%cface(f,i))
       end do
 
-      Gradient(:,i) = Gradient(:,i) / mesh%volume(i) ! Normalize by cell volume
+      Gradient(:,i) = Gradient(:,i) / mesh%volume(i) ! normalize by cell volume
       call eliminate_noise (gradient(:,i))
     end do
     !$omp end parallel do
@@ -531,8 +544,9 @@ contains
 
     integer  :: v
 
+    ! loop through each vertex on the face, adding up the average value for the node (found through neighboring cells)
     face_avg = 0.0_r8
-    do v = 1,4 ! loop through each vertex on the face
+    do v = 1,4 
       face_avg = face_avg + vertex_avg (x_cell, mesh%fnode(v,f), mesh, gmesh)
     end do
     face_avg = face_avg / 4.0_r8
@@ -546,9 +560,9 @@ contains
 
     integer :: f,i
 
+    ! interpolate vertex values to each face (see note 1)
     !$omp parallel do default(private) shared(x_face,x_vtx,mesh)
     do f = 1,mesh%nface
-      ! Interpolate vertex values to this face (see note 1)
       x_face(f) = sum(x_vtx(mesh%fnode(:,f))) / 4.0_r8
     end do
     !$omp end parallel do
@@ -604,23 +618,5 @@ contains
     !  /        sum(                   1.0_r8 / mesh%volume(gmesh%vcell(:,n)), mask=(gmesh%vcell(:,n)>0))
 
   end function vertex_avg
-
-  ! return the index of the last true element of a logical array
-  ! this function is used in a few different modules -- it may be a good idea to bring it into one module
-  function last_true_loc (mask)
-    logical, intent(in) :: mask(:)
-    integer :: last_true_loc
-    
-    integer :: i
-
-    do i = size(mask),1,-1
-      if (mask(i)) then
-        last_true_loc = i
-        return
-      end if
-    end do
-    last_true_loc = 0
-    
-  end function last_true_loc
   
 end module volume_track_module

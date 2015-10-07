@@ -1,5 +1,5 @@
 !=======================================================================
-! Purpose(s):
+! Purpose:
 !
 !   Define procedures necessary to compute hexahedral volumes
 !   truncated by a planar interface
@@ -7,26 +7,14 @@
 !   Public Interface:
 !
 !     * call FACE_PARAM (option, face, K, Lambda, MUa, MUi, MUp, Nu, V1234, X)
-!
 !         Compute and store various face parameters needed for a volume
 !         truncation calculation.
 !
 !     * call TRUNCATE_VOLUME (K, Lambda, MUa, MUi, MUp, Nu, Vf, Vol, V1234, X)
-!
 !         Compute the volume truncated by a plane.
 !
 !     * call TRUNCATE_FACE (f, K, Lambda, MUa, MUi, MUp, Nu, Vf, V1234, X)
-!
 !         Compute the volume truncated at the current hex face by a plane.
-!
-! Contains: FACE_PARAM
-!           TRUNCATE_VOLUME
-!           TRUNCATE_FACE
-!           TRUNCATE_FACE_2
-!           TRUNCATE_FACE_2
-!           TRUNCATE_FACE_4
-!           TRUNCATE_FACE_N
-!           Y_FUNCTION
 !
 ! Author(s): Douglas B. Kothe, LANL (dbk@lanl.gov)
 !            S. Jay Mosso, LANL (sjm@lanl.gov)
@@ -40,9 +28,9 @@ module truncate_volume_module
 
   public :: truncate_volume, truncate_face, face_param, truncvol_data
 
-  integer, parameter :: nvf = 4 ! number of vertices per cell face
-  integer, parameter :: nfc = 6 ! number of faces
-  integer, parameter :: alittle = epsilon(1.0_r8)
+  integer,  parameter :: nvf = 4 ! number of vertices per cell face
+  integer,  parameter :: nfc = 6 ! number of faces
+  real(r8), parameter :: alittle = epsilon(1.0_r8)
   real(r8), parameter :: eps(4) = (/ 1.0_r8, -1.0_r8, 1.0_r8, -1.0_r8 /)
 
   type truncvol_data
@@ -104,10 +92,22 @@ contains
     ! in ascending order, it denotes which vertex the interface will
     ! pass through first, second, etc.  The variable Mu-p is the vertex
     ! number of the reordered distances.
+    
+    ! do j = 1,nvf
+    !   face_param%MUi(j) = sum(cell%P%normal(:)*face_param%X(:,j))
+    ! end do
+
+    ! !$omp simd
+    ! do j = 1,nvf
+    !   face_param%MUp(j) = j
+    ! end do
+    ! !$omp end simd
+    
     do j = 1,nvf
-      face_param%MUi(j) = sum(cell%Normal(:)*face_param%X(:,j))
+      face_param%MUi(j) = sum(cell%P%normal(:)*face_param%X(:,j))
       face_param%MUp(j) = j
     end do
+    
     face_param%MUa(:) = face_param%MUi(:)
     
     ! Here Nu and Lambda are temporaries used to facilitate ordering the
@@ -180,7 +180,7 @@ contains
     use hex_types, only: reconstruction_hex
 
     class(reconstruction_hex), intent(in) :: cell
-    type(truncvol_data), dimension(nfc), intent(in) :: trunc_vol
+    type(truncvol_data),       intent(in) :: trunc_vol(:)
 
     integer :: f
     
@@ -189,7 +189,7 @@ contains
 
     ! Loop over faces, accumulating the truncated volume
     Truncate_Volume = 0.0_r8
-    do f = 1, nfc
+    do f = 1,nfc
       Truncate_Volume = Truncate_Volume + truncate_face (cell, trunc_vol(f))
     end do
 
@@ -210,34 +210,34 @@ contains
     real(r8)                              :: Vf
 
     real(r8) :: Y(nvf)
-
+    
     Vf = 0.0_r8
     Y = Y_function (cell, trunc_vol_face%X)
 
     ! get intersection case
-    if ( trunc_vol_face%MUa(1) < cell%rho .and. cell%Rho <= trunc_vol_face%MUa(2) .and. &
-         trunc_vol_face%MUa(1) /= trunc_vol_face%MUa(2)) then                                ! case 1
-      Vf = truncate_face_N (1, cell%rho, Y, trunc_vol_face)
+    if ( trunc_vol_face%MUa(1) < cell%P%rho .and. cell%P%rho <= trunc_vol_face%MUa(2) .and. &
+         trunc_vol_face%MUa(1) /= trunc_vol_face%MUa(2)) then                                ! case 1      
+      Vf = truncate_face_N (1, cell%P%rho, Y, trunc_vol_face)
       !write(*,*) 'case 1'
-    else if ( trunc_vol_face%MUa(2) < cell%Rho .and. cell%Rho <= trunc_vol_face%MUa(3)) then ! case 2 & 5
+    else if ( trunc_vol_face%MUa(2) < cell%P%rho .and. cell%P%rho <= trunc_vol_face%MUa(3)) then ! case 2 & 5
       if (trunc_vol_face%MUp(2) == (1 + mod(trunc_vol_face%MUp(1)+1, nvf))) then ! case 5
-        Vf = truncate_face_N (1, cell%rho, Y, trunc_vol_face) + &
-             truncate_face_N (2, cell%rho, Y, trunc_vol_face)
+        Vf = truncate_face_N (1, cell%P%rho, Y, trunc_vol_face) + &
+             truncate_face_N (2, cell%P%rho, Y, trunc_vol_face)
         !write(*,*) 'case 5'
       else                                                                       ! case 2
-        Vf = truncate_face_2 (cell%rho, Y, trunc_vol_face)
+        Vf = truncate_face_2 (cell%P%rho, Y, trunc_vol_face)
         !write(*,*) 'case 2'
       end if
-    else if ( cell%Rho > trunc_vol_face%MUa(3)) then                                         ! case 3 & 4
-      if (cell%Rho < trunc_vol_face%MUa(4)) then          ! case 3
-        Vf = - truncate_face_N (4, cell%rho, Y, trunc_vol_face)
+    else if ( cell%P%rho > trunc_vol_face%MUa(3)) then                                         ! case 3 & 4
+      if (cell%P%rho < trunc_vol_face%MUa(4)) then          ! case 3
+        Vf = - truncate_face_N (4, cell%P%rho, Y, trunc_vol_face)
         !write(*,*) 'case 3'
       end if
       
       Vf = Vf + truncate_face_4 (cell, trunc_vol_face) ! case 4
       !write(*,*) 'case 4'
     end if
-
+    
   end function truncate_face
 
   ! <><><><><><><><><><><><> PRIVATE ROUTINES <><><><><><><><><><><><><><>
@@ -255,54 +255,32 @@ contains
 
     integer :: i, k
     real(r8) :: J1, J2, J3, W1, W2, W3, W4, Z1, Z2, Z3
-    
-    Q  = 0.0_r8
-    J1 = 0.0_r8; J2 = 0.0_r8; J3 = 0.0_r8
-    W1 = 0.0_r8; W2 = 0.0_r8; W3 = 0.0_r8; W4 = 0.0_r8
-    Z1 = 0.0_r8; Z2 = 0.0_r8; Z3 = 0.0_r8
 
-    do k = 1, nvf
-      i = 1 + mod(k + 1,nvf)
-
-      ! Scan the four face indicies until we get to the 
-      ! 2nd predecessor of MU(b).
-      if (trunc_vol_face%MUp(2) == k) then
-        ! Z3 is the Y function of the successor of the A vertex
-        Z3 = Y(k)
-
-        ! W1 is the difference between: 
-        !   the Mu of the 2nd successor of vertex B and the Mu of vertex A.
-        W1 = (trunc_vol_face%MUi(i) - trunc_vol_face%MUa(1))
-      end if
-    end do
-
+    ! 2nd predecessor of MU(b).
+    k = trunc_vol_face%MUp(2)
+    Z3 = Y(k) ! Z3 is the Y function of the successor of the A vertex
+    ! W1 = the difference between the Mu of the 2nd successor of vertex B and the Mu of vertex A
+    i = 1 + mod(k + 1,nvf)
+    W1 = trunc_vol_face%MUi(i) - trunc_vol_face%MUa(1) 
+        
     if (ABS(W1) > alittle) then
       W1 = 1.0_r8 / W1
     else
       W1 = 0.0_r8
     end if
 
-    do k = 1, nvf
-      i = 1 + mod(k + 1,nvf)
-
-      ! Scan the four face indicies until we get to the 
-      ! 2nd predecessor of MU(a).
-      if (trunc_vol_face%MUp(1) == k) then
-        ! Z1 is the Y function of the A vertex
-        Z1 = Y(k)
-
-        ! Z2 is the Y function of the 2nd successor of the A vertex
-        Z2 = Y(i) 
-        W3 = eps(k)*trunc_vol_face%Nu*W1
-        Q  = eps(k)*trunc_vol_face%V1234*0.5_r8*W1*W1 
-
-        ! W2 is the difference between: 
-        !   the Mu of the 2nd successor of vertex A and 
-        !   the Mu of vertex B.
-        W2 = trunc_vol_face%MUi(i) - trunc_vol_face%MUa(2)
-      end if
-    end do
-
+    ! 2nd predecessor of MU(a).
+    k = trunc_vol_face%MUp(1)
+    i = 1 + mod(k + 1,nvf)
+    Z1 = Y(k) ! Z1 is the Y function of the A vertex
+    Z2 = Y(i) ! Z2 is the Y function of the 2nd successor of the A vertex
+    W3 = eps(k)*trunc_vol_face%Nu*W1
+    Q  = eps(k)*trunc_vol_face%V1234*0.5_r8*W1*W1 
+    ! W2 is the difference between: 
+    !   the Mu of the 2nd successor of vertex A and 
+    !   the Mu of vertex B.
+    W2 = trunc_vol_face%MUi(i) - trunc_vol_face%MUa(2)
+    
     if (abs(W2) > alittle) then
       W2 = 1.0_r8 / W2
     else
@@ -323,11 +301,11 @@ contains
     Q = Q*(J1*(Cell_Rho - trunc_vol_face%MUa(1))**2 -  &
          2.0_r8*(trunc_vol_face%MUa(2) - trunc_vol_face%MUa(1))*&
          (Cell_Rho - trunc_vol_face%MUa(1))*J2 &
-         + J3*(trunc_vol_face%MUa(2) - trunc_vol_face%MUa(1))**2)
-
-    Q = Q + W1*Z1*(2.0_r8*Cell_Rho - trunc_vol_face%MUa(1) - trunc_vol_face%MUa(2))/6.0_r8 &
+         + J3*(trunc_vol_face%MUa(2) - trunc_vol_face%MUa(1))**2) &
+         
+         + W1*Z1*(2.0_r8*Cell_Rho - trunc_vol_face%MUa(1) - trunc_vol_face%MUa(2))/6.0_r8 &
          + (W1*W2*(Z2 - Z3)*(Cell_Rho - trunc_vol_face%MUa(2))**2)/6.0_r8
-  end function TRUNCATE_FACE_2
+  end function truncate_face_2
   
   !=======================================================================
   ! PURPOSE - 
@@ -335,7 +313,7 @@ contains
   !   the volume truncated along a hex face by the plane
   !   X*Normal - Ro = 0
   !=======================================================================
-  function TRUNCATE_FACE_4 (cell, trunc_vol_face) result(Q)
+  function truncate_face_4 (cell, trunc_vol_face) result(Q)
     use hex_types, only: reconstruction_hex
 
     class(reconstruction_hex), intent(in) :: cell
@@ -344,10 +322,10 @@ contains
 
     real(r8) :: Tmp(3)
 
-    Tmp = 0.25_r8*sum(trunc_vol_face%X(:,:), dim=2) - cell%rho*cell%normal(:)
+    tmp(:) = 0.25_r8 * sum(trunc_vol_face%X(:,:), dim=2) - cell%P%rho*cell%P%normal(:)
     Q = sum( tmp * trunc_vol_face%K ) / 6.0_r8
-
-  end function TRUNCATE_FACE_4
+    
+  end function truncate_face_4
 
   !=======================================================================
   ! PURPOSE - 
@@ -355,7 +333,7 @@ contains
   !   the volume truncated along a hex face by the plane
   !   X*Normal - Ro = 0
   !=======================================================================
-  function TRUNCATE_FACE_N (n, plane_const, Y, trunc_vol_face) result(Q)
+  function truncate_face_n (n, plane_const, Y, trunc_vol_face) result(Q)
     integer,  intent(in) :: n
     real(r8), intent(in) :: plane_const
     real(r8), intent(in) :: Y(:)
@@ -370,38 +348,35 @@ contains
 
     if (abs(W3) > alittle) then
       W3 = 1.0_r8/W3
+
+      W1 = T*T*W3
+      T = T * trunc_vol_face%Nu * W3
+
+      if (abs(T) > alittle) then
+        S = 1.0_r8/T
+      else
+        S = 0.0_r8
+      end if
+
+      if (T /= -1.0_r8) then
+        J1 = (1.0_r8-log(abs(1.0_r8+T))*S)*S
+      else
+        J1 = 0.0_r8
+      end if
+
+      if (abs(T) > 1.0e-2) then
+        W3 = J1 + (-2.0_r8/3.0_r8 + 2.0_r8*J1 + (J1 - 0.5_r8) * S) * S
+      else
+        W3 = 1.0_r8/12.0_r8 + T*(-1.0_r8/30.0_r8 + T*(1.0_r8/60.0_r8 + T*(-1.0_r8/105.0_r8 + T*1.0_r8/168.0_r8)))
+      end if
+
+      k = trunc_vol_face%MUp(n)
+      Q = eps(k)*(Y(k)*W1/6.0_r8 + 0.5_r8*trunc_vol_face%V1234*W3*W1*W1)
     else
-      W3 = 0.0_r8
+      Q = 0.0_r8
     end if
 
-    W1 = T*T*W3
-    T = trunc_vol_face%Nu * T * W3
-
-    if (abs(T) > alittle) then
-      S = 1.0_r8/T
-    else
-      S = 0.0_r8
-    end if
-
-    if (T /= -1.0_r8) then
-      J1 = (1.0_r8-log(abs(1.0_r8+T))*S)*S
-    else
-      J1 = 0.0_r8
-    end if
-
-    if (abs(T) > 1.0e-2) then
-      W3 = J1 + (-2.0_r8/3.0_r8 + 2.0_r8*J1 + (J1 - 0.5_r8) * S) * S
-    else
-      W3 = 1.0_r8/12.0_r8 + T*(-1.0_r8/30.0_r8 + T*(1.0_r8/60.0_r8 + T*(-1.0_r8/105.0_r8 + T*1.0_r8/168.0_r8)))
-    end if
-
-    Q = 0.0_r8
-    do k = 1, nvf
-      if (trunc_vol_face%MUp(n) == k) &
-           Q = eps(k)*(Y(k)*W1/6.0_r8 + 0.5_r8*trunc_vol_face%V1234*W3*W1*W1)
-    end do
-
-  end function TRUNCATE_FACE_N
+  end function truncate_face_n
   
   !=======================================================================
   ! PURPOSE -
@@ -422,7 +397,7 @@ contains
   !
   ! This routine is called from truncate_face.
   !=======================================================================
-  function Y_FUNCTION (cell, x)
+  function Y_function (cell, x)
     use hex_types, only: reconstruction_hex
     use cell_geometry, only: cross_product
 
@@ -430,54 +405,15 @@ contains
     real(r8),                  intent(in) :: x(:,:)
     real(r8)                              :: Y_FUNCTION(nvf)
 
-    ! real(r8)           :: R1(3), R2(3), R3(3), R4(3), S1(3), S3(3)
-    
-    ! R4 = cell%rho * cell%normal
-
-    ! R1 = X(:,1) - R4
-    ! R2 = X(:,2) - R4
-    ! R3 = X(:,3) - R4
-    ! R4 = X(:,4) - R4
-
-    ! !  S1 = (X1 - Normal.Ro) X (X2 - Normal.Ro)
-    ! ! S1(1) = R1(2)*R2(3) - R1(3)*R2(2)
-    ! ! S1(2) = R1(3)*R2(1) - R1(1)*R2(3)
-    ! ! S1(3) = R1(1)*R2(2) - R1(2)*R2(1)
-    ! S1 = cross_product (R1,R2)
-
-    ! !  S3 = (X3 - Normal.Ro) X (X4 - Normal.Ro)
-    ! ! S3(1) = R3(2)*R4(3) - R3(3)*R4(2)
-    ! ! S3(2) = R3(3)*R4(1) - R3(1)*R4(3)
-    ! ! S3(3) = R3(1)*R4(2) - R3(2)*R4(1)
-    ! S3 = cross_product (R3,R4)
-
-    ! !  Y1 = (X4 - Normal.Ro) . (X1 - Normal.Ro) X (X2 - Normal.Ro)
-    ! Y_FUNCTION(1) = R4(1)*S1(1) + R4(2)*S1(2) + R4(3)*S1(3)
-
-    ! !  Y2 = (X1 - Normal.Ro) . (X2 - Normal.Ro) X (X3 - Normal.Ro)
-    ! !     However, we take advantage of the fact the vector identity:
-    ! !     A . B X C = C . A X B  which means that we don-t need to
-    ! !     compute the S2 vector as above.  We can use the S1 vector:
-    ! !     Y2 = (X3 - Normal.Ro) . (X1 - Normal.Ro) X (X2 - Normal.Ro)
-    ! Y_FUNCTION(2) = R3(1)*S1(1) + R3(2)*S1(2) + R3(3)*S1(3)
-
-    ! !  Y3 = (X2 - Normal.Ro) . (X3 - Normal.Ro) X (X4 - Normal.Ro)
-    ! Y_FUNCTION(3) = R2(1)*S3(1) + R2(2)*S3(2) + R2(3)*S3(3)
-
-    ! !  Y4 = (X3 - Normal.Ro) . (X4 - Normal.Ro) X (X1 - Normal.Ro)
-    ! !     However, we take advantage of the fact the vector identity:
-    ! !     A . B X C = C . A X B  which means that we don-t need to
-    ! !     compute the S4 vector as above.  We can use the S3 vector:
-    ! !     Y4 = (X1 - Normal.Ro) . (X3 - Normal.Ro) X (X4 - Normal.Ro)
-    ! Y_FUNCTION(4) = R1(1)*S3(1) + R1(2)*S3(2) + R1(3)*S3(3)
-    
     integer  :: i
     real(r8) :: R(3,4), S1(3), S3(3), tmp(3)
 
-    tmp = cell%rho*cell%normal
+    tmp = cell%P%rho*cell%P%normal
+    !$omp simd
     do i = 1,4
       R(:,i) = x(:,i) - tmp
     end do
+    !$omp end simd
     
     S1 = cross_product (R(:,1),R(:,2)) ! S1 = (X1 - Normal.Ro) X (X2 - Normal.Ro)
     S3 = cross_product (R(:,3),R(:,4)) ! S3 = (X3 - Normal.Ro) X (X4 - Normal.Ro)
@@ -502,6 +438,6 @@ contains
     !     Y4 = (X1 - Normal.Ro) . (X3 - Normal.Ro) X (X4 - Normal.Ro)
     Y_function(4) = sum( R(:,1)*S3 )
     
-  end function Y_FUNCTION
+  end function Y_function
 
 end module truncate_volume_module

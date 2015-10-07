@@ -44,6 +44,7 @@ module flux_volume_module
 contains
   
   ! <><><><><><><><><><><><> PUBLIC ROUTINES <><><><><><><><><><><><><><><>
+
   !=======================================================================
   ! Purpose(s):
   !
@@ -60,7 +61,7 @@ contains
   !
   !=======================================================================
   subroutine flux_vol_vertices (face, cell, is_mixed_donor_cell, dist, Flux_Vol)
-    use hex_types, only: cell_data
+    use hex_types,     only: cell_data
     use cell_geometry, only: eval_hex_volumes
 
     integer,                 intent(in)    :: face
@@ -142,15 +143,16 @@ contains
     mult = 1.0_r8; iter = 1; volume = 1e10_r8;
     do while (abs(flux_vol%vol - volume) > cutvof*cell%volume .and. iter<flux_vol_iter_max)
       ! loop over edges to adjust the vertices
+      !$omp simd
       do e = 1,nvf
         ia = Edge_ends(1,e,face)
         ib = Edge_ends(2,e,face)
         Flux_Vol%Xv(:,ib) = Flux_Vol%Xv(:,ia) + Mult*Percnt(e)*Uedge(:,e)
       end do
+      !$omp end simd
       
       ! compute the flux volume bounded by the computed vertices
       call eval_hex_volumes (flux_vol%xv, volume, tmp)
-      ! volume = screwed_volume (Flux_Vol%Xv)
 
       ! increment multiplier for next iteration
       Mult = Mult * Flux_Vol%Vol/volume
@@ -167,51 +169,4 @@ contains
     end if
   end subroutine flux_vol_vertices
 
-  ! <><><><><><><><><><><><> PRIVATE ROUTINES <><><><><><><><><><><><><><><>
-  
-  ! !=======================================================================
-  ! ! Purpose(s):
-  ! !
-  ! !   Compute a hexahedral cell volume, according to the prescription
-  ! !   given by J. Dukowicz, JCP 74: 493-496 (1988).
-  ! !
-  ! !=======================================================================
-  ! real(r8) function screwed_volume (node)
-  !   use hex_types, only: face_node
-    
-  !   real(r8), intent(in) :: node(:,:)
-    
-  !   real(r8) :: X1(ndim), X2(ndim), X3(ndim)
-  !   integer  :: f, v1, v2, v3, v4, v5, v6, n, v(6)
-  !   character(256) :: errmsg
-    
-  !   Screwed_Volume = 0.0_r8
-
-  !   ! Loop over the six faces of the flux volume
-  !   do f = 1,6
-  !     select case (f)
-  !     case (1)
-  !       v = face_node([2,1,3,2,4,1],f)
-  !     case (2,3,6)
-  !       v = face_node([4,3,1,4,2,3],f)
-  !     case (4,5)
-  !       v = face_node([1,4,2,1,3,4],f)
-  !     end select
-      
-  !     X1(:) = node(:,v(1)) + node(:,v(2))
-  !     X2(:) = node(:,v(3)) + node(:,v(4))
-  !     X3(:) = node(:,v(5)) + node(:,v(6))
-
-  !     Screwed_Volume = Screwed_Volume + triple_product (x1,x2,x3)
-  !   end do
-
-  !   Screwed_Volume = Screwed_Volume / 12.0_r8
-
-  !   ! Punt if Volume < 0
-  !   if (screwed_volume < 0.0_r8) then
-  !     write(errmsg,'(a,i0,a)') 'SCREWED_VOLUME: cell '!, cell_index, ' contains a negative flux volume'
-  !     call LS_fatal (errmsg)
-  !   end if
-  ! end function screwed_volume
-  
 end module flux_volume_module

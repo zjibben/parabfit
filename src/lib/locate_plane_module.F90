@@ -66,16 +66,14 @@ contains
     this%node(:,8) = [0.0_r8, 1.0_r8, 1.0_r8]
 
     this%volume = this%calc_volume () ! set the volume
-    this%normal = normal              ! set the normal
+    this%P%normal = normal              ! set the normal
     this%vof = vof                    ! set the vof
 
     ! calculate the plane constant
     call this%locate_plane (iter)
-
-    ! put a check here rather than a print
-    write(*,'(2(a,f14.10),L)') 'plane constant = ',this%rho,',     correct plane constant = ',rhoex
     
-    unit_test = (this%rho==rhoex)
+    !write(*,'(2(a,f14.10),L)') 'plane constant = ',this%P%rho,',     correct plane constant = ',rhoex
+    unit_test = abs(this%P%rho-rhoex) < 1e4_r8*alittle
     
   end function unit_test
 
@@ -83,10 +81,10 @@ contains
     class(locate_plane_hex), intent(out) :: this
     real(r8),                intent(in)  :: norm(3), vof, volume, node(3,8)
 
-    this%normal = norm
-    this%vof    = vof
-    this%volume = volume
-    this%node   = node
+    this%P%normal = norm
+    this%vof      = vof
+    this%volume   = volume
+    this%node     = node
 
   end subroutine init_locate_plane_hex
 
@@ -111,21 +109,21 @@ contains
     class(locate_plane_hex), intent(inout) :: this
     integer,                 intent(out)   :: iter
 
-    real(r8) :: Rho_Min, Rho_Max, V_Min, V_Max
+    real(r8)            :: Rho_Min, Rho_Max, V_Min, V_Max
     type(truncvol_data) :: trunc_vol(nfc)
     
     ! WARNING: Need to figure out how to make this run in parallel with OpenMP.
-    !          Currently, the timer is a global variable.
+    !          Currently, the timer is a global variable, and not thread-safe.
     !call start_timer ("Locate Plane")
 
     ! Bracket the correct value of Rho [Rho_Min,Rho_Max] to insure
     ! the subsequent iteration will converge efficiently
-    call rho_bracket (this, Rho_Min, Rho_Max, V_Min, V_Max, trunc_vol)
+    call this%rho_bracket (Rho_Min, Rho_Max, V_Min, V_Max, trunc_vol)
 
     ! Compute Rho, which parameterizes the plane
     ! characterized by the equation Normal*X - Rho = 0
     ! using Brents method iteration
-    call rho_brent (this, iter, Rho_Min, Rho_Max, V_Min, V_Max, trunc_vol)
+    call this%rho_brent (iter, Rho_Min, Rho_Max, V_Min, V_Max, trunc_vol)
 
     !call stop_timer("Locate Plane")
 
@@ -168,7 +166,7 @@ contains
     
     do v = 1,nvc
       ! Get the value of Rho for this vertex.
-      this%rho = sum(this%node(:,v) * this%normal(:))
+      this%P%rho = sum(this%node(:,v) * this%P%normal(:))
 
       ! get this vertex's truncation volume, and force it to lie between V_min and V_max
       V_v(v) = min(max(truncate_volume (this, trunc_vol), V_min), V_max)
@@ -181,24 +179,16 @@ contains
     if (maxval(V_v) < V_max) V_v( maxloc(V_v, dim=1) ) = V_max
     if (minval(V_v) > V_min) V_v( minloc(V_v, dim=1) ) = V_min
 
-    ! Now bracket Rho.
+    ! Now bracket Rho
     Rho_Max =  huge(0.0_r8)
     Rho_Min = -huge(0.0_r8)
-
-    ! i = maxval(V_v, dim=1, mask = V_v<=this%vof*this%volume)
-    ! Rho_min = sum(this%node(:,i)*this%normal)
-    ! V_min = V_v(i)
-    
-    ! i = minval(V_v, dim=1, mask = V_v>this%vof*this%volume)
-    ! Rho_max = sum(this%node(:,i)*this%normal)
-    ! V_max = V_v(i)
     
     do v = 1,nvc
       if ((V_min < V_v(v) .and. V_v(v) <= this%vof*this%volume) .or. V_v(v) == V_min) then
-        Rho_Min = sum(this%node(:,v)*this%normal) ! the value of rho for this vertex
+        Rho_Min = sum(this%node(:,v)*this%P%normal) ! the value of rho for this vertex
         V_Min = V_v(v)
       else if ((this%vof*this%volume < V_v(v) .and. V_v(v) < V_max) .or. V_v(v) == V_max) then
-        Rho_Max = sum(this%node(:,v)*this%normal) ! the value of rho for this vertex
+        Rho_Max = sum(this%node(:,v)*this%P%normal) ! the value of rho for this vertex
         V_Max = V_v(v)
       end if
     end do
@@ -218,7 +208,7 @@ contains
       V_min = tmp
     end if
 
-    ! If we haven't properly set Rho everywhere, punt.
+    ! if we haven't properly set rho everywhere, punt
     if (Rho_min == -huge(0.0_r8) .or. Rho_max == huge(0.0_r8)) &
          call LS_fatal ('RHO_BRACKET: unable to bracket plane constant Rho')
 
@@ -321,13 +311,13 @@ contains
       else
         Rho_b = Rho_b + sign(Rho_tol,Rho_mid)
       end if
-      this%Rho = Rho_b
+      this%P%Rho = Rho_b
 
       V_b = truncate_volume (this, trunc_vol) - this%Vof*this%Volume
       i = i + 1
     end do
 
-    this%Rho = Rho_b
+    this%P%Rho = Rho_b
   end subroutine rho_brent
 
 end module locate_plane_module

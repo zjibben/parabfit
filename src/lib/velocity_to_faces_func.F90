@@ -24,13 +24,13 @@ contains
     use mesh_geom_type
     implicit none
 
-    real(r8),          intent(inout) :: fluxing_velocity(:,:)
-    real(r8),          intent(in)    :: velocity_cc(:,:)
-    class(unstr_mesh), intent(in)    :: mesh
-    class(mesh_geom),  intent(in)    :: gmesh
-    real(r8)         , intent(in)    :: t
-    logical, intent(in), optional :: prescribed
-    integer, intent(in), optional :: prescribed_case
+    real(r8),          intent(inout)        :: fluxing_velocity(:,:)
+    real(r8),          intent(in)           :: velocity_cc(:,:)
+    class(unstr_mesh), intent(in)           :: mesh
+    class(mesh_geom),  intent(in)           :: gmesh
+    real(r8),          intent(in)           :: t
+    logical,           intent(in), optional :: prescribed
+    integer,           intent(in), optional :: prescribed_case
 
     ! local variables
     logical  :: prescribedh

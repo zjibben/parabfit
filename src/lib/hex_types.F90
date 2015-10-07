@@ -1,7 +1,7 @@
 !!
+!! hex_types
 !!
-!!
-!!
+!! note: this could be derived from the polyhedron type
 !!
 !! Zechariah J. Jibben <zjibben@lanl.gov>
 !! June 2015
@@ -11,6 +11,7 @@ module hex_types
   use kinds, only: r8
   use material_geometry_type
   use logging_services
+  use plane_type
   implicit none
   private
 
@@ -34,10 +35,9 @@ module hex_types
   end type cell_data
   
   type, extends(base_hex), public :: reconstruction_hex
-    real(r8) :: rho       ! interface plane constant
-    real(r8) :: normal(3) ! interface normal
-    real(r8) :: int_area  ! area of the interface for materials
-    real(r8) :: vof
+    type(plane) :: P
+    real(r8)    :: int_area  ! area of the interface for materials
+    real(r8)    :: vof
     ! contains
     !   procedure              :: locate_plane
   end type reconstruction_hex
@@ -74,6 +74,29 @@ module hex_types
        [1,4,3,2], & ! z-
        [5,6,7,8]  & ! z+
        ]
+
+  integer, parameter, public :: hex_f(4,6) = [ &
+         [ 3,4,8,7 ], & ! face vertices
+         [ 1,2,6,5 ], &
+         [ 1,5,8,4 ], &
+         [ 2,3,7,6 ], &
+         [ 1,4,3,2 ], &
+         [ 5,6,7,8 ]  &
+         ]
+    integer, parameter, public :: hex_e(2,12) = [ &
+         [ 1,2 ], & ! edge vertices
+         [ 2,3 ], &
+         [ 3,4 ], &
+         [ 4,1 ], &
+         [ 1,5 ], &
+         [ 2,6 ], &
+         [ 3,7 ], &
+         [ 4,8 ], &
+         [ 5,6 ], &
+         [ 6,7 ], &
+         [ 7,8 ], &
+         [ 8,5 ]  &
+         ]
   
 contains
   

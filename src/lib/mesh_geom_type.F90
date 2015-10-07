@@ -39,24 +39,17 @@ contains
     this%vcell = cells_neighboring_vertices (mesh)
     !this%length = edge_lengths (mesh%enode, mesh%nedge)
 
+    !$omp parallel do default(private) shared(this,mesh)
     do i = 1,mesh%ncell
       do f = 1,6
         this%outnorm(:,f,i) = mesh%normal(:,mesh%cface(f,i)) / sqrt(sum(mesh%normal(:,mesh%cface(f,i))**2))
         ! why is it so slow to do it here rather than the loop down there? -zjibben
-        ! if (.not.btest(mesh%cfpar(i),f)) & !check the orientation of the face with respect to this cell
-        !      this%outnorm = - this%outnorm
+        !check the orientation of the face with respect to this cell
+        if (btest(mesh%cfpar(i),f)) this%outnorm(:,f,i) = -this%outnorm(:,f,i)
       end do
     end do
-    
-    do f = 1,6
-      !check the orientation of the face with respect to this cell
-      where (btest(mesh%cfpar(:),f))
-        this%outnorm(1,f,:) = - this%outnorm(1,f,:)
-        this%outnorm(2,f,:) = - this%outnorm(2,f,:)
-        this%outnorm(3,f,:) = - this%outnorm(3,f,:)
-      end where
-    end do
-    
+    !$omp end parallel do
+
   end subroutine init
 
   ! function edge_lengths (enode, nedge)
@@ -81,21 +74,17 @@ contains
     j = 1
     cells_neighboring_vertices = -1 
     
-    !!$omp parallel do default(private) shared(mesh,cells_neighboring_vertices,j)
     do i = 1,mesh%ncell ! loop through all cells
       do n = 1,8 ! loop through every node on that cell
         nid = mesh%cnode(n,i)
         cells_neighboring_vertices(j(nid),nid) = i
 
-        !!$omp atomic
         j(nid) = j(nid) + 1
       end do
     end do
-    !!$omp end parallel do
 
   end function cells_neighboring_vertices
 
-  ! there should be a better way of doing this
   ! generate an array that, given a cell and local face id,
   ! returns the neighboring cell and its local face id
   subroutine neighbor_ids (cneighbor, fneighbor, mesh)
@@ -137,7 +126,10 @@ contains
 
     integer :: i,f,fid,j(mesh%nface)
 
+    
     j = 1; fcell = -1; flid = -1
+
+    ! at each face of each cell, add the cell and local face id to a list
     do i = 1,mesh%ncell
       do f = 1,6
         fid = mesh%cface(f,i)
@@ -148,7 +140,7 @@ contains
         j(fid) = j(fid)+1
       end do
     end do
-
+    
   end subroutine cells_connected_to_faces
   
 end module mesh_geom_type

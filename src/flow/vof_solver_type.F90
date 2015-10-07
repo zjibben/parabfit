@@ -13,11 +13,11 @@
 !#define DEBUG
 
 module vof_solver_type
-
   use kinds, only: r8
   use unstr_mesh_type
   use mesh_geom_type
   use logging_services
+  use surface_type
   implicit none
   private
 
@@ -25,21 +25,23 @@ module vof_solver_type
     private
     type(unstr_mesh), pointer :: mesh        => null() ! reference only -- do not own
     type(mesh_geom),  pointer :: gmesh       => null() ! reference only -- do not own
-    real(r8), pointer         :: fluidRho(:) => null() ! reference only -- do not own
+    real(r8),         pointer :: fluidRho(:) => null() ! reference only -- do not own
     
     !! Pending/current state
     real(r8)                      :: t, dt
-    integer, public               :: nmat          ! number of materials present globally
+    integer,                    public :: nmat                  ! number of materials present globally
     !real(r8), public, allocatable :: velocity(:,:) ! face velocities
-    real(r8), public, allocatable :: fluxing_velocity(:,:) ! face normal velocities
-    integer,  allocatable, public :: matl_id(:)
-    real(r8), allocatable, public :: vof(:,:)
+    real(r8),      allocatable, public :: fluxing_velocity(:,:) ! face normal velocities
+    integer,       allocatable, public :: matl_id(:)
+    real(r8),      allocatable, public :: vof(:,:), vof0(:,:)
+    type(surface), public :: intrec !(:)             ! interface reconstruction
   contains
     procedure :: init
     procedure :: set_initial_state
     ! procedure :: test_initial_state
     procedure :: advect_mass
     procedure, private :: advect_volume
+    procedure :: update_intrec_surf
     !procedure, private :: flux_renorm
     ! procedure :: time
     ! procedure :: get_interpolated_solution
@@ -71,7 +73,6 @@ module vof_solver_type
 contains
   
   subroutine init (this, mesh, gmesh, velocity_cc, fluidRho, params)
-
     use parameter_list_type
     use vof_init
 
@@ -99,7 +100,7 @@ contains
 
     this%nmat = size(this%matl_id)
 
-    allocate(this%vof(this%nmat,this%mesh%ncell))
+    allocate(this%vof(this%nmat,this%mesh%ncell), this%vof0(this%nmat,this%mesh%ncell))
 
     ! these needs to be done appropriately and elsewhere
     ! for right now, this just exists so that we can run simple tests,
@@ -123,6 +124,8 @@ contains
 
     write(*,*) sum(this%vof(1,:)*this%mesh%volume(:))
     write(*,*) sum(this%vof(2,:)*this%mesh%volume(:))
+
+    this%vof0 = this%vof
 
   end subroutine set_initial_state
 
@@ -182,10 +185,11 @@ contains
 
 
 
-  subroutine advect_mass(this,dt)
+  subroutine advect_mass (this, dt, dump_intrec)
     use timer_tree_type
     class(vof_solver), intent(inout) :: this
-    real(r8), intent(in) :: dt
+    real(r8),          intent(in)    :: dt
+    logical,           intent(in)    :: dump_intrec
     
     integer  :: stat
     real(r8) :: Vof_n(this%nmat, this%mesh%ncell)
@@ -202,9 +206,9 @@ contains
     
     ! need a copy of the time n Vof values.
     Vof_n = this%vof
-
+    
     ! Advect material volumes.
-    call this%advect_volume (Vof_n,dt)
+    call this%advect_volume (Vof_n,dt,dump_intrec)
 
     ! ! Update the mass & concentration distributions.
     ! if (volume_track_interfaces) then 
@@ -247,12 +251,13 @@ contains
   !   end do
   ! end subroutine inflow_outflow_update
   
-  subroutine advect_volume (this, vof_n, dt)
+  subroutine advect_volume (this, vof_n, dt, dump_intrec)
     use timer_tree_type
     use volume_track_module, only: volume_track
 
     class(vof_solver), intent(inout) :: this
     real(r8),          intent(in)    :: Vof_n(this%nmat,this%mesh%ncell), dt
+    logical,           intent(in)    :: dump_intrec
 
     integer  :: status, p, vps, volume_track_subcycles
     real(r8) :: adv_dt
@@ -272,7 +277,8 @@ contains
     do p = 1,volume_track_subcycles
       
       ! Get the donor fluxes.
-      call volume_track (volume_flux_sub, adv_dt, this%mesh, this%gmesh, this%vof, this%fluxing_velocity, this%nmat, this%fluidRho)
+      call volume_track (volume_flux_sub, adv_dt, this%mesh, this%gmesh, this%vof, this%fluxing_velocity, &
+           this%nmat, this%fluidRho, this%intrec, dump_intrec)
       
       !$omp parallel if(.not.using_mic) default(private) shared(adv_dt, this, vof_n, volume_flux_tot, volume_flux_sub)
 
@@ -419,7 +425,7 @@ contains
           ! un-maxed material fluxes (Sum_not_maxed).
           total_flux_through_face           = sum(Volume_Flux_Sub(:,f))
           total_flux_through_face_not_maxed = sum(volume_flux_sub(:,f), mask=.not.maxed)
-
+          
           ! Ratio as defined below, when used to multiply the non-maxed fluxes at 
           ! a face, will restore the flux balance.
           if (total_flux_through_face_not_maxed > 0.0_r8) then
@@ -547,6 +553,8 @@ contains
   !
   !=======================================================================
   subroutine vof_bounds (vof, volume_flux_tot, mesh)
+    use array_utils, only: last_true_loc
+
     real(r8), intent(inout) :: Vof(:,:),Volume_Flux_Tot(:,:,:)
     type(unstr_mesh), intent(in) :: mesh
 
@@ -792,10 +800,8 @@ contains
     outflow = 0.0_r8
     do f = 1, nfc
       ! Don't change dirichlet velocity BCs.
-      if (local_BC(f)==2) cycle
-      if (Volume_Flux_Tot(f) > 0.0_r8) then
-        Outflow = Outflow + Volume_Flux_Tot(f)
-      end if
+      if (local_BC(f)==2 .and. Volume_Flux_Tot(f) > 0.0_r8) &
+           Outflow = Outflow + Volume_Flux_Tot(f)
     end do
 
   end function outflow
@@ -805,36 +811,48 @@ contains
     integer,  intent(in) :: local_BC(:)
 
     integer :: f
-
+    
     inflow = 0.0_r8
     do f = 1, nfc
       ! Don't change dirichlet velocity BCs.
-      if (local_BC(f)==2) cycle
-      if (Volume_Flux_Tot(f) < 0.0_r8) then
-        Inflow = Inflow - Volume_Flux_Tot(f)
-      end if
+      if (local_BC(f)==2 .and. Volume_Flux_Tot(f) < 0.0_r8) &
+           Inflow = Inflow - Volume_Flux_Tot(f)
     end do
-
+    
   end function inflow
 
-  
-  ! return the index of the last true element of a logical array
-  ! this function is used in a few different modules -- it may be a good idea to bring it into one module
-  function last_true_loc (mask)
-    logical, intent(in) :: mask(:)
-    integer :: last_true_loc
-    
-    integer :: i
+  subroutine update_intrec_surf (this)
+    use locate_plane_module
+    use polyhedron_type
+    use volume_track_module, only: interface_normal
+    use hex_types,           only: hex_f, hex_e
 
-    do i = size(mask),1,-1
-      if (mask(i)) then
-        last_true_loc = i
-        return
-      end if
+    class(vof_solver), intent(inout) :: this
+
+    real(r8)               :: int_norm(3,this%nmat,this%mesh%ncell), vofint
+    integer                :: i,ni,ninterfaces,locate_plane_niters
+    type(locate_plane_hex) :: plane_cell
+    type(polyhedron)       :: poly
+
+    call this%intrec%purge ()
+
+    int_norm = interface_normal (this%vof, this%mesh, this%gmesh) ! compute interface normal vectors for all the materials.
+    
+    do i = 1,this%mesh%ncell
+      !write(*,*) i
+      do ni = 1,this%nmat-1
+        vofint = min(max(sum(this%vof(1:ni,i)), 0.0_r8), 1.0_r8)
+        ! write(*,*) int_norm(:,ni,i)
+        ! write(*,*) vofint
+        if (cutvof < vofint .and. vofint < 1.0_r8 - cutvof) then
+          call plane_cell%init (int_norm(:,ni,i), vofint, this%mesh%volume(i), this%mesh%x(:,this%mesh%cnode(:,i)))
+          call plane_cell%locate_plane (locate_plane_niters)
+          call poly%init (plane_cell%node, hex_f, hex_e)
+          call this%intrec%append (poly%intersection_verts (plane_cell%P))
+        end if
+      end do
     end do
 
-    last_true_loc = 0
-
-  end function last_true_loc
-
+  end subroutine update_intrec_surf
+  
 end module vof_solver_type

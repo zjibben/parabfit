@@ -2088,7 +2088,7 @@ void gmvwrite_variable_header()
 /* --------------------------------------------------------- */
 
 void gmvwrite_variable_name_data(int data_type, char varname[], void *vids)
- {
+{
   int tmpdata_type;
   long count, npts;
   float *tempvids;
@@ -2096,71 +2096,39 @@ void gmvwrite_variable_name_data(int data_type, char varname[], void *vids)
 
   tmpdata_type = data_type;
 
-  if(data_type == 0)
-   {
-    npts = n_cells;
-   }
-  else if(data_type == 1)
-   {
-    npts = n_nodes;
-   }
-  else if(data_type == 2)
-   {
-    npts = n_faces;
-   }
+  if(data_type == 0)      npts = n_cells;
+  else if(data_type == 1) npts = n_nodes;
+  else if(data_type == 2) npts = n_faces;
 
-  if (rflag64)
-   {
-    tempvids64 = (double*)malloc(sizeof(double)*npts);
-   }
-  else
-   {
-    tempvids = (float*)malloc(sizeof(float)*npts);
-   }
-
-  if (rflag64)
+  if (rflag64) tempvids64 = (double*)malloc(sizeof(double)*npts);
+  else         tempvids   =  (float*)malloc(sizeof(float)*npts);
+  
+  if (rflag64) for (count = 0; count < npts; count++) tempvids64[count] = *((double *) vids + count);
+  else         for (count = 0; count < npts; count++) tempvids  [count] = *((float  *) vids + count);
+  
+  if (filetype == IEEE_F)
     {
-     for (count = 0; count < npts; count++)
-       {
-        tempvids64[count] = *((double *) vids + count);
-       }
-    }
-  else
-    {
-     for (count = 0; count < npts; count++)
-       {
-        tempvids[count] = *((float *) vids + count);
-       }
-    }
-
-   if (filetype == IEEE_F)
-     {
       fwrite(varname, sizeof(char), charsize_out, fp);
       fwrite(&tmpdata_type, INT32, 1, fp);
-     }
-   else
+    }
+  else
+    {
       fprintf(fp,"%s %d\n",varname,tmpdata_type);
-   if (rflag64)
-     {
-      if (filetype == IEEE_F)
-         fwrite(tempvids64, FLOAT64, npts, fp);
-      else
-        {
-         write_ascii_double(npts, tempvids64);
-        }
+    }
+
+  if (rflag64)
+    {
+      if (filetype == IEEE_F) fwrite(tempvids64, FLOAT64, npts, fp);
+      else                    write_ascii_double(npts, tempvids64);
       free(tempvids64);
-     }
-   else
-     {
-      if (filetype == IEEE_F)
-         fwrite(tempvids, FLOAT32, npts, fp);
-      else
-        {
-         write_ascii_float(npts, tempvids);
-        }
+    }
+  else
+    {
+      if (filetype == IEEE_F) fwrite(tempvids, FLOAT32, npts, fp);
+      else                    write_ascii_float(npts, tempvids);
       free(tempvids);
-     }
- }
+    }
+}
 
 /* --------------------------------------------------------- */
 

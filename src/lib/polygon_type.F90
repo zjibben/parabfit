@@ -1,0 +1,167 @@
+!!
+!! polygon_type
+!!
+!! This module defines an arbitrary polygon type, along with routines for
+!! calculating area, splitting, locating intersections, etc.
+!!
+!! Zechariah J. Jibben <zjibben@lanl.gov>
+!! October 2015
+!!
+!! References:
+!!     1. Mirtich. Fast and Accurate Computation of Polehedral Mass Properties. Journal of Graphics Tools, 1996.
+!! 
+
+module polygon_type
+  use kinds, only: r8
+  use logging_services
+  implicit none
+  private
+
+  type, public :: polygon
+    integer               :: nVerts
+    real(r8), allocatable :: x(:,:)
+    real(r8)              :: norm(3)
+  contains
+    procedure          :: init => init_polygon
+    procedure          :: intXdA
+    procedure          :: centroid
+    procedure          :: order
+    procedure, private :: update_plane_normal
+  end type polygon
+  
+contains
+
+  subroutine init_polygon (this, x)
+    class(polygon), intent(out) :: this
+    real(r8),       intent(in)  :: x(:,:)
+
+    this%nVerts = size(x, dim=2)
+    allocate( this%x(3,this%nVerts) )
+    this%x = x
+    
+    call this%update_plane_normal ()
+    
+  end subroutine init_polygon
+
+  subroutine update_plane_normal (this)
+    use cell_geometry, only: cross_product
+
+    class(polygon), intent(inout) :: this
+  
+    integer :: i,j
+
+    ! calculate the normal via cross product from vectors defined by 3 vertices
+    
+    ! the direction of the normal is assumed from the node ordering (and
+    ! assuming convex)
+
+    ! if the polygon has >3 verteces, it could be
+    ! non-planar and we should subdivide
+    
+    ! make sure we pick 3 vertices that don't all lie in the same plane
+    this%norm = 0.0_r8; i = 3
+    do while (all(this%norm==0.0_r8))
+      if (i>this%nVerts) then
+        do j = 1,this%nVerts
+          write(*,*) this%x(:,j)
+        end do
+        call LS_fatal ('polygon only consists of a line')
+      end if
+      this%norm = cross_product ( this%x(:,2) - this%x(:,1), this%x(:,i) - this%x(:,1))
+      i = i + 1
+    end do
+    this%norm = this%norm / sqrt(sum(this%norm**2)) ! normalize
+
+  end subroutine update_plane_normal
+  
+  !
+  ! This function calculates the integral of X, Y, or Z (input dir)
+  ! over a polygon by reducing it to the sum of the integral of
+  ! dir^2 over all edges, which can be calculated algebraically.
+  ! Follows the algorithm proposed by [1].
+  !
+  real(r8) function intXdA (this,dir)
+    class(polygon), intent(in) :: this
+    integer,        intent(in) :: dir
+
+    integer :: e,eN,nEdges,A,B,C
+
+    nEdges = size(this%x, dim=2)
+
+    ! project into the plane that maximizes the area
+    C = maxloc(abs(this%norm), dim=1)
+    A = mod(C,3)+1
+    B = mod(A,3)+1
+    
+    ! sum up the integral of dir^2 over all edges
+    intXdA = 0.0_r8
+    do e = 1,nEdges
+      eN = mod(e,nEdges)+1 ! pick the next edge, looping back to the beginning if we are at the end
+      
+      if (A==dir) then
+        intXdA = intXdA + (this%x(B,eN)-this%x(B,e)) * (this%x(A,eN)**2 + this%x(A,eN)*this%x(A,e) + this%x(A,e)**2) &
+             / (6.0_r8*this%norm(C))
+      else if (B==dir) then
+        intXdA = intXdA - (this%x(A,eN)-this%x(A,e)) * (this%x(B,eN)**2 + this%x(B,eN)*this%x(B,e) + this%x(B,e)**2) &
+             / (6.0_r8*this%norm(C))
+      else if (C==dir) then
+        intXdA = intXdA - ( &
+             + this%norm(A) * (this%x(B,eN)-this%x(B,e)) * (this%x(A,eN)**2 + this%x(A,eN)*this%x(A,e) + this%x(A,e)**2) / 6.0_r8 &
+             - this%norm(B) * (this%x(A,eN)-this%x(A,e)) * (this%x(B,eN)**2 + this%x(B,eN)*this%x(B,e) + this%x(B,e)**2) / 6.0_r8 &
+             - sum(this%norm*this%x(:,e)) * (this%x(B,eN)-this%x(B,e)) * (this%x(A,eN) + this%x(A,e)) / 2.0_r8 &
+             ) / this%norm(C)**2
+      end if
+
+    end do
+
+  end function intXdA
+
+  function centroid (this)
+    class(polygon), intent(in) :: this
+    real(r8)                   :: centroid(3)
+    centroid = sum(this%x, dim=2) / real(this%nVerts,r8)
+  end function centroid
+
+  ! order the vertices of a convex polygon
+  !
+  ! this is done by calculating the vector between each vertex and the polygon centroid,
+  ! then the angle of that vector with respect to the x-axis in that space.
+  ! this angle is used to sort the vertices
+  subroutine order (this)
+    use array_utils, only: insertion_sort,mag,prj
+
+    class(polygon), intent(inout) :: this
+    
+    real(r8) :: xc(3), t(this%nVerts), prjx(2), xl(3,this%nVerts), magxl1, q(3,2)
+    integer  :: i
+
+    ! calculate the location of the centroid, and the vertex coordinates
+    ! with respect to the centroid
+    xc = this%centroid ()
+    do i = 1,this%nVerts
+      xl(:,i) = this%x(:,i) - xc(:)
+    end do
+
+    ! the projection coordinate directions
+    ! WARNING: need to ensure the second vector here is not parallel to q1
+    q(:,1) = xl(:,1) / mag (xl(:,1))
+    q(:,2) = xl(:,2) - prj (xl(:,2),q(:,1))
+    q(:,2) = q(:,2) / mag (q(:,2))
+    
+    ! calculate the rotation angle
+    t(1) = 0.0_r8
+    do i = 2,this%nVerts
+      ! get coordinates for the vertex in the 2D plane defined by the polygon
+      prjx(1) = sum(xl(:,i)*q(:,1))
+      prjx(2) = sum(xl(:,i)*q(:,2))
+      
+      ! find the angle made by this vertex with respect to the first vertex
+      t(i) = atan2(prjx(2),prjx(1))
+    end do
+    
+    ! sort based on angle
+    call insertion_sort (this%x,t)
+  end subroutine order
+
+  
+end module polygon_type
