@@ -21,7 +21,9 @@ module surface_type
 
   ! a surface is defined as a collection of polygons
   type, public :: surface
-    type(polygon), allocatable :: element(:)
+    private
+    type(polygon), public, allocatable :: element(:)
+    integer                            :: nfile = 0
   contains
     procedure :: append
     procedure :: write_gmv
@@ -63,14 +65,14 @@ contains
       call surf%append (element)
     end do
 
-    call surf%write_ply ()
+    call surf%write_ply ('surf.ply')
 
     call surf%purge ()
     P%normal = [4.0_r8, 1.0_r8, 1.0_r8]
     P%normal = P%normal / mag (P%normal)
     P%rho    = 0.5_r8 / sqrt(3.0_r8)
     call surf%append (cube%intersection_verts (P))
-    call surf%write_ply ()
+    call surf%write_ply ('surf.ply')
 
   end subroutine surface_unit_test
 
@@ -82,8 +84,8 @@ contains
     type(polygon)                 :: tmp(size(this%element))
     integer                       :: N
 
-    if (new_element%nVerts < 3) exit
-    
+    if (new_element%nVerts < 3) return
+
     if (allocated(this%element)) then
       N = size(this%element)
       tmp = this%element
@@ -121,7 +123,11 @@ contains
 
     allocate(x(3,Nverts), element_vid(maxval(this%element(:)%nVerts),size(this%element)), &
          fakedata(Nelements))
-    fakedata = 0.0_r8 ! to plot the surface elements, gmv needs data there
+
+    ! To plot the surface elements, gmv needs data there.
+    ! Or, at least, paraview won't open the file without it. Paraview won't display
+    ! surfaces anyways, though, so it could be paraview that is wrong.
+    fakedata = 0.0_r8 
 
     j = 1
     do e = 1,Nelements
@@ -159,21 +165,19 @@ contains
   end subroutine write_gmv
 
   ! write the polygons using the Stanford PLY format
-  subroutine write_ply (this)
-    use array_utils, only: xrange
+  subroutine write_ply (this, fname_in)
+    class(surface), intent(inout) :: this
+    character(*),   intent(in)    :: fname_in
 
-    class(surface), intent(in) :: this
-
-    character(16)              :: filename
-    integer                    :: e,j,i,Nelements,Nverts
-    integer, save              :: nfile = 0
+    character(16)                 :: filename
+    integer                       :: e,j,i,Nelements,Nverts
 
     Nelements = size(this%element)
     Nverts    = sum(this%element(:)%nVerts)
 
     ! open file
-    write(filename,'(a,i4.4)') 'surf.ply.', nfile
-    nfile = nfile + 1
+    write(filename,'(2a,i4.4)') fname_in,'.', this%nfile
+    this%nfile = this%nfile + 1
     open(99, file=trim(filename))
 
     ! write PLY header
@@ -199,7 +203,6 @@ contains
     j = 0
     do e = 1,Nelements
       write(99,'(i)',advance='no') this%element(e)%nVerts
-!      write(99,*) xrange (j,j+this%element(e)%nVerts-1)
       do i = j,j+this%element(e)%nVerts-1
         write(99,'(i)',advance='no') i
       end do

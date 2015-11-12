@@ -26,7 +26,7 @@ module polygon_type
     procedure          :: intXdA
     procedure          :: centroid
     procedure          :: order
-    procedure, private :: update_plane_normal
+    procedure          :: update_plane_normal
   end type polygon
   
 contains
@@ -65,7 +65,7 @@ contains
         do j = 1,this%nVerts
           write(*,*) this%x(:,j)
         end do
-        call LS_fatal ('polygon only consists of a line')
+        call LS_fatal ("polygon only consists of a line")
       end if
       this%norm = cross_product ( this%x(:,2) - this%x(:,1), this%x(:,i) - this%x(:,1))
       i = i + 1
@@ -127,13 +127,14 @@ contains
   ! this is done by calculating the vector between each vertex and the polygon centroid,
   ! then the angle of that vector with respect to the x-axis in that space.
   ! this angle is used to sort the vertices
-  subroutine order (this)
-    use array_utils, only: insertion_sort,mag,prj
+  subroutine order (this,array)
+    use array_utils, only: insertion_sort,mag,prj,xrange,invert
 
-    class(polygon), intent(inout) :: this
+    class(polygon),    intent(inout) :: this
+    integer, optional, intent(inout) :: array(:)
     
-    real(r8) :: xc(3), t(this%nVerts), prjx(2), xl(3,this%nVerts), magxl1, q(3,2)
-    integer  :: i
+    real(r8) :: xc(3), t(this%nVerts), t2(this%nVerts), prjx(2), xl(3,this%nVerts), magxl1, q(3,2)
+    integer  :: i,ind(size(this%x,dim=2))
 
     ! calculate the location of the centroid, and the vertex coordinates
     ! with respect to the centroid
@@ -160,7 +161,18 @@ contains
     end do
     
     ! sort based on angle
+    if (present(array)) then
+      t2 = t
+      ind = xrange (1,size(this%x,dim=2))
+      call insertion_sort (ind,t2)
+      ind = invert (ind)
+      do i = 1,size(array)
+        if (array(i)>0) array(i) = ind(array(i))
+      end do
+    end if
+
     call insertion_sort (this%x,t)
+
   end subroutine order
 
   

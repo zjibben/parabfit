@@ -8,11 +8,13 @@
 !!
 
 module array_utils
-  use kinds, only: r8
+  use kinds,  only: r8
+  use consts, only: alittle
   implicit none
   private
 
-  public :: last_true_loc,xrange,reorder,insertion_sort,mag,prj
+  public :: first_true_loc,last_true_loc,xrange,reorder,insertion_sort,mag,prj,int2str,&
+       reverse,invert,isZero
 
   ! interface append
   !   procedure append_polygon
@@ -22,6 +24,16 @@ module array_utils
     procedure :: reorder_r81d
     procedure :: reorder_r82d
   end interface reorder
+
+  interface insertion_sort
+    procedure :: insertion_sort_3r8r8
+    procedure :: insertion_sort_ir8
+  end interface insertion_sort
+
+  interface reverse
+    procedure :: reverse_i
+    procedure :: reverse_r8r8
+  end interface reverse
 
 contains
 
@@ -45,37 +57,52 @@ contains
   ! end subroutine append_polygon
   
   ! return the index of the last true element of a logical array
-  ! this function is used in a few different modules -- it may be a good idea to bring it into one module
-  function last_true_loc (mask)
+  integer function last_true_loc (mask)
     logical, intent(in) :: mask(:)
-    integer             :: last_true_loc
     
-    integer :: i
+    ! integer :: i
 
-    do i = size(mask),1,-1
-      if (mask(i)) then
-        last_true_loc = i
-        return
-      end if
+    ! do i = size(mask),1,-1
+    !   if (mask(i)) then
+    !     last_true_loc = i
+    !     return
+    !   end if
+    ! end do
+    ! last_true_loc = 0
+    
+    do last_true_loc = size(mask),1,-1
+      if (mask(last_true_loc)) return
     end do
     last_true_loc = 0
     
   end function last_true_loc
 
+  ! return the index of the first true element of a logical array
+  integer function first_true_loc (mask)
+    logical, intent(in) :: mask(:)
+    
+    do first_true_loc = 1,size(mask)
+      if (mask(first_true_loc)) return
+    end do
+    first_true_loc = 0
+    
+  end function first_true_loc
+
   ! create an array [a,a+1,a+2,...,b-1,b]
+  ! if b<a, then    [a,a-1,a-2,...,b+1,b]
   function xrange (a,b)
     integer, intent(in) :: a,b
-    integer             :: xrange(b+1-a)
+    integer             :: xrange(abs(b-a)+1)
 
     integer             :: i
 
-    do i = 1,b+1-a
-      xrange(i) = a + (i-1)
+    xrange(1) = a
+    do i = 2,abs(b-a)+1
+      xrange(i) = xrange(i-1) + sign(1,b-a)
     end do
 
   end function xrange
 
-  
   pure real(r8) function dot (a,b)
     real(r8), intent(in) :: a(:),b(:)
     dot = sum(a*b)
@@ -92,7 +119,7 @@ contains
     prj = sum(x*v) * v / sum(v**2)
   end function prj
   
-  subroutine insertion_sort (x,key)
+  subroutine insertion_sort_3r8r8 (x,key)
     real(r8), intent(inout) :: x(:,:),key(:)
 
     real(r8) :: tmp,tmpX(size(x,dim=1))
@@ -107,13 +134,44 @@ contains
         x(:,j) = x(:,j-1)
         j = j-1
       end do
+      ! do while (j>1) ! fortran debug mode doesn't short-circuit, so we segfault if the two checks are together
+      !   if (key(j-1)>tmp) then
+      !     key(j) = key(j-1)
+      !     x(:,j) = x(:,j-1)
+      !     j = j-1
+      !   else
+      !     exit
+      !   end if
+      ! end do
       key(j) = tmp
       x(:,j) = tmpX
     end do
 
-  end subroutine insertion_sort
+  end subroutine insertion_sort_3r8r8
 
+  subroutine insertion_sort_ir8 (x,key)
+    integer,  intent(inout) :: x(:)
+    real(r8), intent(inout) :: key(:)
 
+    integer  :: tmpX
+    real(r8) :: tmp
+    integer  :: i,j
+
+    do i = 2,size(key)
+      tmp  = key(i)
+      tmpX = x(i)
+      j = i
+      do while (j>1 .and. key(j-1)>tmp)
+        key(j) = key(j-1)
+        x(j)   = x(j-1)
+        j = j-1
+      end do
+      key(j) = tmp
+      x(j)   = tmpX
+    end do
+
+  end subroutine insertion_sort_ir8
+  
   ! reorder an array x based on a given order
   ! element i => element order(i)
   subroutine reorder_r81d (x,order)
@@ -141,5 +199,62 @@ contains
     end do
     x = y
   end subroutine reorder_r82d
+
+  ! these functions should be put in a different module for independent utilities
+  character(len=20) function int2str (k)
+    integer, intent(in) :: k
+    write(int2str,*) k
+    int2str = adjustl(int2str)
+  end function int2str
+  
+  pure logical function isZero (x)
+    real(r8), intent(in) :: x
+    isZero = abs(x)<1e4_r8*alittle
+  end function isZero
+
+  pure logical function eq (a,b)
+    real(r8), intent(in) :: a,b
+    eq = isZero (a-b)
+  end function eq
+
+  ! return a reversed array
+  function reverse_r8r8 (x) result(r)
+    real(r8), intent(in) :: x(:,:)
+    real(r8)             :: r(size(x,dim=1),size(x,dim=2))
+
+    integer              :: i,N
+
+    N = size(x,dim=2)
+    do i = 1,N
+      r(:,i) = x(:,N-(i-1))
+    end do
+
+  end function reverse_r8r8
+
+  function reverse_i (x) result(r)
+    integer, intent(in) :: x(:)
+    integer             :: r(size(x))
+
+    integer             :: i,N
+
+    N = size(x)
+    do i = 1,N
+      r(i) = x(N-(i-1))
+    end do
+
+  end function reverse_i
+
+  
+  function invert (x)
+    integer, intent(in) :: x(:)
+    integer             :: invert(size(x))
+
+    integer             :: i
+
+    do i = 1,size(x)
+      invert(x(i)) = i
+    end do
+
+  end function invert
 
 end module array_utils

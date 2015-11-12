@@ -30,10 +30,10 @@ module locate_plane_module
   implicit none
   private
 
-  integer, parameter :: ndim = 3
-  integer, parameter :: nfc = 6 ! number of faces per cell
-  integer, parameter :: nvc = 8 ! number of vertices per cell
-  integer, parameter  :: volume_track_iter_max = 10
+  integer,  parameter :: ndim = 3
+  integer,  parameter :: nfc = 6 ! number of faces per cell
+  integer,  parameter :: nvc = 8 ! number of vertices per cell
+  integer,  parameter :: volume_track_iter_max = 10
   real(r8), parameter :: volume_track_iter_tol = 1.0d-8
   real(r8), parameter :: alittle = epsilon(1.0_r8)
 

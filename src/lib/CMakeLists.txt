@@ -71,17 +71,24 @@ set(Pececillo_SOURCE_FILES
     velocity_to_faces_func.F90
     
 # Vof modules
+    consts.F90
     hex_types.F90
     material_geometry_type.F90
     vof_init.F90
-    locate_plane_module.F90
     truncate_volume_module.F90
+    brent_module.F90
+    int_norm_module.F90
+    locate_plane_module.F90
+    locate_plane_nd_module.F90
     volume_track_module.F90
+    volume_track_nd_module.F90
     flux_volume_module.F90
     plane_type.F90
     polygon_type.F90
     polyhedron_type.F90
+    multimat_cell_type.F90
     surface_type.F90
+    vof_solver_type.F90
     
 # Output modules
     gmvwrite.c

@@ -4,7 +4,6 @@ include_directories(${Pececillo_SOURCE_DIR}/src/lib)
 include_directories(${Pececillo_MODULE_DIR} ${Petaca_MODULE_DIR})
 
 set(SOURCE_FILES
-  vof_solver_type.F90
   NS_solver_type.F90
   flow_sim_type.F90)
 

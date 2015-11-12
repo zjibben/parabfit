@@ -24,8 +24,8 @@ module flow_sim_type
 
   type, public :: flow_sim
     type(unstr_mesh), pointer :: mesh       => null()
-    type(mesh_geom) :: gmesh
-    type(NS_solver), pointer :: ns_solver  => null()
+    type(mesh_geom)           :: gmesh
+    type(NS_solver), pointer  :: ns_solver  => null()
     type(vof_solver), pointer :: vof_solver => null()
     !! Integration control
     real(r8) :: dt_init
@@ -48,8 +48,6 @@ contains
   subroutine flow_sim_delete (this)
     type(flow_sim), intent(inout) :: this
     if (associated(this%mesh)) deallocate(this%mesh)
-    ! if (associated(this%disc)) deallocate(this%disc)
-    ! if (associated(this%model)) deallocate(this%model)
     if (associated(this%ns_solver)) deallocate(this%ns_solver)
     if (associated(this%vof_solver)) deallocate(this%vof_solver)
   end subroutine flow_sim_delete
@@ -84,21 +82,6 @@ contains
     end if
     call this%gmesh%init (this%mesh)
     call stop_timer ('mesh')
-    ! call start_timer ('mfd-discretization')
-    ! allocate(this%disc)
-    ! call this%disc%init (this%mesh)
-    ! call stop_timer ('mfd-discretization')
-
-    ! !! Create the heat conduction model.
-    ! call start_timer ('hc-model')
-    ! if (params%is_sublist('hc-model')) then
-    !   plist => params%sublist('hc-model')
-    !   allocate(this%model)
-    !   call this%model%init (this%disc, plist)
-    ! else
-    !   call LS_fatal ('missing "hc-model" sublist parameter')
-    ! end if
-    ! call stop_timer ('hc-model')
 
     !! Create the navier stokes solver.
     write(*,*) 'initializing Navier-Stokes solver...'
@@ -266,27 +249,19 @@ contains
     
   end subroutine step
 
+
+  real(r8) function l1_error (vof1,vof2)
+    real(r8), intent(in) :: vof1(:,:), vof2(:,:)
+    l1_error = sum(abs(vof1(1,:)-vof2(1,:))) / size(vof1,dim=2)
+  end function l1_error
+
   !! This auxiliary subroutine writes the solution to a GMV format viz file.
   !! There are lots of better things we could do here (write back to an Exodus
   !! file, VTK, or an HDF5 file), but procedures for writing GMV output were
   !! immediately available.
-
-
-  real(r8) function l1_error (vof1,vof2)
-    real(r8), intent(in) :: vof1(:,:), vof2(:,:)
-
-    ! l1_error = 0.0_r8
-    ! do n = 1,mesh%ncell
-    !   l1_error = l1_error + abs(vof1(1,n)-vof2(1,n))
-    ! end do
-    ! l1_error = l1_error / mesh%ncell
-
-    l1_error = sum(abs(vof1(1,:)-vof2(1,:))) / size(vof1,dim=2)
-
-  end function l1_error
-
   subroutine write_solution (this, t)
     use unstr_mesh_gmv
+    use array_utils, only: int2str
     
     class(flow_sim), intent(inout) :: this
     real(r8), intent(in) :: t
@@ -322,8 +297,11 @@ contains
     ! call gmv_end_surfvars
     call gmv_close
 
-    if (this%dump_intrec) &
-         call this%vof_solver%intrec%write_ply ()
+    if (this%dump_intrec) then
+      do m = 1,this%vof_solver%nmat-1
+        call this%vof_solver%intrec(m)%write_ply ('surf_'//trim(int2str(m))//'.ply')
+      end do
+    end if
 
     call stop_timer ('output')
 
