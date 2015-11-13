@@ -112,8 +112,8 @@ contains
     real(r8)            :: Rho_Min, Rho_Max, V_Min, V_Max
     type(truncvol_data) :: trunc_vol(nfc)
     
-    ! WARNING: Need to figure out how to make this run in parallel with OpenMP.
-    !          Currently, the timer is a global variable, and not thread-safe.
+    ! WARNING: Need to figure out how to make the timer run in parallel with OpenMP.
+    !          Currently, it is a global variable, and not thread-safe.
     !call start_timer ("Locate Plane")
 
     ! Bracket the correct value of Rho [Rho_Min,Rho_Max] to insure

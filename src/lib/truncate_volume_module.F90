@@ -22,7 +22,8 @@
 !=======================================================================
 
 module truncate_volume_module
-  use kinds, only: r8
+  use kinds,  only: r8
+  use consts, only: alittle
   implicit none
   private
 
@@ -30,7 +31,6 @@ module truncate_volume_module
 
   integer,  parameter :: nvf = 4 ! number of vertices per cell face
   integer,  parameter :: nfc = 6 ! number of faces
-  real(r8), parameter :: alittle = epsilon(1.0_r8)
   real(r8), parameter :: eps(4) = (/ 1.0_r8, -1.0_r8, 1.0_r8, -1.0_r8 /)
 
   type truncvol_data

@@ -27,6 +27,7 @@
     },
     
     "vof-solver": {
+        "advection-method": 1,
         "materials": [1, 2],
     	"initial-vof": {
     	    "plane": {

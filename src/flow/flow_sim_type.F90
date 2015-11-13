@@ -58,6 +58,7 @@ contains
     use unstr_mesh_factory
     use unstr_mesh_func
     use vof_init
+    use omp_lib, only: omp_get_max_threads
 
     class(flow_sim), intent(out) :: this
     type(parameter_list) :: params
@@ -106,7 +107,11 @@ contains
     else
       call LS_fatal ('missing "vof-solver" sublist parameter')
     end if
-    this%dump_intrec = .true. ! print plane reconstructions (should grab from input file)
+
+    ! print plane reconstructions (should grab from input file, currently set to true)
+    ! also only dump interface reconstruction if running in serial (TODO: fix this)
+    this%dump_intrec = .true. .and. omp_get_max_threads () == 1
+
     call stop_timer ('vof-solver')
 
     !! Simulation control parameters
@@ -266,15 +271,14 @@ contains
     class(flow_sim), intent(inout) :: this
     real(r8), intent(in) :: t
 
-    integer :: m
-    character(21) :: filename,mstr
+    integer       :: m
+    character(21) :: nstr
 
     call start_timer ('output')
 
-    write(filename,'(a,i4.4)') 'flow_out.gmv.', this%nfile
-    this%nfile = this%nfile + 1
-
-    call gmv_open (trim(filename))
+    write(nstr,'(i4.4)') this%nfile
+    
+    call gmv_open (trim('flow_out.gmv.'//trim(nstr)))
     call gmv_write_unstr_mesh (this%mesh)
     call gmv_begin_variables (time=t)
 
@@ -283,11 +287,9 @@ contains
     call gmv_write_cell_var (this%mesh, this%ns_solver%velocity(2,:), 'u2')
     call gmv_write_cell_var (this%mesh, this%ns_solver%velocity(3,:), 'u3')
 
-    ! get the vof
-    !call matl_get_vof (vof, this%vof_solver%cell_matls, this%vof_solver%nmat, this%vof_solver%matl_id)
-    do m = 1,this%vof_solver%nmat ! write all material vofs (TODO should I somehow be writing the interface reconstruction?)
-      write(mstr, '(i3)') this%vof_solver%matl_id(m)
-      call gmv_write_cell_var (this%mesh, this%vof_solver%vof(m,:), 'vof_'//trim(adjustl(mstr)) )
+    ! write all material vofs
+    do m = 1,this%vof_solver%nmat
+      call gmv_write_cell_var (this%mesh, this%vof_solver%vof(m,:), 'vof_'//trim(int2str(m)) )
     end do
 
     call gmv_end_variables
@@ -297,12 +299,14 @@ contains
     ! call gmv_end_surfvars
     call gmv_close
 
+    ! dump the interface reconstruction
     if (this%dump_intrec) then
       do m = 1,this%vof_solver%nmat-1
-        call this%vof_solver%intrec(m)%write_ply ('surf_'//trim(int2str(m))//'.ply')
+        call this%vof_solver%intrec(m)%write_ply ('surf_'//trim(int2str(m))//'.ply.'//trim(nstr))
       end do
     end if
-
+    this%nfile = this%nfile + 1
+    
     call stop_timer ('output')
 
   end subroutine write_solution

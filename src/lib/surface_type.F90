@@ -23,7 +23,6 @@ module surface_type
   type, public :: surface
     private
     type(polygon), public, allocatable :: element(:)
-    integer                            :: nfile = 0
   contains
     procedure :: append
     procedure :: write_gmv
@@ -113,7 +112,6 @@ contains
 
     character(16)              :: filename
     integer                    :: e,j,Nelements,Nverts
-    integer,  save             :: nfile = 0
     integer,  allocatable      :: element_vid(:,:)
     real(r8), allocatable      :: x(:,:),fakedata(:)
 
@@ -137,8 +135,7 @@ contains
     end do
 
     ! dump the gmv file
-    write(filename,'(a,i4.4)') 'planes.gmv.', nfile
-    nfile = nfile + 1
+    write(filename,'(a,i4.4)') 'planes.gmv'
 
     call gmvwrite_openfile_ir_ascii (trim(filename)//C_NULL_CHAR, 4, 8)
 
@@ -165,20 +162,17 @@ contains
   end subroutine write_gmv
 
   ! write the polygons using the Stanford PLY format
-  subroutine write_ply (this, fname_in)
+  subroutine write_ply (this, fname)
     class(surface), intent(inout) :: this
-    character(*),   intent(in)    :: fname_in
+    character(*),   intent(in)    :: fname
 
-    character(16)                 :: filename
     integer                       :: e,j,i,Nelements,Nverts
 
     Nelements = size(this%element)
     Nverts    = sum(this%element(:)%nVerts)
 
     ! open file
-    write(filename,'(2a,i4.4)') fname_in,'.', this%nfile
-    this%nfile = this%nfile + 1
-    open(99, file=trim(filename))
+    open(99, file=trim(fname))
 
     ! write PLY header
     write(99,'(a)')   'ply'

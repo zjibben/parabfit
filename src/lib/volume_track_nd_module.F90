@@ -28,6 +28,7 @@ contains
     use unstr_mesh_type
     use mesh_geom_type
     use surface_type
+    use hex_types,       only: hex_f,hex_e
     use int_norm_module, only: interface_normal
     
     real(r8),         intent(out) :: volume_flux_sub(:,:,:)
@@ -44,26 +45,25 @@ contains
     integer              :: i,f
 
     ! compute interface normal vectors for all the materials.
-    ! does the normal get calculated differently for nested dissection?
+    ! TODO: the norm gets calculated differently for nested dissection??
     int_norm = interface_normal (vof, mesh, gmesh)
 
     ! calculate the flux volumes for each face
     do i = 1,mesh%ncell
       ! send cell data to the multimat_cell type
-      call cell%init (mesh%x(:,mesh%cnode(:,i)), mesh%volume(i), mesh%area(mesh%cface(:,i)), &
-           mesh%normal(:,mesh%cface(:,i)), mesh%cfpar(i))
+      call cell%init (mesh%x(:,mesh%cnode(:,i)), hex_f, hex_e, mesh%volume(i))
 
       ! partition the cell based on vofs and norms
       call cell%partition (vof(:,i), int_norm(:,:,i))
 
       if (dump_intrec) then
-        ! do something here!!
+        ! TODO: dump interface reconstruction
       end if
-
+      
       ! calculate how much material is being fluxed out of each face
       do f = 1,6
         ! find the plane equation for the back end of the flux volume
-        ! WARNING: in general, this plane could be non-planar, just like cell faces
+        ! WARNING: in general, this could be non-planar, just like cell faces
         flux_plane%normal = -gmesh%outnorm(:,f,i)
         xf = sum(mesh%x(:,mesh%fnode(:,mesh%cface(f,i)))) / 6.0_r8 ! face center
         flux_plane%rho  = sum(xf*flux_plane%normal) + adv_dt * fluxing_velocity(f,i)

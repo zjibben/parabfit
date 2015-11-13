@@ -13,7 +13,8 @@
 !#define DEBUG
 
 module vof_solver_type
-  use kinds, only: r8
+  use kinds,  only: r8
+  use consts, only: cutvof
   use unstr_mesh_type
   use mesh_geom_type
   use logging_services
@@ -28,9 +29,10 @@ module vof_solver_type
     real(r8),         pointer :: fluidRho(:) => null() ! reference only -- do not own
     
     !! Pending/current state
-    real(r8)                      :: t, dt
+    integer                            :: advect_method
+    real(r8)                           :: t, dt
     integer,                    public :: nmat                  ! number of materials present globally
-    !real(r8), public, allocatable :: velocity(:,:) ! face velocities
+    !real(r8),      allocatable, public :: velocity(:,:)         ! face velocities
     real(r8),      allocatable, public :: fluxing_velocity(:,:) ! face normal velocities
     integer,       allocatable, public :: matl_id(:)
     real(r8),      allocatable, public :: vof(:,:), vof0(:,:)
@@ -57,7 +59,6 @@ module vof_solver_type
   ! these need to be put somewhere and used appropriately
   integer, allocatable :: boundary_flag(:,:)
   logical, allocatable :: is_void(:)
-  real(r8), parameter :: cutvof = 1.0e-8_r8
   integer, parameter :: nfc = 6 ! number of faces per cell
 
   logical, parameter :: using_mic = .false.
@@ -72,6 +73,10 @@ module vof_solver_type
   real(r8), save :: WMaxTotU   = 0.0_r8
   integer,  save :: WCountMatU = 0
   real(r8), save :: WMaxMatU   = 0.0_r8
+
+  ! advection methods
+  integer, parameter :: ONION_SKIN        = 1
+  integer, parameter :: NESTED_DISSECTION = 2
 
 contains
   
@@ -98,6 +103,9 @@ contains
     context = 'processing ' // params%name() // ': '
 
     call params%get ('materials', this%matl_id, stat=stat, errmsg=errmsg)
+    if (stat /= 0) call LS_fatal (context//errmsg)
+
+    call params%get ('advection-method', this%advect_method, stat=stat, errmsg=errmsg)
     if (stat /= 0) call LS_fatal (context//errmsg)
 
     this%nmat = size(this%matl_id)
@@ -200,7 +208,8 @@ contains
   
   subroutine advect_volume (this, vof_n, dt, dump_intrec)
     use timer_tree_type
-    use volume_track_module, only: volume_track
+    use volume_track_module,    only: volume_track
+    use volume_track_nd_module, only: volume_track_nd
 
     class(vof_solver), intent(inout) :: this
     real(r8),          intent(in)    :: Vof_n(this%nmat,this%mesh%ncell), dt
@@ -219,22 +228,30 @@ contains
     ! Set the advection timestep. this can be improved.
     volume_track_subcycles = 2
     adv_dt = dt/real(volume_track_subcycles,r8)
-
+    
     !!$omp parallel if(using_mic) default(private) shared(adv_dt, this, vof_n, volume_flux_tot, volume_flux_sub, volume_track_subcycles)
     do p = 1,volume_track_subcycles
       
       ! Get the donor fluxes.
-      call volume_track (volume_flux_sub, adv_dt, this%mesh, this%gmesh, this%vof, this%fluxing_velocity, &
-           this%nmat, this%fluidRho, this%intrec, dump_intrec)
-      
-      !$omp parallel if(.not.using_mic) default(private) shared(adv_dt, this, vof_n, volume_flux_tot, volume_flux_sub)
+      select case (this%advect_method)
+      case (ONION_SKIN)
+        call volume_track (volume_flux_sub, adv_dt, this%mesh, this%gmesh, this%vof, this%fluxing_velocity, &
+             this%nmat, this%fluidRho, this%intrec, dump_intrec)
+      case (NESTED_DISSECTION)
+        call volume_track_nd (volume_flux_sub, adv_dt, this%mesh, this%gmesh, this%vof, this%fluxing_velocity, &
+             this%nmat, this%fluidRho, this%intrec, dump_intrec)
+      case default
+        call LS_fatal ("invalid advection method")
+      end select
 
+      !$omp parallel if(.not.using_mic) default(private) shared(adv_dt, this, vof_n, volume_flux_tot, volume_flux_sub)
+      
       ! Normalize the donor fluxes.
       call flux_renorm (this%fluxing_velocity, Vof_n, Volume_Flux_Tot, Volume_Flux_Sub, adv_dt, this%mesh)
       
       ! Compute the acceptor fluxes.
       call flux_acceptor (volume_flux_sub, this%gmesh)
-
+      
       ! Compute BC (inflow) fluxes.
       call flux_bc (this%fluxing_velocity, vof_n, volume_flux_sub, adv_dt, this%mesh, this%gmesh)
       
@@ -243,7 +260,7 @@ contains
       
       ! Ensure volume fractions of each material are within 0 and 1 and that all materials sum to one
       call vof_bounds (this%vof, volume_flux_tot, this%mesh)
-
+      
       !$omp end parallel
             
       !write(*,*) 'completed subcycle, dt =',adv_dt

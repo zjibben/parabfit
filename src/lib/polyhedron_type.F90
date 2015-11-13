@@ -13,7 +13,7 @@
 
 module polyhedron_type
   use kinds,  only: r8
-  use consts, only: alittle, alpha
+  use consts, only: alpha
   use logging_services
   use polygon_type
   implicit none
@@ -40,11 +40,6 @@ module polyhedron_type
     procedure, private :: polyhedron_on_side_of_plane
   end type polyhedron
 
-  interface init
-    procedure :: init_polyhedron
-    procedure :: init_polyhedron_copy
-  end interface init
-  
 contains
 
   subroutine polyhedron_unit_test ()
@@ -98,23 +93,23 @@ contains
     ! calculate the volume of a unit cube (1)
     call cube%init (cube_v, hex_f, hex_e)
     volume = cube%volume ()
-    write(*,*) 'cube volume = ', volume
+    write(*,*) 'cube volume?    ', isZero (volume-1.0_r8)
 
     ! calculate the volume of a pyramid (1/6)
     call pyramid%init (pyr_v, pyr_f, pyr_e)
     volume = pyramid%volume ()
-    write(*,*) 'pyramid volume = ', volume
+    write(*,*) 'pyramid volume? ', isZero (volume-1.0_r8/6.0_r8)
 
     ! create a plane, and return coordinates it intersects with polyhedron edges
     P%normal = [ 1.0_r8, 0.0_r8, 0.0_r8 ]
     P%rho    = 0.5_r8
 
-    intpoly = cube%intersection_verts (P)
+    ! intpoly = cube%intersection_verts (P)
     
-    write(*,*) 'intersection points'
-    do i = 1,intpoly%nVerts
-      write(*,*) intpoly%x(:,i)
-    end do
+    ! write(*,*) 'intersection points'
+    ! do i = 1,intpoly%nVerts
+    !   write(*,*) intpoly%x(:,i)
+    ! end do
 
     ! split the cube vertically down the center
     write(*,*) 'cube split volumes'
@@ -235,7 +230,8 @@ contains
   !
   type(polygon) function intersection_verts (this,P,v_assoc_pe)
     use plane_type
-    use array_utils, only: reverse,first_true_loc
+    use array_utils, only: reverse,first_true_loc,isZero
+    use consts,      only: alittle
 
     class(polyhedron), intent(in)  :: this
     class(plane),      intent(in)  :: P
@@ -256,11 +252,14 @@ contains
         intx = P%intersection_point (this%x(:,this%edge_vid(:,e)))
 
         ! check if the point is already in the list
-        pteq(1:Nintersections) = abs(intx(1)-x(1,1:Nintersections))<1e4_r8*alittle .and. &
-             abs(intx(2)-x(2,1:Nintersections))<1e4_r8*alittle .and. &
-             abs(intx(3)-x(3,1:Nintersections))<1e4_r8*alittle
-        
-        
+        ! pteq(1:Nintersections) = isZero (intx(1)-x(1,1:Nintersections)) &
+        !      .and.               isZero (intx(2)-x(2,1:Nintersections)) &
+        !      .and.               isZero (intx(3)-x(3,1:Nintersections))
+
+        pteq(1:Nintersections) = abs(intx(1)-x(1,1:Nintersections))<1e4_r8*alittle &
+             .and.               abs(intx(2)-x(2,1:Nintersections))<1e4_r8*alittle &
+             .and.               abs(intx(3)-x(3,1:Nintersections))<1e4_r8*alittle
+                
         ! if this point wasn't already found, store it
         if (.not.any(pteq(1:Nintersections))) then
           Nintersections = Nintersections + 1
@@ -432,7 +431,8 @@ contains
           ! add all valid vertices in sequence, stop when we hit one that is invalid
           ! this stopping point indicates an edge that was cut by the plane
           tmp = 1
-          do while (side(this%face_vid(v,f))==valid_side .and. v<=nV)
+          do while (v<=nV)
+            if (side(this%face_vid(v,f))/=valid_side) exit
             face_vid(tmp,nFaces) = p2c_vid(this%face_vid(v,f))
             v = v+1; tmp = tmp+1
           end do

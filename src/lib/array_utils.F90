@@ -35,6 +35,12 @@ module array_utils
     procedure :: reverse_r8r8
   end interface reverse
 
+  interface isZero
+    procedure :: isZero_r8
+    procedure :: isZero_r8a
+    procedure :: isZero_r8aa
+  end interface isZero
+
 contains
 
   ! ! append element to the end of array (increasing array size by 1)
@@ -129,20 +135,20 @@ contains
       tmp  = key(i)
       tmpX = x(:,i)
       j = i
-      do while (j>1 .and. key(j-1)>tmp)
-        key(j) = key(j-1)
-        x(:,j) = x(:,j-1)
-        j = j-1
-      end do
-      ! do while (j>1) ! fortran debug mode doesn't short-circuit, so we segfault if the two checks are together
-      !   if (key(j-1)>tmp) then
-      !     key(j) = key(j-1)
-      !     x(:,j) = x(:,j-1)
-      !     j = j-1
-      !   else
-      !     exit
-      !   end if
+      ! do while (j>1 .and. key(j-1)>tmp)
+      !   key(j) = key(j-1)
+      !   x(:,j) = x(:,j-1)
+      !   j = j-1
       ! end do
+      do while (j>1) ! fortran debug mode doesn't short-circuit, so we segfault if the two checks are together
+        if (key(j-1)>tmp) then
+          key(j) = key(j-1)
+          x(:,j) = x(:,j-1)
+          j = j-1
+        else
+          exit
+        end if
+      end do
       key(j) = tmp
       x(:,j) = tmpX
     end do
@@ -161,10 +167,19 @@ contains
       tmp  = key(i)
       tmpX = x(i)
       j = i
-      do while (j>1 .and. key(j-1)>tmp)
-        key(j) = key(j-1)
-        x(j)   = x(j-1)
-        j = j-1
+      ! do while (j>1 .and. key(j-1)>tmp)
+      !   key(j) = key(j-1)
+      !   x(j)   = x(j-1)
+      !   j = j-1
+      ! end do
+      do while (j>1) ! fortran debug mode doesn't short-circuit, so we segfault if the two checks are together
+        if (key(j-1)>tmp) then
+          key(j) = key(j-1)
+          x(j)   = x(j-1)
+          j = j-1
+        else
+          exit
+        end if
       end do
       key(j) = tmp
       x(j)   = tmpX
@@ -207,10 +222,20 @@ contains
     int2str = adjustl(int2str)
   end function int2str
   
-  pure logical function isZero (x)
+  pure logical function isZero_r8 (x)
     real(r8), intent(in) :: x
-    isZero = abs(x)<1e4_r8*alittle
-  end function isZero
+    isZero_r8 = abs(x)<1e4_r8*alittle
+  end function isZero_r8
+  
+  pure logical function isZero_r8a (x)
+    real(r8), intent(in) :: x(:)
+    isZero_r8a = all(abs(x)<1e4_r8*alittle)
+  end function isZero_r8a
+
+  pure logical function isZero_r8aa (x)
+    real(r8), intent(in) :: x(:,:)
+    isZero_r8aa = all(abs(x)<1e4_r8*alittle)
+  end function isZero_r8aa
 
   pure logical function eq (a,b)
     real(r8), intent(in) :: a,b

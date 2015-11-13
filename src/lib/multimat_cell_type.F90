@@ -56,6 +56,8 @@ contains
       tmp = remainder%split (locate_plane_nd (remainder, norm(:,m), vof(m)*this%vol))
       remainder = tmp(1)
       this%mat_poly(m) = tmp(2)
+
+      ! TODO: save the last face as the interface reconstruction for dumping purposes
     end do
     
   end subroutine partition
