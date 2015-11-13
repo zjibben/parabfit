@@ -41,24 +41,45 @@ contains
     real(r8),             intent(in)    :: vof(:), norm(:,:)
 
     type(polyhedron) :: tmp(2),remainder
-    integer          :: m
+    integer          :: m,nm,nmat_in_cell
 
     allocate(this%mat_poly(size(vof)))
 
     call remainder%init (this)
 
-    do m = 1,size(vof)
-      if (vof(m) < cutvof) cycle
+    !write(*,*) 'here1.1'
 
+    nmat_in_cell = count(cutvof < vof(:) .and. vof(:) < 1.0_r8-cutvof)
+    nm = 0
+    write(*,*) 'nmat',nmat_in_cell
+    write(*,*) 'norm',norm(:,1)
+    write(*,*) 'norm',norm(:,2)
+
+    do m = 1,size(vof)
+      if (vof(m) < cutvof .or. 1.0_r8-cutvof < vof(m)) cycle
+      nm = nm+1 ! update the counter of how many materials we've seen thus far
+      
       ! reconstruct the plane from the remaining free space
       ! use the plane to generate the polyhedron for this material,
       ! and update the free-space polyhedron
-      tmp = remainder%split (locate_plane_nd (remainder, norm(:,m), vof(m)*this%vol))
-      remainder = tmp(1)
-      this%mat_poly(m) = tmp(2)
+
+      !write(*,'(i3,es14.4,3f10.4)') m,vof(m),norm(:,m)
+
+      if (nm==nmat_in_cell) then
+        ! if this is the final material in the cell,
+        ! it gets the entire remainder of the polyhedron
+        this%mat_poly(m) = remainder
+      else
+        ! if this is not the final material in the cell, split the cell
+        tmp = remainder%split (locate_plane_nd (remainder, norm(:,m), vof(m)*this%vol))
+        remainder = tmp(1)
+        this%mat_poly(m) = tmp(2)
+      end if
 
       ! TODO: save the last face as the interface reconstruction for dumping purposes
     end do
+
+    !write(*,*) 'here1.3'
     
   end subroutine partition
 

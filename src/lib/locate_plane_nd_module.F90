@@ -16,19 +16,101 @@ module locate_plane_nd_module
   implicit none
   private
 
-  public :: locate_plane_nd
+  public :: locate_plane_nd, locate_plane_nd_unit_test_suite
 
   ! define type for error function
   type, extends(brent_func) :: volume_error_func
     real(r8)         :: tvol,norm(3)
     type(polyhedron) :: poly
   contains
-    procedure :: init => func_init
-    procedure :: eval => func_eval
-    procedure :: signed_eval => func_signed_eval
+    procedure        :: init => func_init
+    procedure        :: eval => func_eval
+    procedure        :: signed_eval => func_signed_eval
   end type volume_error_func
   
 contains
+
+  subroutine locate_plane_nd_unit_test_suite ()
+    use array_utils, only: isZero
+    use hex_types,   only: hex_f, hex_e
+
+    logical          :: success
+    type(polyhedron) :: cube
+    type(plane)      :: P
+    real(r8)         :: vol
+    real(r8)         :: cube_v(3,8) = [ &
+         [ 0.0_r8, 0.0_r8, 0.0_r8 ], & ! vertex positions
+         [ 1.0_r8, 0.0_r8, 0.0_r8 ], &
+         [ 1.0_r8, 1.0_r8, 0.0_r8 ], &
+         [ 0.0_r8, 1.0_r8, 0.0_r8 ], &
+         [ 0.0_r8, 0.0_r8, 1.0_r8 ], &
+         [ 1.0_r8, 0.0_r8, 1.0_r8 ], &
+         [ 1.0_r8, 1.0_r8, 1.0_r8 ], &
+         [ 0.0_r8, 1.0_r8, 1.0_r8 ]  &
+         ]
+
+    write(*,*)
+    write(*,*) 'LOCATE PLANE NESTED DISSECTION'
+    write(*,*) '===================================================='
+
+    ! just working with a cube for now (definitely need more later)
+    call cube%init (cube_v, hex_f, hex_e)
+    
+    ! cube half filled along x
+    P%normal = [1.0_r8, 0.0_r8, 0.0_r8]
+    P%rho    = 0.5_r8
+    success  = locate_plane_nd_unit_test (cube, P, vol)
+    write(*,*) 'cube half filled along x?            ',success
+
+    ! cube half filled along y
+    P%normal = [0.0_r8, 1.0_r8, 0.0_r8]
+    P%rho    = 0.5_r8
+    success  = locate_plane_nd_unit_test (cube, P, vol)
+    write(*,*) 'cube half filled along y?            ',success
+
+    ! cube half filled along xy diagonal
+    P%normal = [1.0_r8, 1.0_r8, 0.0_r8] / sqrt(2.0_r8)
+    P%rho    = 0.5_r8
+    success  = locate_plane_nd_unit_test (cube, P, vol)
+    write(*,*) 'cube half filled along xy diagonal?  ',success
+    
+    ! cube half filled along xyz diagonal
+    P%normal = [1.0_r8, 1.0_r8, 1.0_r8] / sqrt(3.0_r8) ! positive x-y-z
+    P%rho    = 0.5_r8
+    success  = locate_plane_nd_unit_test (cube, P, vol)
+    write(*,*) 'cube half filled along xyz diagonal? ',success
+    
+    ! cube 8/10ths filled along x
+    P%normal = [1.0_r8, 0.0_r8, 0.0_r8]
+    P%rho    = 0.8_r8
+    success  = locate_plane_nd_unit_test (cube, P, vol)
+    write(*,*) 'cube 8/10ths filled along x?         ',success
+
+    
+    ! cube 8/10ths filled along -x
+    P%normal = -[1.0_r8, 0.0_r8, 0.0_r8]
+    P%rho    = 0.8_r8
+    success  = locate_plane_nd_unit_test (cube, P, vol)
+    write(*,*) 'cube 8/10ths filled along -x?        ',success
+
+    write(*,*) '===================================================='
+    write(*,*)
+
+  end subroutine locate_plane_nd_unit_test_suite
+
+  logical function locate_plane_nd_unit_test (poly, P, vol)
+    use array_utils, only: isZero
+
+    type(polyhedron), intent(in) :: poly
+    type(plane),      intent(in) :: P
+    real(r8),         intent(in) :: vol
+
+    type(plane) :: P_out
+
+    P_out = locate_plane_nd (poly, P%normal, vol)
+    locate_plane_nd_unit_test = isZero (P%rho - P_out%rho)
+    
+  end function locate_plane_nd_unit_test
 
   ! given a polyhedron, a normal, and a volume, calculate a plane constant
   ! and return a plane type

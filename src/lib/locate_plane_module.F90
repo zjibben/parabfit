@@ -24,18 +24,17 @@
 
 
 module locate_plane_module
-  use kinds, only: r8
+  use kinds,     only: r8
+  use consts,    only: ndim,nfc,nvc,alittle
   use hex_types, only: reconstruction_hex
   use logging_services
   implicit none
   private
 
-  integer,  parameter :: ndim = 3
-  integer,  parameter :: nfc = 6 ! number of faces per cell
-  integer,  parameter :: nvc = 8 ! number of vertices per cell
   integer,  parameter :: volume_track_iter_max = 10
   real(r8), parameter :: volume_track_iter_tol = 1.0d-8
-  real(r8), parameter :: alittle = epsilon(1.0_r8)
+
+  public :: locate_plane_unit_test_suite
 
   type, extends(reconstruction_hex), public :: locate_plane_hex
   contains
@@ -48,12 +47,56 @@ module locate_plane_module
 
 contains
 
+  subroutine locate_plane_unit_test_suite ()
+    type(locate_plane_hex) :: locate_plane
+    real(r8)               :: posxyzn(3), posxyn(3), posxn(3)
+    logical                :: test_result
+
+    write(*,*)
+    write(*,*) 'LOCATE PLANE'
+    write(*,*) '===================================================='
+
+    ! define normals
+    posxyzn = [1.0_r8, 1.0_r8, 1.0_r8] / sqrt(3.0_r8) ! positive x-y-z
+    posxyn  = [1.0_r8, 1.0_r8, 0.0_r8] / sqrt(2.0_r8) ! positive x-y direction
+    posxn   = [1.0_r8, 0.0_r8, 0.0_r8]                ! positive x-direction
+
+    ! cube half filled along x
+    test_result = locate_plane%unit_test (posxn, 0.5_r8, 0.5_r8)
+    write(*,*) 'passed cube half filled along x?     ', test_result
+
+    ! cube half filled along xy diagonal
+    test_result = locate_plane%unit_test (posxyn, 0.5_r8, 1.0_r8/sqrt(2.0_r8))
+    write(*,*) 'passed cube half filled along xy?    ', test_result
+
+    ! cube half filled along xyz diagonal
+    test_result = locate_plane%unit_test (posxyzn, 0.5_r8, sqrt(3.0_r8)/2.0_r8)
+    write(*,*) 'passed cube half filled along xyz?   ', test_result
+
+    ! cube one eighth filled along -xy diagonal
+    test_result = locate_plane%unit_test (-posxyn, 0.125_r8, -1.5_r8/sqrt(2.0_r8))
+    write(*,*) 'passed cube 1/8th filled along -xy?  ', test_result
+
+    ! cube 8/10ths filled in x direction
+    test_result = locate_plane%unit_test (posxn, 0.8_r8, 0.8_r8)
+    write(*,*) 'passed cube 8/10ths filled along x?  ', test_result
+
+    ! cube 8/10ths filled in -x direction
+    test_result = locate_plane%unit_test (-posxn, 0.8_r8, -0.2_r8)
+    write(*,*) 'passed cube 8/10ths filled along -x? ', test_result
+
+    write(*,*) '===================================================='
+    write(*,*)
+    
+  end subroutine locate_plane_unit_test_suite
+
   logical function unit_test (this, normal, vof, rhoex)
+    use consts,      only: cutvof
+
     class(locate_plane_hex), intent(out) :: this
     real(r8), intent(in) :: normal(3), vof, rhoex
 
     integer  :: iter
-    real(r8) :: flux_vol_coord(3,8)
 
     ! set the nodes
     this%node(:,1) = [0.0_r8, 0.0_r8, 0.0_r8]
@@ -66,14 +109,14 @@ contains
     this%node(:,8) = [0.0_r8, 1.0_r8, 1.0_r8]
 
     this%volume = this%calc_volume () ! set the volume
-    this%P%normal = normal              ! set the normal
+    this%P%normal = normal            ! set the normal
     this%vof = vof                    ! set the vof
 
     ! calculate the plane constant
     call this%locate_plane (iter)
     
     !write(*,'(2(a,f14.10),L)') 'plane constant = ',this%P%rho,',     correct plane constant = ',rhoex
-    unit_test = abs(this%P%rho-rhoex) < 1e4_r8*alittle
+    unit_test = abs(this%P%rho-rhoex)<cutvof
     
   end function unit_test
 

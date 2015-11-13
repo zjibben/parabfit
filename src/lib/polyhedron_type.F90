@@ -89,16 +89,19 @@ contains
     logical          :: success
 
     write(*,*)
+    write(*,*) 'POLYHEDRON'
+    write(*,*) '===================================================='
+
 
     ! calculate the volume of a unit cube (1)
     call cube%init (cube_v, hex_f, hex_e)
     volume = cube%volume ()
-    write(*,*) 'cube volume?    ', isZero (volume-1.0_r8)
+    write(*,*) 'cube volume?      ', isZero (volume-1.0_r8)
 
     ! calculate the volume of a pyramid (1/6)
     call pyramid%init (pyr_v, pyr_f, pyr_e)
     volume = pyramid%volume ()
-    write(*,*) 'pyramid volume? ', isZero (volume-1.0_r8/6.0_r8)
+    write(*,*) 'pyramid volume?   ', isZero (volume-1.0_r8/6.0_r8)
 
     ! create a plane, and return coordinates it intersects with polyhedron edges
     P%normal = [ 1.0_r8, 0.0_r8, 0.0_r8 ]
@@ -112,11 +115,11 @@ contains
     ! end do
 
     ! split the cube vertically down the center
-    write(*,*) 'cube split volumes'
+    !write(*,*) 'cube split volumes'
     tmp = cube%split (P)
     
     success = isZero (tmp(1)%volume ()-0.5_r8) .and. isZero (tmp(2)%volume ()-0.5_r8)
-    write(*,*) 'vertical cut:     ',success
+    write(*,*) 'vertical cut?     ',success
 
     ! split the cube at an angle
     P%normal = [ 1.0_r8/sqrt(2.0_r8), 1.0_r8/sqrt(2.0_r8), 0.0_r8 ]
@@ -125,7 +128,7 @@ contains
     tmp = cube%split (P)
 
     success = isZero (tmp(1)%volume ()-0.125_r8) .and. isZero (tmp(2)%volume ()-0.875_r8)
-    write(*,*) 'angle cut:        ',success
+    write(*,*) 'angle cut?        ',success
 
     ! split the cube at an angle through the center
     P%normal = [ 1.0_r8/sqrt(2.0_r8), 1.0_r8/sqrt(2.0_r8), 0.0_r8 ]
@@ -134,7 +137,9 @@ contains
     tmp = cube%split (P)
 
     success = isZero (tmp(1)%volume ()-0.5_r8) .and. isZero (tmp(2)%volume ()-0.5_r8)
-    write(*,*) 'center angle cut: ',success
+    write(*,*) 'center angle cut? ',success
+    write(*,*) '===================================================='
+    write(*,*)
     
   end subroutine polyhedron_unit_test
 
