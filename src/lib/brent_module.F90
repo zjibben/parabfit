@@ -10,15 +10,14 @@
 !!
 
 module brent_module
-  use kinds, only: r8
+  use kinds,  only: r8
+  use consts, only: alittle,cutvof
   implicit none
   private
 
   public :: brent
   
-  integer,  parameter :: iter_max = 10
-  real(r8), parameter :: tol = 1.0d-8
-  real(r8), parameter :: alittle = epsilon(1.0_r8)
+  integer,  parameter :: iter_max = 100
   real(r8), parameter :: cgold = 1.0_r8 - 2.0_r8/(1.0_r8 + sqrt(5.0_r8))
 
   type, abstract, public :: brent_func
@@ -37,17 +36,11 @@ module brent_module
 contains
 
   ! perform Brent's method (see Numerical Recipes)
-  function brent (ax,bx,cx,f) result(xmin)
+  function brent (ax,bx,cx,f) result(x)
     real(r8),          intent(in) :: ax,bx,cx
     class(brent_func), intent(in) :: f
-    ! interface
-    !   real(r8) function func(x)
-    !     use kinds, only: r8
-    !     real(r8), intent(in) :: x
-    !   end function func
-    ! end interface
 
-    real(r8) :: xmin,fmin, a,b
+    real(r8) :: a,b
     real(r8) :: fu,fv,fw,fx, u,v,w,x,xm, p,q,r,tol1,tol2, etemp,d,e
     integer  :: iter
 
@@ -59,9 +52,9 @@ contains
 
     do iter = 1,iter_max
       xm = 0.5_r8 * (a+b)
-      tol1 = tol*abs(x) + alittle
+      tol1 = cutvof*abs(x) + alittle
       tol2 = 2.0_r8 * tol1
-      if (abs(x-xm) <= (tol2-0.5_r8)*(b-a)) return
+      if (abs(x-xm) <= tol2-0.5_r8*(b-a)) return
 
       if (abs(e) > tol1) then
         r = (x-w)*(fx-fv)
@@ -115,6 +108,7 @@ contains
     end do
 
     ! too many iterations if we get here
+    write(*,*) 'too many brent iterations!'
 
   end function brent
 

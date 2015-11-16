@@ -113,7 +113,7 @@ contains
     mat_vol_flux = material_volume_flux (flux_vol_sum, plane_cell, cell, .true., face_fluxing_velocity, 1.0_r8, 0.5_r8)
     
     !write(*,*) 'mat_vol_flux', mat_vol_flux,'exact: ',fluxex
-    material_flux_unit_test = isZero (mat_vol_flux-fluxex)
+    material_flux_unit_test = all(isZero (mat_vol_flux-fluxex))
     
   end function material_flux_unit_test
   

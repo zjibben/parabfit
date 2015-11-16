@@ -94,16 +94,18 @@ contains
 
 
     ! calculate the volume of a unit cube (1)
+    write(*,*) 'SHAPE VOLUMES'
     call cube%init (cube_v, hex_f, hex_e)
     volume = cube%volume ()
-    write(*,*) 'cube volume?      ', isZero (volume-1.0_r8)
+    write(*,*) 'cube volume?             ', isZero (volume-1.0_r8)
 
     ! calculate the volume of a pyramid (1/6)
     call pyramid%init (pyr_v, pyr_f, pyr_e)
     volume = pyramid%volume ()
-    write(*,*) 'pyramid volume?   ', isZero (volume-1.0_r8/6.0_r8)
+    write(*,*) 'pyramid volume?          ', isZero (volume-1.0_r8/6.0_r8)
 
     ! create a plane, and return coordinates it intersects with polyhedron edges
+    write(*,*) 'SHAPE SPLITTING'
     P%normal = [ 1.0_r8, 0.0_r8, 0.0_r8 ]
     P%rho    = 0.5_r8
 
@@ -117,27 +119,30 @@ contains
     ! split the cube vertically down the center
     !write(*,*) 'cube split volumes'
     tmp = cube%split (P)
-    
     success = isZero (tmp(1)%volume ()-0.5_r8) .and. isZero (tmp(2)%volume ()-0.5_r8)
-    write(*,*) 'vertical cut?     ',success
+    write(*,*) 'vertical cut?            ',success
 
     ! split the cube at an angle
-    P%normal = [ 1.0_r8/sqrt(2.0_r8), 1.0_r8/sqrt(2.0_r8), 0.0_r8 ]
+    P%normal = [ 1.0_r8, 1.0_r8, 0.0_r8 ] / sqrt(2.0_r8)
     P%rho    = 1.5_r8 / sqrt(2.0_r8)
-
     tmp = cube%split (P)
-
     success = isZero (tmp(1)%volume ()-0.125_r8) .and. isZero (tmp(2)%volume ()-0.875_r8)
-    write(*,*) 'angle cut?        ',success
+    write(*,*) 'xy-angle off-center cut? ',success
 
     ! split the cube at an angle through the center
-    P%normal = [ 1.0_r8/sqrt(2.0_r8), 1.0_r8/sqrt(2.0_r8), 0.0_r8 ]
+    P%normal = [ 1.0_r8, 1.0_r8, 0.0_r8 ] / sqrt(2.0_r8)
     P%rho    = 1.0_r8 / sqrt(2.0_r8)
-
     tmp = cube%split (P)
-
     success = isZero (tmp(1)%volume ()-0.5_r8) .and. isZero (tmp(2)%volume ()-0.5_r8)
-    write(*,*) 'center angle cut? ',success
+    write(*,*) 'center xy-angle cut?     ',success
+
+    ! split the cube at an angle through the center
+    P%normal = [ 1.0_r8, 1.0_r8, 1.0_r8 ] / sqrt(3.0_r8)
+    P%rho    = 1.5_r8 / sqrt(3.0_r8)
+    tmp = cube%split (P)
+    success = isZero (tmp(1)%volume ()-0.5_r8) .and. isZero (tmp(2)%volume ()-0.5_r8)
+    write(*,*) 'center xyz-angle cut?    ',success
+
     write(*,*) '===================================================='
     write(*,*)
     
@@ -205,6 +210,8 @@ contains
   ! divergence theorem.
   !
   real(r8) function volume (this)
+    use array_utils, only: isZero
+
     class(polyhedron), intent(inout) :: this
     
     integer :: f,nV
@@ -223,7 +230,7 @@ contains
       call face%init (this%x(:,this%face_vid(1:nV,f)))
 
       ! calculate this face's contribution
-      volume = volume + face%norm(1) * face%intXdA (1)
+      if (.not.isZero (face%norm(1))) volume = volume + face%norm(1) * face%intXdA (1)
     end do
     this%vol = volume
 
@@ -334,6 +341,8 @@ contains
     type(polygon) :: intpoly
     real(r8)      :: dist
 
+    integer :: i
+
     ! check which side of the plane each vertex lies
     ! vertices within distance alpha of the plane are considered to lie on it
     !  dist  >  alpha => side =  1
@@ -369,7 +378,9 @@ contains
     integer       :: e,v,f, nV, nVerts, nParVerts, nEdges, nFaces, tmp, &
          p2c_vid(this%nVerts), &                   ! parent to child vertex id (given parent vertex id, give the child's id)
          edge_vid(2,this%nEdges+intpoly%nVerts), & ! could have intpoly%nVerts more edges than parent polyhedron
-         face_vid(size(this%face_vid,dim=1)+1,this%nFaces+1) ! could have 1 more face and faces could be 1 longer than parent
+         face_vid(size(this%face_vid,dim=1)+2,this%nFaces+1) ! could have 1 more face and faces could be 2 longer than parent
+    ! note: an updated planar face can only include 1 more node than the original, but I'm not sure if there is a limit
+    !       to how many nodes the entirely new face can have. For cubes the number is 2.
     real(r8)      :: x(3,this%nVerts+intpoly%nVerts) 
     
     ! make a list of vertices
@@ -384,6 +395,12 @@ contains
     nParVerts = nVerts                                    ! number of vertices acquired from parent
     x(:,nParVerts+1:nParVerts+intpoly%nVerts) = intpoly%x ! add vertices from plane-polyhedron intersections
     nVerts = nVerts + intpoly%nVerts
+
+    ! write(*,*) 
+    ! write(*,*) nVerts
+    ! do v = 1,nVerts
+    !   write(*,'(i3,3f14.4)') v,x(:,v)
+    ! end do
 
     ! edges
     nEdges = 0
@@ -411,6 +428,12 @@ contains
     end do
     nEdges = nEdges + 1
     edge_vid(:,nEdges) = [nVerts,nParVerts+1] ! complete the loop
+
+    ! write(*,*)
+    ! write(*,*) nedges
+    ! do e = 1,nedges
+    !   write(*,'(i3,a,2i5)') e,'  ',edge_vid(:,e)
+    ! end do
 
     ! construct a set of faces from the edge information
     ! note these will not be in a particular order, like pececillo would expect for hexes
@@ -476,7 +499,14 @@ contains
       face_vid(1:nVerts-nParVerts,nFaces) = xrange (nParVerts+1,nVerts)
     end if
 
-    tmp = maxval(count(this%face_vid(:,:) /= 0,dim=1)) ! the maximum number of vertices on a face
+    ! write(*,*)
+    ! write(*,*) 'nfaces: ',nfaces
+    ! do f = 1,nfaces
+    !   write(*,'(i3,a,6i5)') f,'  ',face_vid(:,f)
+    ! end do
+
+    ! initialize final polyhedron
+    tmp = maxval(count(face_vid(:,:) /= 0,dim=1)) ! the maximum number of vertices on a face
     call polyhedron_on_side_of_plane%init (x(:,1:nVerts), face_vid(1:tmp,1:nFaces), edge_vid(:,1:nEdges))
 
   end function polyhedron_on_side_of_plane

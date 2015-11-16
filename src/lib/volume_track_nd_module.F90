@@ -59,8 +59,8 @@ contains
     end if
     
     ! calculate the flux volumes for each face
-    !do i = 1,mesh%ncell
-    i = 6443
+    do i = 1,mesh%ncell
+    !i = 6443
       ! send cell data to the multimat_cell type
       call cell%init (mesh%x(:,mesh%cnode(:,i)), hex_f, hex_e, mesh%volume(i))
       
@@ -90,20 +90,20 @@ contains
         end if
       end do
       
-    !end do
-
-      !i = 6443
-      write(*,*)
-      write(*,*) 'vol ',mesh%volume(i)
-      write(*,*) 'vof ',vof(:,i)
-      write(*,*) 'vols',cell%mat_poly(1)%volume (), cell%mat_poly(2)%volume ()
-    do f = 1,nfc
-      write(*,('(3es12.4)')) fluxing_velocity(f,i), adv_dt * fluxing_velocity(f,i) * mesh%area(mesh%cface(f,i))
-      write(*,('(2es12.4)')) volume_flux_sub(:,f,i)
-      write(*,*)
     end do
 
-    call LS_fatal ("stop here")
+    !   !i = 6443
+    !   write(*,*)
+    !   write(*,*) 'vol ',mesh%volume(i)
+    !   write(*,*) 'vof ',vof(:,i)
+    !   write(*,*) 'vols',cell%mat_poly(1)%volume (), cell%mat_poly(2)%volume ()
+    ! do f = 1,nfc
+    !   write(*,('(3es12.4)')) fluxing_velocity(f,i), adv_dt * fluxing_velocity(f,i) * mesh%area(mesh%cface(f,i))
+    !   write(*,('(2es12.4)')) volume_flux_sub(:,f,i)
+    !   write(*,*)
+    ! end do
+
+    ! call LS_fatal ("stop here")
 
   end subroutine volume_track_nd
 

@@ -18,12 +18,12 @@ program unit_test
   ! fluxing
   call volume_track_unit_test_suite ()
   
-  ! nested dissection locate plane
-  call locate_plane_nd_unit_test_suite ()
-
   ! test polyhedrons and surfaces
   call polyhedron_unit_test ()
   call surface_unit_test ()
+
+  ! nested dissection locate plane
+  call locate_plane_nd_unit_test_suite ()
 
   ! multiple interfaces tests
   call parallel_interfaces_test ()

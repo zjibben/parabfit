@@ -227,14 +227,16 @@ contains
     isZero_r8 = abs(x)<1e4_r8*alittle
   end function isZero_r8
   
-  pure logical function isZero_r8a (x)
+  pure function isZero_r8a (x)
     real(r8), intent(in) :: x(:)
-    isZero_r8a = all(abs(x)<1e4_r8*alittle)
+    logical              :: isZero_r8a(size(x))
+    isZero_r8a = abs(x)<1e4_r8*alittle
   end function isZero_r8a
 
-  pure logical function isZero_r8aa (x)
+  pure function isZero_r8aa (x)
     real(r8), intent(in) :: x(:,:)
-    isZero_r8aa = all(abs(x)<1e4_r8*alittle)
+    logical              :: isZero_r8aa(size(x,dim=1),size(x,dim=2))
+    isZero_r8aa = abs(x)<1e4_r8*alittle
   end function isZero_r8aa
 
   pure logical function eq (a,b)

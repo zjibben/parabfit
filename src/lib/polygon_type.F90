@@ -45,6 +45,7 @@ contains
 
   subroutine update_plane_normal (this)
     use cell_geometry, only: cross_product
+    use array_utils,   only: isZero
 
     class(polygon), intent(inout) :: this
   
@@ -60,7 +61,7 @@ contains
     
     ! make sure we pick 3 vertices that don't all lie in the same plane
     this%norm = 0.0_r8; i = 3
-    do while (all(this%norm==0.0_r8))
+    do while (all(isZero (this%norm)))
       if (i>this%nVerts) then
         do j = 1,this%nVerts
           write(*,*) this%x(:,j)

@@ -51,9 +51,9 @@ contains
 
     nmat_in_cell = count(cutvof < vof(:) .and. vof(:) < 1.0_r8-cutvof)
     nm = 0
-    write(*,*) 'nmat',nmat_in_cell
-    write(*,*) 'norm',norm(:,1)
-    write(*,*) 'norm',norm(:,2)
+    ! write(*,*) 'nmat',nmat_in_cell
+    ! write(*,*) 'norm',norm(:,1)
+    ! write(*,*) 'norm',norm(:,2)
 
     do m = 1,size(vof)
       if (vof(m) < cutvof .or. 1.0_r8-cutvof < vof(m)) cycle
