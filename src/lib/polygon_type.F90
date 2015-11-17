@@ -31,23 +31,29 @@ module polygon_type
   
 contains
 
-  subroutine init_polygon (this, x)
-    class(polygon), intent(out) :: this
-    real(r8),       intent(in)  :: x(:,:)
+  subroutine init_polygon (this, x, norm)
+    class(polygon),     intent(out)   :: this
+    real(r8),           intent(in)    :: x(:,:)
+    real(r8), optional, intent(inout) :: norm(:)
 
     this%nVerts = size(x, dim=2)
     allocate( this%x(3,this%nVerts) )
     this%x = x
-    
-    call this%update_plane_normal ()
+
+    if (present(norm)) then
+      call this%update_plane_normal (norm)
+    else
+      call this%update_plane_normal ()
+    end if
     
   end subroutine init_polygon
 
-  subroutine update_plane_normal (this)
+  subroutine update_plane_normal (this,norm)
     use cell_geometry, only: cross_product
     use array_utils,   only: isZero
 
-    class(polygon), intent(inout) :: this
+    class(polygon),     intent(inout) :: this
+    real(r8), optional, intent(inout) :: norm(:)
   
     integer :: i,j
 
@@ -60,18 +66,27 @@ contains
     ! non-planar and we should subdivide
     
     ! make sure we pick 3 vertices that don't all lie in the same plane
-    this%norm = 0.0_r8; i = 3
-    do while (all(isZero (this%norm)))
-      if (i>this%nVerts) then
-        do j = 1,this%nVerts
-          write(*,*) this%x(:,j)
-        end do
-        call LS_fatal ("polygon only consists of a line")
-      end if
-      this%norm = cross_product ( this%x(:,2) - this%x(:,1), this%x(:,i) - this%x(:,1))
-      i = i + 1
-    end do
-    this%norm = this%norm / sqrt(sum(this%norm**2)) ! normalize
+    if (present(norm)) then
+      this%norm = norm
+    else
+      this%norm = 0.0_r8
+    end if
+
+    if (all(isZero (this%norm))) then
+      i = 3
+      do while (all(isZero (this%norm)))
+        if (i>this%nVerts) then
+          do j = 1,this%nVerts
+            write(*,*) this%x(:,j)
+          end do
+          call LS_fatal ("polygon only consists of a line")
+        end if
+        this%norm = cross_product ( this%x(:,2) - this%x(:,1), this%x(:,i) - this%x(:,1))
+        i = i + 1
+      end do
+      this%norm = this%norm / sqrt(sum(this%norm**2)) ! normalize
+      if (present(norm)) norm = this%norm
+    end if
 
   end subroutine update_plane_normal
   

@@ -76,7 +76,7 @@ contains
          [0.0_r8, 0.0_r8, 0.25_r8, 0.0_r8, 0.0_r8, 0.0_r8])
     write(*,*) 'passed cube 8/10ths filled in x, fluxed in -x?  ', test_result
 
-
+    
     ! cube 8/10ths filled in -x direction
     test_result = locate_plane%unit_test (-posxn, 0.8_r8, -0.2_r8)
 

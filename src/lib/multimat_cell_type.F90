@@ -14,27 +14,155 @@ module multimat_cell_type
   use polyhedron_type
   implicit none
   private
-  
+
+  public :: multimat_cell_unit_test_suite
+
   ! a multimat_cell is a polyhedron itself, describing
   ! the cell geometry, and also contains an array
   ! of polyhedra each describing the geometry of a
   ! particular material
   type, extends(polyhedron), public :: multimat_cell
-    integer                       :: nmat
+    !integer                       :: nmat
     !integer,          allocatable :: mat_id(:)
     type(polyhedron), allocatable :: mat_poly(:)
   contains
     procedure :: partition
     procedure :: volumes_behind_plane
+    procedure :: outward_volflux
   end type multimat_cell
   
 contains
+
+  subroutine multimat_cell_unit_test_suite ()
+    use hex_types, only: cube_v, hex_f, hex_e
+
+    type(multimat_cell) :: cube
+    logical             :: success
+    real(r8)            :: vof(2), intnorm(3,2), posXflow(6), posxyzn(3), posxyn(3), posxn(3)
+
+    call cube%init (cube_v, hex_f, hex_e)
+    
+    ! define face velocities [+y, -y, -x, +x, -z, +z]
+    posXflow = [ 0.0_r8, 0.0_r8, -1.0_r8, 1.0_r8, 0.0_r8, 0.0_r8 ]
+
+    ! define normals
+    posxyzn = [1.0_r8, 1.0_r8, 1.0_r8] / sqrt(3.0_r8) ! positive x-y-z
+    posxyn  = [1.0_r8, 1.0_r8, 0.0_r8] / sqrt(2.0_r8) ! positive x-y plane
+    posxn   = [1.0_r8, 0.0_r8, 0.0_r8]                ! positive x-direction
+    
+    write(*,*)
+    write(*,*) 'MULTIMAT CELL TYPE'
+    write(*,*) '===================================================='
+
+    ! partitioning
+    write(*,*) 'CELL PARTITIONING'
+    ! TODO
+    ! This is really already taken care of for two materials via
+    ! the locate_plane_nd unit tests, but still needs to be done
+    ! for more than two materials.
+
+    ! fluxing
+    write(*,*) 'FLUXING'
+
+    ! cube 8/10ths filled in x direction
+    vof = [0.8_r8, 0.2_r8]
+    intnorm(:,1) = posxn; intnorm(:,2) = -intnorm(:,1)
+    call cube%partition (vof, intnorm)
+
+    success = fluxing_unit_test (cube, 0.25_r8*posXflow, reshape([&
+         0.0_r8,  0.0_r8, &
+         0.0_r8,  0.0_r8, &
+         0.0_r8,  0.0_r8, &
+         0.05_r8, 0.2_r8, &
+         0.0_r8,  0.0_r8, &
+         0.0_r8,  0.0_r8], [2,6]) )
+    write(*,*) 'passed cube 8/10ths filled in x, fluxed in +x?  ', success
+
+    success = fluxing_unit_test (cube, -0.25_r8*posXflow, reshape([&
+         0.0_r8,  0.0_r8, &
+         0.0_r8,  0.0_r8, &
+         0.25_r8, 0.0_r8, &
+         0.0_r8,  0.0_r8, &
+         0.0_r8,  0.0_r8, &
+         0.0_r8,  0.0_r8], [2,6]) )
+    write(*,*) 'passed cube 8/10ths filled in x, fluxed in -x?  ', success
+
+    ! cube 8/10ths filled in -x direction
+    vof = [0.8_r8, 0.2_r8]
+    intnorm(:,1) = -posxn; intnorm(:,2) = -intnorm(:,1)
+    call cube%partition (vof, intnorm)
+    
+    success = fluxing_unit_test (cube, 0.25_r8*posXflow, reshape([&
+         0.0_r8,  0.0_r8, &
+         0.0_r8,  0.0_r8, &
+         0.0_r8,  0.0_r8, &
+         0.25_r8, 0.0_r8, &
+         0.0_r8,  0.0_r8, &
+         0.0_r8,  0.0_r8], [2,6]) )
+    write(*,*) 'passed cube 8/10ths filled in -x, fluxed in +x? ', success
+    
+    success = fluxing_unit_test (cube, -0.25_r8*posXflow, reshape([&
+         0.0_r8,  0.0_r8, &
+         0.0_r8,  0.0_r8, &
+         0.05_r8, 0.2_r8, &
+         0.0_r8,  0.0_r8, &
+         0.0_r8,  0.0_r8, &
+         0.0_r8,  0.0_r8], [2,6]) )
+    write(*,*) 'passed cube 8/10ths filled in -x, fluxed in -x? ', success
+
+    ! cube 1/8th filled along xy diagonal
+    vof = [0.125_r8, 0.875_r8]
+    intnorm(:,1) = posxyn; intnorm(:,2) = -intnorm(:,1)
+    call cube%partition (vof, intnorm)
+
+    success = fluxing_unit_test (cube, 0.5_r8*posXflow, reshape([&
+         0.0_r8,  0.0_r8, &
+         0.0_r8,  0.0_r8, &
+         0.0_r8,  0.0_r8, &
+         0.0_r8,  0.5_r8, &
+         0.0_r8,  0.0_r8, &
+         0.0_r8,  0.0_r8], [2,6]) )
+    write(*,*) 'passed cube 1/8th filled in xy, fluxed in +x?   ', success
+
+    success = fluxing_unit_test (cube, -0.5_r8*posXflow, reshape([&
+         0.0_r8,   0.0_r8,   &
+         0.0_r8,   0.0_r8,   &
+         0.125_r8, 0.375_r8, &
+         0.0_r8,   0.0_r8,   &
+         0.0_r8,   0.0_r8,   &
+         0.0_r8,   0.0_r8], [2,6]) )
+    write(*,*) 'passed cube 1/8th filled in xy, fluxed in +x?   ', success
+    
+    write(*,*) '===================================================='
+    write(*,*)
+
+  end subroutine multimat_cell_unit_test_suite
+
+  logical function fluxing_unit_test (cell, fluxing_velocity, volflux_ex)
+    use consts,      only: cutvof,nfc
+    use array_utils, only: isZero
+
+    type(multimat_cell), intent(inout) :: cell
+    real(r8),            intent(in)    :: fluxing_velocity(:),volflux_ex(:,:)
+
+    real(r8) :: outward_volflux(size(volflux_ex,dim=1),nfc)
+    integer  :: nmat, f
+
+    nmat = size(volflux_ex,dim=1)
+
+    outward_volflux = cell%outward_volflux (1.0_r8, fluxing_velocity)
+    fluxing_unit_test = all(isZero (outward_volflux-volflux_ex,cutvof))
+
+    ! do f = 1,nfc
+    !   write(*,'(2es30.10)') outward_volflux(:,f)
+    ! end do
+
+  end function fluxing_unit_test
 
   ! given a set of VoFs, normals, and an order,
   ! create child polyhedra for each material
   subroutine partition (this, vof, norm)
     use consts, only: cutvof
-    !use plane_type
     use locate_plane_nd_module
 
     class(multimat_cell), intent(inout) :: this
@@ -43,6 +171,7 @@ contains
     type(polyhedron) :: tmp(2),remainder
     integer          :: m,nm,nmat_in_cell
 
+    if (allocated(this%mat_poly)) deallocate(this%mat_poly)
     allocate(this%mat_poly(size(vof)))
 
     call remainder%init (this)
@@ -71,7 +200,7 @@ contains
         this%mat_poly(m) = remainder
       else
         ! if this is not the final material in the cell, split the cell
-        tmp = remainder%split (locate_plane_nd (remainder, norm(:,m), vof(m)*this%vol))
+        tmp = remainder%split (locate_plane_nd (remainder, norm(:,m), vof(m)*this%volume ()))
         remainder = tmp(1)
         this%mat_poly(m) = tmp(2)
       end if
@@ -87,17 +216,49 @@ contains
   ! material behind that plane (flux volumes)
   function volumes_behind_plane (this, P) result(vol)
     use plane_type
-
+    
     class(multimat_cell), intent(in) :: this
     class(plane),         intent(in) :: P
     real(r8)                         :: vol(size(this%mat_poly))
 
-    integer :: m
+    integer                          :: m
 
     do m = 1,size(this%mat_poly)
       vol(m) = this%mat_poly(m)%volume_behind_plane (P)
     end do
-    
+
   end function volumes_behind_plane
+
+  function outward_volflux (this, adv_dt, fluxing_velocity)
+    use consts, only: nfc,cutvof
+    use plane_type
+    
+    class(multimat_cell), intent(inout) :: this !inout because of call to volume
+    real(r8),             intent(in)    :: adv_dt, fluxing_velocity(:)
+    real(r8)                            :: outward_volflux(size(this%mat_poly),nfc)
+
+    type(plane) :: flux_plane
+    real(r8)    :: xf(3)
+    integer     :: f,nV
+    
+    do f = 1,nfc
+      if (fluxing_velocity(f) < cutvof*this%volume ()) then
+        outward_volflux(:,f) = 0.0_r8
+      else
+        ! find the plane equation for the back end of the flux volume
+        ! WARNING: in general, this could be non-planar, just like cell faces
+        flux_plane%normal = -this%face_normal(:,f)
+
+        nV = count(this%face_vid(:,f) /= 0) ! number of vertices on this face
+        xf = sum(this%x(:,this%face_vid(1:nV,f)),dim=2) / real(nV,r8) ! face center
+
+        flux_plane%rho  = sum(xf*flux_plane%normal) + adv_dt * fluxing_velocity(f)
+
+        ! find the volume of the materials behind the flux plane
+        outward_volflux(:,f) = this%volumes_behind_plane (flux_plane)
+      end if
+    end do
+
+  end function outward_volflux
 
 end module multimat_cell_type

@@ -24,7 +24,7 @@ module polyhedron_type
   type, public :: polyhedron
     !private
     integer               :: nVerts, nEdges, nFaces       ! number of vertices, edges, and faces
-    real(r8), allocatable :: x(:,:)                       ! vertex positions
+    real(r8), allocatable :: x(:,:),face_normal(:,:)      ! vertex positions and face outward normals
     integer,  allocatable :: face_vid(:,:), edge_vid(:,:) ! face and edge IDs
     real(r8)              :: vol                          ! volume
     ! Ideally vol should be private, but Fortran then also hides it from child types
@@ -148,11 +148,11 @@ contains
     
   end subroutine polyhedron_unit_test
 
-  subroutine init_polyhedron (this, x, face_v, edge_v, vol)
+  subroutine init_polyhedron (this, x, face_v, edge_v, vol, face_normal)
     class(polyhedron),  intent(out) :: this
     real(r8),           intent(in)  :: x(:,:)
     integer,            intent(in)  :: face_v(:,:), edge_v(:,:)
-    real(r8), optional, intent(in)  :: vol
+    real(r8), optional, intent(in)  :: vol, face_normal(:,:)
     
     integer :: f,nV
 
@@ -160,8 +160,9 @@ contains
     this%nEdges = size(edge_v,dim=2)
     this%nFaces = size(face_v,dim=2)
     allocate( this%x(3,this%nVerts), & !this%face(this%nFaces), &
-         this%face_vid(size(face_v,dim=1),this%nVerts),&
-         this%edge_vid(size(edge_v,dim=1),this%nVerts) )
+         this%face_vid(size(face_v,dim=1),this%nFaces),&
+         this%edge_vid(size(edge_v,dim=1),this%nEdges),&
+         this%face_normal(3,this%nFaces) )
 
     this%x = x
     this%edge_vid = edge_v
@@ -171,6 +172,12 @@ contains
       this%vol = vol
     else
       this%vol = 0.0_r8
+    end if
+
+    if (present(face_normal)) then
+      this%face_normal = face_normal
+    else
+      this%face_normal = 0.0_r8
     end if
 
     ! if the faces are of type polygon
@@ -194,12 +201,14 @@ contains
     !this%vol    = poly%vol
 
     allocate( this%x(3,this%nVerts), & !this%face(this%nFaces), &
-         this%face_vid(size(poly%face_vid,dim=1),this%nVerts),&
-         this%edge_vid(size(poly%edge_vid,dim=1),this%nVerts) )
+         this%face_vid(size(poly%face_vid,dim=1),this%nFaces),&
+         this%edge_vid(size(poly%edge_vid,dim=1),this%nEdges),&
+         this%face_normal(3,this%nFaces) )
 
     this%x = poly%x
     this%edge_vid = poly%edge_vid
     this%face_vid = poly%face_vid
+    this%face_normal = poly%face_normal
 
   end subroutine init_polyhedron_copy
 
@@ -226,8 +235,9 @@ contains
     do f = 1,this%nFaces
       ! generate a polygon from this face
       ! WARNING: not sure if face%init is leaking memory with the x allocation here
+      ! TODO: store face normals so they don't get recalculated every time here
       nV = count(this%face_vid(:,f) /= 0) ! number of vertices on this face
-      call face%init (this%x(:,this%face_vid(1:nV,f)))
+      call face%init (this%x(:,this%face_vid(1:nV,f)), this%face_normal(:,f))
 
       ! calculate this face's contribution
       if (.not.isZero (face%norm(1))) volume = volume + face%norm(1) * face%intXdA (1)
@@ -366,6 +376,7 @@ contains
 
   end function split
 
+  ! WARNING: need to update this routine to pass face normals down to the child polyhedron
   type(polyhedron) function polyhedron_on_side_of_plane (this,valid_side,side,intpoly,v_assoc_pe)
     use array_utils, only: xrange,first_true_loc
 
@@ -442,10 +453,10 @@ contains
       ! if any vertices for this original face are on the valid side of the
       ! plane, then the face structure can be preserved. Otherwise, it is
       ! thrown out
-      if (any(side(this%face_vid(:,f))==valid_side)) then
+      nV = count(this%face_vid(:,f) /= 0) ! number of vertices on this face
+      if (any(side(this%face_vid(1:nV,f))==valid_side)) then
         nFaces = nFaces + 1
-        nV = count(this%face_vid(:,f) /= 0) ! number of vertices on this face
-        if (all(side(this%face_vid(:,f))==valid_side)) then
+        if (all(side(this%face_vid(1:nV,f))==valid_side)) then
           ! if all vertices are on the valid side of the face,
           ! this face is preserved exactly
           face_vid(1:nV,nFaces) = p2c_vid(this%face_vid(1:nV,f))
@@ -454,7 +465,7 @@ contains
           ! this face is modified
 
           ! start with the first valid vertex
-          v = first_true_loc (side(this%face_vid(:,f))==valid_side)
+          v = first_true_loc (side(this%face_vid(1:nV,f))==valid_side)
           
           ! add all valid vertices in sequence, stop when we hit one that is invalid
           ! this stopping point indicates an edge that was cut by the plane
@@ -550,6 +561,28 @@ contains
 
     real(r8)         :: vol
     type(polyhedron) :: split(2)
+
+    ! TODO: don't split, we only need one of the polyhedra
+    ! ! check which side of the plane each vertex lies
+    ! ! vertices within distance alpha of the plane are considered to lie on it
+    ! !  dist  >  alpha => side =  1
+    ! !  dist  < -alpha => side = -1
+    ! ! |dist| <  alpha => side =  0
+    ! do v = 1,this%nVerts
+    !   dist = P%signed_distance (this%x(:,v)) ! calculate the signed distance from the plane
+    !   side(v) = merge( int(sign(1.0_r8, dist)), 0, abs(dist) > alpha ) ! decide where it lies
+    ! end do
+    
+    ! if (all(side>=0)) then
+    !   split(1) = this
+    ! else if (all(side<=0)) then
+    !   split(2) = this
+    ! else
+    !   intpoly = this%intersection_verts (P,v_assoc_pe)
+
+    !   split(1) = this%polyhedron_on_side_of_plane ( 1, side, intpoly, v_assoc_pe)
+    !   split(2) = this%polyhedron_on_side_of_plane (-1, side, intpoly, v_assoc_pe)
+    ! end if
 
     split = this%split (P)
     vol = split(2)%volume ()

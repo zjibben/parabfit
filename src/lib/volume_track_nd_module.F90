@@ -62,7 +62,7 @@ contains
     do i = 1,mesh%ncell
     !i = 6443
       ! send cell data to the multimat_cell type
-      call cell%init (mesh%x(:,mesh%cnode(:,i)), hex_f, hex_e, mesh%volume(i))
+      call cell%init (mesh%x(:,mesh%cnode(:,i)), hex_f, hex_e, mesh%volume(i), gmesh%outnorm(:,:,i))
       
       ! partition the cell based on vofs and norms
       call cell%partition (vof(:,i), int_norm(:,:,i))
@@ -72,23 +72,23 @@ contains
       end if
 
       
-      !volume_flux_sub(:,:,i) = cell_volume_flux (cell, adv_dt, fluxing_velocity(:,i), mesh, gmesh%outnorm(:,:,i))
+      volume_flux_sub(:,:,i) = cell%outward_volflux (adv_dt, fluxing_velocity(:,i))
 
-      ! calculate how much material is being fluxed out of each face
-      do f = 1,nfc
-        if (fluxing_velocity(f,i) < cutvof*mesh%volume(i)) then
-          volume_flux_sub(:,f,i) = 0.0_r8
-        else
-          ! find the plane equation for the back end of the flux volume
-          ! WARNING: in general, this could be non-planar, just like cell faces
-          flux_plane%normal = -gmesh%outnorm(:,f,i)
-          xf = sum(mesh%x(:,mesh%fnode(:,mesh%cface(f,i)))) / 6.0_r8 ! face center
-          flux_plane%rho  = sum(xf*flux_plane%normal) - adv_dt * fluxing_velocity(f,i)
+      ! ! calculate how much material is being fluxed out of each face
+      ! do f = 1,nfc
+      !   if (fluxing_velocity(f,i) < cutvof*mesh%volume(i)) then
+      !     volume_flux_sub(:,f,i) = 0.0_r8
+      !   else
+      !     ! find the plane equation for the back end of the flux volume
+      !     ! WARNING: in general, this could be non-planar, just like cell faces
+      !     flux_plane%normal = -gmesh%outnorm(:,f,i)
+      !     xf = sum(mesh%x(:,mesh%fnode(:,mesh%cface(f,i)))) / 6.0_r8 ! face center
+      !     flux_plane%rho  = sum(xf*flux_plane%normal) - adv_dt * fluxing_velocity(f,i)
 
-          ! find the volume of the materials behind the flux plane
-          volume_flux_sub(:,f,i) = cell%volumes_behind_plane (flux_plane)
-        end if
-      end do
+      !     ! find the volume of the materials behind the flux plane
+      !     volume_flux_sub(:,f,i) = cell%volumes_behind_plane (flux_plane)
+      !   end if
+      ! end do
       
     end do
 

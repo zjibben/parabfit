@@ -10,6 +10,7 @@ program unit_test
   use locate_plane_module,    only: locate_plane_unit_test_suite
   use locate_plane_nd_module, only: locate_plane_nd_unit_test_suite
   use vof_solver_type,        only: parallel_interfaces_test, intersecting_interfaces_test
+  use multimat_cell_type,     only: multimat_cell_unit_test_suite
   implicit none
 
   ! locate plane
@@ -24,6 +25,7 @@ program unit_test
 
   ! nested dissection locate plane
   call locate_plane_nd_unit_test_suite ()
+  call multimat_cell_unit_test_suite ()
 
   ! multiple interfaces tests
   call parallel_interfaces_test ()

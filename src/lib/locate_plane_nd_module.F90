@@ -32,30 +32,21 @@ contains
 
   subroutine locate_plane_nd_unit_test_suite ()
     use array_utils, only: isZero
-    use hex_types,   only: hex_f, hex_e
+    use hex_types,   only: cube_v, hex_f, hex_e
 
     logical          :: success
     type(polyhedron) :: cube
     type(plane)      :: P
     real(r8)         :: vol
-    real(r8)         :: cube_v(3,8) = [ &
-         [ 0.0_r8, 0.0_r8, 0.0_r8 ], & ! vertex positions
-         [ 1.0_r8, 0.0_r8, 0.0_r8 ], &
-         [ 1.0_r8, 1.0_r8, 0.0_r8 ], &
-         [ 0.0_r8, 1.0_r8, 0.0_r8 ], &
-         [ 0.0_r8, 0.0_r8, 1.0_r8 ], &
-         [ 1.0_r8, 0.0_r8, 1.0_r8 ], &
-         [ 1.0_r8, 1.0_r8, 1.0_r8 ], &
-         [ 0.0_r8, 1.0_r8, 1.0_r8 ]  &
-         ]
+
+    ! just working with a cube for now
+    ! need either more later, or tests on nested polyhedrons
+    call cube%init (cube_v, hex_f, hex_e)
 
     write(*,*)
     write(*,*) 'LOCATE PLANE NESTED DISSECTION'
     write(*,*) '===================================================='
 
-    ! just working with a cube for now (definitely need more later)
-    call cube%init (cube_v, hex_f, hex_e)
-    
     ! cube half filled along x
     P%normal = [1.0_r8, 0.0_r8, 0.0_r8]
     P%rho    = 0.5_r8

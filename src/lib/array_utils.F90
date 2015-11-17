@@ -222,21 +222,39 @@ contains
     int2str = adjustl(int2str)
   end function int2str
   
-  pure logical function isZero_r8 (x)
-    real(r8), intent(in) :: x
-    isZero_r8 = abs(x)<1e4_r8*alittle
+  pure logical function isZero_r8 (x,tol)
+    real(r8),           intent(in) :: x
+    real(r8), optional, intent(in) :: tol
+
+    real(r8) :: tolh
+
+    tolh = merge(tol, 1e4_r8*alittle, present(tol))
+
+    isZero_r8 = abs(x) < tolh
   end function isZero_r8
   
-  pure function isZero_r8a (x)
-    real(r8), intent(in) :: x(:)
-    logical              :: isZero_r8a(size(x))
-    isZero_r8a = abs(x)<1e4_r8*alittle
+  pure function isZero_r8a (x,tol)
+    real(r8),           intent(in) :: x(:)
+    real(r8), optional, intent(in) :: tol
+    logical                        :: isZero_r8a(size(x))
+    
+    real(r8) :: tolh
+
+    tolh = merge(tol, 1e4_r8*alittle, present(tol))    
+
+    isZero_r8a = abs(x) < tolh
   end function isZero_r8a
 
-  pure function isZero_r8aa (x)
-    real(r8), intent(in) :: x(:,:)
-    logical              :: isZero_r8aa(size(x,dim=1),size(x,dim=2))
-    isZero_r8aa = abs(x)<1e4_r8*alittle
+  pure function isZero_r8aa (x,tol)
+    real(r8),           intent(in) :: x(:,:)
+    real(r8), optional, intent(in) :: tol
+    logical                        :: isZero_r8aa(size(x,dim=1),size(x,dim=2))
+    
+    real(r8) :: tolh
+
+    tolh = merge(tol, 1e4_r8*alittle, present(tol))
+
+    isZero_r8aa = abs(x) < tolh
   end function isZero_r8aa
 
   pure logical function eq (a,b)
