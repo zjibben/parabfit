@@ -36,6 +36,7 @@ module polyhedron_type
     procedure          :: intersection_verts
     procedure          :: split
     procedure          :: volume_behind_plane
+    procedure          :: print_data
     procedure, private :: edge_containing_vertices
     procedure, private :: polyhedron_on_side_of_plane
   end type polyhedron
@@ -47,7 +48,7 @@ contains
     use hex_types,   only: hex_f, hex_e
     use array_utils, only: isZero
 
-    type(polyhedron) :: cube,pyramid,tmp(2)
+    type(polyhedron) :: cube,pyramid,pyramid3,cutcube,tmp(2)
     real(r8)         :: cube_v(3,8) = [ &
          [ 0.0_r8, 0.0_r8, 0.0_r8 ], & ! vertex positions
          [ 1.0_r8, 0.0_r8, 0.0_r8 ], &
@@ -58,7 +59,27 @@ contains
          [ 1.0_r8, 1.0_r8, 1.0_r8 ], &
          [ 0.0_r8, 1.0_r8, 1.0_r8 ]  &
          ]
-    real(r8)         :: pyr_v(3,5) = [ &
+    real(r8)         :: pyr3_v(3,4) = [ &
+         [ 0.0_r8, 0.0_r8, 0.0_r8 ], & ! vertex positions
+         [ 0.0_r8, 1.0_r8, 0.0_r8 ], &
+         [ 1.0_r8, 0.0_r8, 0.0_r8 ], &
+         [ 0.0_r8, 0.0_r8, 1.0_r8 ]  &
+         ]
+    integer          :: pyr3_f(3,4) = [ &
+         [ 1,2,3 ], & ! face vertices
+         [ 1,4,2 ], &
+         [ 1,3,4 ], &
+         [ 4,3,2 ]  &
+         ]
+    integer          :: pyr3_e(2,6) = [ &
+         [ 1,2 ], & ! edge vertices
+         [ 2,3 ], &
+         [ 3,4 ], &
+         [ 1,3 ], &
+         [ 4,1 ], &
+         [ 4,2 ]  &
+         ]
+    real(r8)         :: pyr_v(3,5) = [ & ! pyramid with square bottom
          [ 0.0_r8, 0.0_r8, 0.0_r8 ], & ! vertex positions
          [ 1.0_r8, 0.0_r8, 0.0_r8 ], &
          [ 1.0_r8, 1.0_r8, 0.0_r8 ], &
@@ -82,10 +103,48 @@ contains
          [ 3,5 ], &
          [ 4,5 ]  &
          ]
-    real(r8)         :: volume
+    real(r8)         :: cutcube_v(3,10) = [ &
+         [ 0.9_r8, 0.0_r8, 0.0_r8 ], & ! cube cut with triangle face
+         [ 0.0_r8, 0.9_r8, 0.0_r8 ], &
+         [ 0.0_r8, 0.0_r8, 0.9_r8 ], &
+         [ 1.0_r8, 0.0_r8, 0.0_r8 ], &
+         [ 1.0_r8, 1.0_r8, 0.0_r8 ], &
+         [ 0.0_r8, 1.0_r8, 0.0_r8 ], &
+         [ 0.0_r8, 0.0_r8, 1.0_r8 ], &
+         [ 1.0_r8, 0.0_r8, 1.0_r8 ], &
+         [ 1.0_r8, 1.0_r8, 1.0_r8 ], &
+         [ 0.0_r8, 1.0_r8, 1.0_r8 ]  &
+         ]
+    integer :: cutcube_f(5,7) = [ &
+         [  3,2,1,0,0 ], &
+         [  7,3,1,4,8 ], &
+         [  4,5,9,8,0 ], &
+         [ 10,9,5,6,0 ], &
+         [ 10,6,2,3,7 ], &
+         [  1,2,6,5,4 ], &
+         [ 10,7,8,9,0 ]  &
+         ]
+    integer :: cutcube_e(2,15) = [ &
+         [  1,2 ], &
+         [  2,3 ], &
+         [  3,1 ], &
+         [  1,4 ], &
+         [  4,5 ], &
+         [  5,6 ], &
+         [  6,2 ], &
+         [  3,7 ], &
+         [  7,8 ], &
+         [  8,9 ], &
+         [ 10,9 ], &
+         [ 10,7 ], &
+         [ 10,6 ], &
+         [  9,5 ], &
+         [  8,4 ]  &
+         ]
+
+    real(r8)         :: volume,tmpr1,tmpr2
     type(polygon)    :: intpoly
     type(plane)      :: P
-    integer          :: i
     logical          :: success
 
     write(*,*)
@@ -97,12 +156,22 @@ contains
     write(*,*) 'SHAPE VOLUMES'
     call cube%init (cube_v, hex_f, hex_e)
     volume = cube%volume ()
-    write(*,*) 'cube volume?             ', isZero (volume-1.0_r8)
+    write(*,*) 'cube volume?                     ', isZero (volume-1.0_r8)
 
     ! calculate the volume of a pyramid (1/6)
     call pyramid%init (pyr_v, pyr_f, pyr_e)
     volume = pyramid%volume ()
-    write(*,*) 'pyramid volume?          ', isZero (volume-1.0_r8/6.0_r8)
+    write(*,*) 'pyramid volume?                  ', isZero (volume-1.0_r8/6.0_r8)
+    
+    ! calculate the volume of a pyramid (1/6)
+    call pyramid3%init (pyr3_v, pyr3_f, pyr3_e)
+    volume = pyramid3%volume ()
+    write(*,*) 'pyramid3 volume?                 ', isZero (volume-1.0_r8/6.0_r8)
+
+    ! calculate the volume of a "cutcube" (1-0.9**3/6)
+    call cutcube%init (cutcube_v, cutcube_f, cutcube_e)
+    volume = cutcube%volume ()
+    write(*,*) 'cutcube volume?                  ', isZero (volume-(1.0_r8-0.9_r8**3/6.0_r8))
 
     ! create a plane, and return coordinates it intersects with polyhedron edges
     write(*,*) 'SHAPE SPLITTING'
@@ -120,28 +189,51 @@ contains
     !write(*,*) 'cube split volumes'
     tmp = cube%split (P)
     success = isZero (tmp(1)%volume ()-0.5_r8) .and. isZero (tmp(2)%volume ()-0.5_r8)
-    write(*,*) 'vertical cut?            ',success
+    write(*,*) 'vertical cut?                    ',success
 
     ! split the cube at an angle
     P%normal = [ 1.0_r8, 1.0_r8, 0.0_r8 ] / sqrt(2.0_r8)
     P%rho    = 1.5_r8 / sqrt(2.0_r8)
     tmp = cube%split (P)
     success = isZero (tmp(1)%volume ()-0.125_r8) .and. isZero (tmp(2)%volume ()-0.875_r8)
-    write(*,*) 'xy-angle off-center cut? ',success
+    write(*,*) 'xy-angle off-center cut?         ',success
 
     ! split the cube at an angle through the center
     P%normal = [ 1.0_r8, 1.0_r8, 0.0_r8 ] / sqrt(2.0_r8)
     P%rho    = 1.0_r8 / sqrt(2.0_r8)
     tmp = cube%split (P)
     success = isZero (tmp(1)%volume ()-0.5_r8) .and. isZero (tmp(2)%volume ()-0.5_r8)
-    write(*,*) 'center xy-angle cut?     ',success
+    write(*,*) 'center xy-angle cut?             ',success
 
     ! split the cube at an angle through the center
     P%normal = [ 1.0_r8, 1.0_r8, 1.0_r8 ] / sqrt(3.0_r8)
     P%rho    = 1.5_r8 / sqrt(3.0_r8)
     tmp = cube%split (P)
     success = isZero (tmp(1)%volume ()-0.5_r8) .and. isZero (tmp(2)%volume ()-0.5_r8)
-    write(*,*) 'center xyz-angle cut?    ',success
+    write(*,*) 'center xyz-angle cut?            ',success
+
+    ! split the cube at an angle through an offset
+    P%normal = [ 1.0_r8, 1.0_r8, 1.0_r8 ] / sqrt(3.0_r8)
+    P%rho    = 0.5_r8/sqrt(3.0_r8)
+    tmp = cube%split (P)
+    success = isZero (tmp(1)%volume ()-47.0_r8/48.0_r8) .and. isZero (tmp(2)%volume ()-1.0_r8/48.0_r8)
+    write(*,*) 'off-center xyz-angle cut?        ',success
+
+    ! split the pyramid in the x direction
+    P%normal = -[ 1.0_r8, 0.0_r8, 0.0_r8 ]
+    P%rho    = -0.8_r8
+    tmp = pyramid3%split (P)
+    success = isZero (tmp(1)%volume ()-0.992_r8/6.0_r8) .and. isZero (tmp(2)%volume ()-4e-3_r8/3.0_r8)
+    write(*,*) 'pyramid3 cut?                    ',success
+
+    ! split the cutcube
+    P%normal = -[ 1.0_r8, 0.0_r8, 0.0_r8 ]
+    P%rho    = -0.8_r8
+    tmp = cutcube%split (P)
+    tmpr1 = 1.0_r8-0.9_r8**3/6.0_r8
+    tmpr2 = 0.2_r8 - 0.1_r8**3/6.0_r8
+    success = isZero (tmp(1)%volume ()-(tmpr1-tmpr2)) .and. isZero (tmp(2)%volume ()-tmpr2)
+    write(*,*) 'cutcube cut?                     ',success
 
     write(*,*) '===================================================='
     write(*,*)
@@ -305,7 +397,7 @@ contains
       else
         call intersection_verts%order ()
       end if
-      
+
       ! make sure the vertices are ordered counter-clockwise
       if (sum(intersection_verts%norm*P%normal)<0.0_r8) then
         ! reverse both x and v_assoc_pe
@@ -347,11 +439,9 @@ contains
     class(plane),      intent(in) :: P
     type(polyhedron)              :: split(2)
 
-    integer       :: v, v_assoc_pe(this%nEdges),pt_side(this%nVerts), side(this%nVerts)
+    integer       :: v, v_assoc_pe(this%nEdges),side(this%nVerts)
     type(polygon) :: intpoly
     real(r8)      :: dist
-
-    integer :: i
 
     ! check which side of the plane each vertex lies
     ! vertices within distance alpha of the plane are considered to lie on it
@@ -362,7 +452,7 @@ contains
       dist = P%signed_distance (this%x(:,v)) ! calculate the signed distance from the plane
       side(v) = merge( int(sign(1.0_r8, dist)), 0, abs(dist) > alpha ) ! decide where it lies
     end do
-    
+
     if (all(side>=0)) then
       split(1) = this
     else if (all(side<=0)) then
@@ -375,6 +465,39 @@ contains
     end if
 
   end function split
+
+  ! return the volume behind (opposite normal) a plane and inside the polyhedron
+  real(r8) function volume_behind_plane (this,P)
+    use consts, only: alpha
+    use plane_type
+
+    class(polyhedron), intent(in) :: this
+    class(plane),      intent(in) :: P
+
+    real(r8)         :: dist
+    integer          :: v, side(this%nVerts), v_assoc_pe(this%nEdges)
+    type(polyhedron) :: behind, split(2)
+    type(polygon)    :: intpoly
+
+    ! check which side of the plane each vertex lies
+    ! vertices within distance alpha of the plane are considered to lie on it
+    !  dist  >  alpha => side =  1
+    !  dist  < -alpha => side = -1
+    ! |dist| <  alpha => side =  0
+    do v = 1,this%nVerts
+      dist = P%signed_distance (this%x(:,v)) ! calculate the signed distance from the plane
+      side(v) = merge( int(sign(1.0_r8, dist)), 0, abs(dist) > alpha ) ! decide where it lies
+    end do
+
+    if (all(side<=0)) then
+      behind = this
+    else if (any(side>0) .and. any(side<0)) then
+      intpoly = this%intersection_verts (P,v_assoc_pe)
+      behind = this%polyhedron_on_side_of_plane (-1, side, intpoly, v_assoc_pe)
+    end if
+    volume_behind_plane = behind%volume ()
+    
+  end function volume_behind_plane
 
   ! WARNING: need to update this routine to pass face normals down to the child polyhedron
   type(polyhedron) function polyhedron_on_side_of_plane (this,valid_side,side,intpoly,v_assoc_pe)
@@ -553,40 +676,28 @@ contains
 
   end function edge_containing_vertices
 
-  function volume_behind_plane (this,P) result(vol)
-    use plane_type
-
+  subroutine print_data (this)
     class(polyhedron), intent(in) :: this
-    class(plane),      intent(in) :: P
 
-    real(r8)         :: vol
-    type(polyhedron) :: split(2)
+    integer :: v,e,f
 
-    ! TODO: don't split, we only need one of the polyhedra
-    ! ! check which side of the plane each vertex lies
-    ! ! vertices within distance alpha of the plane are considered to lie on it
-    ! !  dist  >  alpha => side =  1
-    ! !  dist  < -alpha => side = -1
-    ! ! |dist| <  alpha => side =  0
-    ! do v = 1,this%nVerts
-    !   dist = P%signed_distance (this%x(:,v)) ! calculate the signed distance from the plane
-    !   side(v) = merge( int(sign(1.0_r8, dist)), 0, abs(dist) > alpha ) ! decide where it lies
-    ! end do
+    write(*,*) 'POLYHEDRON DATA:'
+
+    do v = 1,this%nVerts
+      write(*,'(a,i3,a,3es14.4)') 'x ',v,':  ',this%x(:,v)
+    end do
+    write(*,*)
     
-    ! if (all(side>=0)) then
-    !   split(1) = this
-    ! else if (all(side<=0)) then
-    !   split(2) = this
-    ! else
-    !   intpoly = this%intersection_verts (P,v_assoc_pe)
+    do e = 1,this%nEdges
+      write(*,'(a,i3,a,2i4)') 'edge ',e,':  ',this%edge_vid(:,e)
+    end do
+    write(*,*)
+    
+    do f = 1,this%nFaces
+      write(*,'(a,i3,a,10i4)') 'face ',f,':  ',this%face_vid(:,f)
+    end do
+    write(*,*)
 
-    !   split(1) = this%polyhedron_on_side_of_plane ( 1, side, intpoly, v_assoc_pe)
-    !   split(2) = this%polyhedron_on_side_of_plane (-1, side, intpoly, v_assoc_pe)
-    ! end if
-
-    split = this%split (P)
-    vol = split(2)%volume ()
-
-  end function volume_behind_plane
+  end subroutine print_data
 
 end module polyhedron_type

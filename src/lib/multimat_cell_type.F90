@@ -38,7 +38,7 @@ contains
 
     type(multimat_cell) :: cube
     logical             :: success
-    real(r8)            :: vof(2), intnorm(3,2), posXflow(6), posxyzn(3), posxyn(3), posxn(3)
+    real(r8)            :: vof(2), intnorm(3,2), posXflow(6), posxyzn(3), posxyn(3), posxn(3),tmp
 
     call cube%init (cube_v, hex_f, hex_e)
     
@@ -59,7 +59,8 @@ contains
     ! TODO
     ! This is really already taken care of for two materials via
     ! the locate_plane_nd unit tests, but still needs to be done
-    ! for more than two materials.
+    ! for more than two materials. Fluxing more than 2 materials
+    ! also needs to be done.
 
     ! fluxing
     write(*,*) 'FLUXING'
@@ -132,7 +133,22 @@ contains
          0.0_r8,   0.0_r8,   &
          0.0_r8,   0.0_r8], [2,6]) )
     write(*,*) 'passed cube 1/8th filled in xy, fluxed in +x?   ', success
-    
+
+    ! cube 1/8th filled along xy diagonal
+    vof = [0.125_r8, 0.875_r8]
+    intnorm(:,1) = posxyzn; intnorm(:,2) = -intnorm(:,1)
+    call cube%partition (vof, intnorm)
+
+    tmp = (0.25_r8 - (1.0_r8 - (6.0_r8*(0.125_r8))**(1.0_r8/3.0_r8)))**3.0_r8/6.0_r8
+    success = fluxing_unit_test (cube, 0.25_r8*posXflow, reshape([&
+         0.0_r8, 0.0_r8, &
+         0.0_r8, 0.0_r8, &
+         0.0_r8, 0.0_r8, &
+         tmp,    0.25_r8 - tmp, &
+         0.0_r8, 0.0_r8, &
+         0.0_r8, 0.0_r8], [2,6]) )
+    write(*,*) 'passed cube 1/8th filled in xyz, fluxed in +x?  ', success
+
     write(*,*) '===================================================='
     write(*,*)
 
@@ -146,17 +162,13 @@ contains
     real(r8),            intent(in)    :: fluxing_velocity(:),volflux_ex(:,:)
 
     real(r8) :: outward_volflux(size(volflux_ex,dim=1),nfc)
-    integer  :: nmat, f
+    integer  :: nmat
 
     nmat = size(volflux_ex,dim=1)
 
     outward_volflux = cell%outward_volflux (1.0_r8, fluxing_velocity)
     fluxing_unit_test = all(isZero (outward_volflux-volflux_ex,cutvof))
-
-    ! do f = 1,nfc
-    !   write(*,'(2es30.10)') outward_volflux(:,f)
-    ! end do
-
+    
   end function fluxing_unit_test
 
   ! given a set of VoFs, normals, and an order,
@@ -176,13 +188,8 @@ contains
 
     call remainder%init (this)
 
-    !write(*,*) 'here1.1'
-
     nmat_in_cell = count(cutvof < vof(:) .and. vof(:) < 1.0_r8-cutvof)
     nm = 0
-    ! write(*,*) 'nmat',nmat_in_cell
-    ! write(*,*) 'norm',norm(:,1)
-    ! write(*,*) 'norm',norm(:,2)
 
     do m = 1,size(vof)
       if (vof(m) < cutvof .or. 1.0_r8-cutvof < vof(m)) cycle
@@ -204,11 +211,9 @@ contains
         remainder = tmp(1)
         this%mat_poly(m) = tmp(2)
       end if
-
+      
       ! TODO: save the last face as the interface reconstruction for dumping purposes
     end do
-
-    !write(*,*) 'here1.3'
     
   end subroutine partition
 
@@ -253,7 +258,7 @@ contains
         xf = sum(this%x(:,this%face_vid(1:nV,f)),dim=2) / real(nV,r8) ! face center
 
         flux_plane%rho  = sum(xf*flux_plane%normal) + adv_dt * fluxing_velocity(f)
-
+        
         ! find the volume of the materials behind the flux plane
         outward_volflux(:,f) = this%volumes_behind_plane (flux_plane)
       end if

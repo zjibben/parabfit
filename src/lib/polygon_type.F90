@@ -27,6 +27,7 @@ module polygon_type
     procedure          :: centroid
     procedure          :: order
     procedure          :: update_plane_normal
+    procedure          :: print_data
   end type polygon
   
 contains
@@ -189,7 +190,24 @@ contains
 
     call insertion_sort (this%x,t)
 
+    call this%update_plane_normal ()
+
   end subroutine order
 
-  
+  subroutine print_data (this)
+    class(polygon), intent(in) :: this
+
+    integer :: v
+
+    write(*,*) 'POLYGON DATA'
+    do v = 1,this%nVerts
+      write(*,'(a,i3,a,3es14.4)') 'x ',v,':  ',this%x(:,v)
+    end do
+    write(*,*)
+
+    write(*,'(a,3f14.4)') 'norm ',this%norm
+    write(*,*)
+
+  end subroutine print_data
+
 end module polygon_type

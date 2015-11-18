@@ -73,10 +73,6 @@ contains
     test_result = locate_plane%unit_test (posxyzn, 0.5_r8, sqrt(3.0_r8)/2.0_r8)
     write(*,*) 'passed cube half filled along xyz?   ', test_result
 
-    ! cube one eighth filled along -xy diagonal
-    test_result = locate_plane%unit_test (-posxyn, 0.125_r8, -1.5_r8/sqrt(2.0_r8))
-    write(*,*) 'passed cube 1/8th filled along -xy?  ', test_result
-
     ! cube 8/10ths filled in x direction
     test_result = locate_plane%unit_test (posxn, 0.8_r8, 0.8_r8)
     write(*,*) 'passed cube 8/10ths filled along x?  ', test_result
@@ -84,6 +80,10 @@ contains
     ! cube 8/10ths filled in -x direction
     test_result = locate_plane%unit_test (-posxn, 0.8_r8, -0.2_r8)
     write(*,*) 'passed cube 8/10ths filled along -x? ', test_result
+
+    ! cube one eighth filled along -xy diagonal
+    test_result = locate_plane%unit_test (-posxyn, 0.125_r8, -1.5_r8/sqrt(2.0_r8))
+    write(*,*) 'passed cube 1/8th filled along -xy?  ', test_result
 
     write(*,*) '===================================================='
     write(*,*)

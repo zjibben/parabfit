@@ -52,50 +52,66 @@ contains
     P%rho    = 0.5_r8
     vol      = 0.5_r8
     success  = locate_plane_nd_unit_test (cube, P, vol)
-    write(*,*) 'cube half filled along x?             ',success
+    write(*,*) 'cube half filled along x?              ',success
 
     ! cube half filled along y
     P%normal = [0.0_r8, 1.0_r8, 0.0_r8]
     P%rho    = 0.5_r8
     vol      = 0.5_r8
     success  = locate_plane_nd_unit_test (cube, P, vol)
-    write(*,*) 'cube half filled along y?             ',success
+    write(*,*) 'cube half filled along y?              ',success
 
-    ! cube half filled along xy diagonal
-    P%normal = [1.0_r8, 1.0_r8, 0.0_r8] / sqrt(2.0_r8)
-    P%rho    = 1.0_r8/sqrt(2.0_r8)
+    ! cube half filled along z
+    P%normal = [0.0_r8, 0.0_r8, 1.0_r8]
+    P%rho    = 0.5_r8
     vol      = 0.5_r8
     success  = locate_plane_nd_unit_test (cube, P, vol)
-    write(*,*) 'cube half filled along xy diagonal?   ',success
-    
-    ! cube half filled along xyz diagonal
-    P%normal = [1.0_r8, 1.0_r8, 1.0_r8] / sqrt(3.0_r8)
-    P%rho    = 1.5_r8/sqrt(3.0_r8)
-    vol      = 0.5_r8
-    success  = locate_plane_nd_unit_test (cube, P, vol)
-    write(*,*) 'cube half filled along xyz diagonal?  ',success
+    write(*,*) 'cube half filled along z?              ',success
 
-    ! cube one eighth filled along -xy diagonal
-    P%normal = -[1.0_r8, 1.0_r8, 0.0_r8] / sqrt(2.0_r8)
-    P%rho    = -1.5_r8/sqrt(2.0_r8)
-    vol      = 0.125_r8
-    success  = locate_plane_nd_unit_test (cube, P, vol)
-    write(*,*) 'cube 1/8th filled along -xy diagonal? ',success
-    
     ! cube 8/10ths filled along x
     P%normal = [1.0_r8, 0.0_r8, 0.0_r8]
     P%rho    = 0.8_r8
     vol      = 0.8_r8
     success  = locate_plane_nd_unit_test (cube, P, vol)
-    write(*,*) 'cube 8/10ths filled along x?          ',success
+    write(*,*) 'cube 8/10ths filled along x?           ',success
     
     ! cube 8/10ths filled along -x
     P%normal = -[1.0_r8, 0.0_r8, 0.0_r8]
     P%rho    = -0.2_r8
     vol      = 0.8_r8
     success  = locate_plane_nd_unit_test (cube, P, vol)
-    write(*,*) 'cube 8/10ths filled along -x?         ',success
+    write(*,*) 'cube 8/10ths filled along -x?          ',success
 
+    ! cube half filled along xy diagonal
+    P%normal = [1.0_r8, 1.0_r8, 0.0_r8] / sqrt(2.0_r8)
+    P%rho    = 1.0_r8/sqrt(2.0_r8)
+    vol      = 0.5_r8
+    success  = locate_plane_nd_unit_test (cube, P, vol)
+    write(*,*) 'cube half filled along xy diagonal?    ',success
+    
+    ! cube one eighth filled along -xy diagonal
+    P%normal = -[1.0_r8, 1.0_r8, 0.0_r8] / sqrt(2.0_r8)
+    P%rho    = -1.5_r8/sqrt(2.0_r8)
+    vol      = 0.125_r8
+    success  = locate_plane_nd_unit_test (cube, P, vol)
+    write(*,*) 'cube 1/8th filled along -xy diagonal?  ',success
+
+    ! cube half filled along xyz diagonal
+    P%normal = [1.0_r8, 1.0_r8, 1.0_r8] / sqrt(3.0_r8)
+    P%rho    = 1.5_r8/sqrt(3.0_r8)
+    vol      = 0.5_r8
+    success  = locate_plane_nd_unit_test (cube, P, vol)
+    write(*,*) 'cube half filled along xyz diagonal?   ',success
+
+    ! cube 1/8th filled along xyz diagonal
+    P%normal = [1.0_r8, 1.0_r8, 1.0_r8] / sqrt(3.0_r8)
+    ! P%rho    = 0.5_r8/sqrt(3.0_r8)
+    ! vol      = 1.0_r8/48.0_r8
+    P%rho    = (6.0_r8*(0.125_r8))**(1.0_r8/3.0_r8) / sqrt(3.0_r8)
+    vol      = 0.125_r8
+    success  = locate_plane_nd_unit_test (cube, P, vol)
+    write(*,*) 'cube 1/8th filled along xyz diagonal?  ',success
+    
     write(*,*) '===================================================='
     write(*,*)
 
@@ -145,6 +161,8 @@ contains
   ! intersecting each one is above or below the target volume,
   ! thereby bracketing the allowed range of plane constants
   subroutine rho_bracket (rho_min,rho_mid,rho_max, norm, poly, volume_error)
+    use logging_services
+    
     real(r8),                intent(out) :: rho_min, rho_mid, rho_max
     real(r8),                intent(in)  :: norm(:)
     type(polyhedron),        intent(in)  :: poly ! we could instead just pass in poly%x
@@ -177,25 +195,25 @@ contains
     ! Check if the bounds were not set? None of them are huge, right?
 
     ! Brent's method requires a guess minimum, find one
-    rho_mid = huge(1.0_r8)
-    rho = 0.5_r8 * (rho_min+rho_max) ! first check the middle
-    ! could also weight by errors?
+    ! first check a middle point found by weighting by the inverse of the error magnitudes
+    rho_mid = (rho_min/abs(err_min)+rho_max/abs(err_max))/(1.0_r8/abs(err_min) + 1.0_r8/abs(err_max))
+    err     = huge(1.0_r8)
     i = 1
-    do while ((rho_mid >= rho_max .or. rho_mid <= rho_min) .and. i<=iter_max)
+    do while (i<=iter_max .and. &
+         ((rho_mid >= rho_max .or. rho_mid <= rho_min) .and. &
+         (abs(err) > abs(err_min) .or. abs(err) > abs(err_max))))
       err = volume_error%signed_eval (rho)
-      if (abs(err) < abs(err_min) .and. abs(err) < abs(err_max)) then
-        rho_mid = rho
-      else
-        if (err > 0.0_r8) then
-          rho = 0.5_r8 * (rho + rho_min)
-        else
-          rho = 0.5_r8 * (rho + rho_max)
-        end if
-      end if
+      rho_mid = merge(&
+           (rho_mid/abs(err)+rho_min/abs(err_min))/(1.0_r8/abs(err) + 1.0_r8/abs(err_min)),&
+           (rho_mid/abs(err)+rho_max/abs(err_max))/(1.0_r8/abs(err) + 1.0_r8/abs(err_max)),&
+           err > 0.0_r8)
       i = i+1
     end do
 
-    if (i>iter_max) write(*,*) 'too many bracketing iterations!'
+    if (i>iter_max .and. (rho_mid >= rho_max .or. rho_mid <= rho_min)) then
+      write(*,*) rho_min,rho_mid,rho_max
+      call LS_fatal('too many bracketing iterations!')
+    end if
 
   end subroutine rho_bracket
 

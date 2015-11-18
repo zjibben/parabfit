@@ -108,7 +108,7 @@ contains
     end do
 
     ! too many iterations if we get here
-    write(*,*) 'too many brent iterations!'
+    write(*,*) 'too many brent iterations! error: ',fx
 
   end function brent
 
