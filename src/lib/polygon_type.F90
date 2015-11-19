@@ -83,9 +83,9 @@ contains
           call LS_fatal ("polygon only consists of a line")
         end if
         this%norm = cross_product ( this%x(:,2) - this%x(:,1), this%x(:,i) - this%x(:,1))
+        this%norm = this%norm / sqrt(sum(this%norm**2)) ! normalize
         i = i + 1
       end do
-      this%norm = this%norm / sqrt(sum(this%norm**2)) ! normalize
       if (present(norm)) norm = this%norm
     end if
 

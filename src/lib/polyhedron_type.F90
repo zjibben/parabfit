@@ -345,7 +345,6 @@ contains
   type(polygon) function intersection_verts (this,P,v_assoc_pe)
     use plane_type
     use array_utils, only: reverse,first_true_loc,isZero
-    use consts,      only: alittle
 
     class(polyhedron), intent(in)  :: this
     class(plane),      intent(in)  :: P
@@ -366,14 +365,10 @@ contains
         intx = P%intersection_point (this%x(:,this%edge_vid(:,e)))
 
         ! check if the point is already in the list
-        ! pteq(1:Nintersections) = isZero (intx(1)-x(1,1:Nintersections)) &
-        !      .and.               isZero (intx(2)-x(2,1:Nintersections)) &
-        !      .and.               isZero (intx(3)-x(3,1:Nintersections))
-
-        pteq(1:Nintersections) = abs(intx(1)-x(1,1:Nintersections))<1e4_r8*alittle &
-             .and.               abs(intx(2)-x(2,1:Nintersections))<1e4_r8*alittle &
-             .and.               abs(intx(3)-x(3,1:Nintersections))<1e4_r8*alittle
-                
+        pteq(1:Nintersections) = isZero (intx(1)-x(1,1:Nintersections)) &
+             .and.               isZero (intx(2)-x(2,1:Nintersections)) &
+             .and.               isZero (intx(3)-x(3,1:Nintersections))
+        
         ! if this point wasn't already found, store it
         if (.not.any(pteq(1:Nintersections))) then
           Nintersections = Nintersections + 1
@@ -644,17 +639,6 @@ contains
     call polyhedron_on_side_of_plane%init (x(:,1:nVerts), face_vid(1:tmp,1:nFaces), edge_vid(:,1:nEdges))
 
   end function polyhedron_on_side_of_plane
-
-  ! ! from a set of edges, produce a list of faces
-  ! subroutine faces_from_edges (face_vid, edge_vid)
-  !   real(r8), intent(out) :: face_vid(:,:)
-  !   real(r8), intent(in)  :: edge_vid(:,:)
-
-  !   real(r8) :: fvid(:)
-
-    
-    
-  ! end subroutine faces_from_edges
 
   ! return the edge associated with a pair of vertices
   integer function edge_containing_vertices (this,v)

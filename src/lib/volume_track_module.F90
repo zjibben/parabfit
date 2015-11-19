@@ -219,7 +219,7 @@ contains
 
     real(r8)                       :: Vofint, vp, dvol
     real(r8)                       :: flux_vol_sum(nfc)
-    integer                        :: ni,f,locate_plane_niters,nlast
+    integer                        :: ni,f,locate_plane_niters,nlast, nint
     logical                        :: is_mixed_donor_cell
     type(locate_plane_hex)         :: plane_cell
     type(polyhedron)               :: poly
@@ -229,7 +229,7 @@ contains
 
     cell_volume_flux = 0.0_r8
     flux_vol_sum = 0.0_r8
-
+    !nint = count(vof > 0.0_r8)
     ! Here, I am not certain the conversion from pri_ptr to direct material indices worked properly.
     ! This will be clear when trying 3 or more materials. -zjibben
     

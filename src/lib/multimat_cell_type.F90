@@ -61,6 +61,7 @@ contains
     ! the locate_plane_nd unit tests, but still needs to be done
     ! for more than two materials. Fluxing more than 2 materials
     ! also needs to be done.
+    write(*,*) 'need to write tests here'
 
     ! fluxing
     write(*,*) 'FLUXING'
@@ -188,23 +189,22 @@ contains
 
     call remainder%init (this)
 
-    nmat_in_cell = count(cutvof < vof(:) .and. vof(:) < 1.0_r8-cutvof)
+    nmat_in_cell = count(cutvof < vof(:))
     nm = 0
 
     do m = 1,size(vof)
-      if (vof(m) < cutvof .or. 1.0_r8-cutvof < vof(m)) cycle
+      if (vof(m) < cutvof) cycle
       nm = nm+1 ! update the counter of how many materials we've seen thus far
       
       ! reconstruct the plane from the remaining free space
       ! use the plane to generate the polyhedron for this material,
       ! and update the free-space polyhedron
 
-      !write(*,'(i3,es14.4,3f10.4)') m,vof(m),norm(:,m)
-
-      if (nm==nmat_in_cell) then
+      if (nm==nmat_in_cell .or. 1.0_r8-cutvof < vof(m)) then
         ! if this is the final material in the cell,
         ! it gets the entire remainder of the polyhedron
         this%mat_poly(m) = remainder
+        exit
       else
         ! if this is not the final material in the cell, split the cell
         tmp = remainder%split (locate_plane_nd (remainder, norm(:,m), vof(m)*this%volume ()))
@@ -212,7 +212,7 @@ contains
         this%mat_poly(m) = tmp(2)
       end if
       
-      ! TODO: save the last face as the interface reconstruction for dumping purposes
+      ! TODO: save the last face of each polyhedron as the interface reconstruction for dumping purposes
     end do
     
   end subroutine partition
@@ -227,7 +227,7 @@ contains
     real(r8)                         :: vol(size(this%mat_poly))
 
     integer                          :: m
-
+    
     do m = 1,size(this%mat_poly)
       vol(m) = this%mat_poly(m)%volume_behind_plane (P)
     end do

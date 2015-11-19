@@ -66,16 +66,6 @@ contains
   integer function last_true_loc (mask)
     logical, intent(in) :: mask(:)
     
-    ! integer :: i
-
-    ! do i = size(mask),1,-1
-    !   if (mask(i)) then
-    !     last_true_loc = i
-    !     return
-    !   end if
-    ! end do
-    ! last_true_loc = 0
-    
     do last_true_loc = size(mask),1,-1
       if (mask(last_true_loc)) return
     end do

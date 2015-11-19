@@ -14,7 +14,7 @@
 
 module vof_solver_type
   use kinds,  only: r8
-  use consts, only: cutvof
+  use consts, only: cutvof,nfc
   use unstr_mesh_type
   use mesh_geom_type
   use logging_services
@@ -59,7 +59,6 @@ module vof_solver_type
   ! these need to be put somewhere and used appropriately
   integer, allocatable :: boundary_flag(:,:)
   logical, allocatable :: is_void(:)
-  integer, parameter :: nfc = 6 ! number of faces per cell
 
   logical, parameter :: using_mic = .false.
   
@@ -81,6 +80,7 @@ module vof_solver_type
 contains
   
   subroutine init (this, mesh, gmesh, velocity_cc, fluidRho, params)
+    use consts, only: nfc
     use parameter_list_type
 
     class(vof_solver),        intent(out) :: this
@@ -116,7 +116,7 @@ contains
     ! these needs to be done appropriately and elsewhere
     ! for right now, this just exists so that we can run simple tests,
     ! without removing the branches of code that deal with more complex scenarios
-    allocate(boundary_flag(6,this%mesh%ncell), is_void(this%nmat))
+    allocate(boundary_flag(nfc,this%mesh%ncell), is_void(this%nmat))
     boundary_flag = 0
     is_void = .false.
 
@@ -127,8 +127,8 @@ contains
     use vof_init
     !use vof_tools, only: distinct_matls, volume_of_matl
 
-    class(vof_solver), intent(inout) :: this
-    type(parameter_list), intent(in) :: plist
+    class(vof_solver),    intent(inout) :: this
+    type(parameter_list), intent(in)    :: plist
 
     !! Initialize the Vof
     call vof_initialize (this%mesh, plist, this%vof, this%matl_id, this%nmat)
@@ -207,18 +207,19 @@ contains
   ! end subroutine inflow_outflow_update
   
   subroutine advect_volume (this, vof_n, dt, dump_intrec)
+    use consts,                 only: nfc
     use timer_tree_type
     use volume_track_module,    only: volume_track
     use volume_track_nd_module, only: volume_track_nd
 
     class(vof_solver), intent(inout) :: this
-    real(r8),          intent(in)    :: Vof_n(this%nmat,this%mesh%ncell), dt
+    real(r8),          intent(in)    :: Vof_n(:,:), dt
     logical,           intent(in)    :: dump_intrec
 
     integer  :: status, p, vps, volume_track_subcycles
     real(r8) :: adv_dt
-    real(r8) :: Volume_Flux_Sub(this%nmat, 6, this%mesh%ncell) ! keeps track of volume changes in every subcycle
-    real(r8) :: volume_flux_tot(this%nmat, 6, this%mesh%ncell)
+    real(r8) :: Volume_Flux_Sub(this%nmat, nfc, this%mesh%ncell) ! keeps track of volume changes in every subcycle
+    real(r8) :: volume_flux_tot(this%nmat, nfc, this%mesh%ncell)
     
     call start_timer("Volume Tracking")
     
@@ -243,12 +244,12 @@ contains
       case default
         call LS_fatal ("invalid advection method")
       end select
-
+      
       !$omp parallel if(.not.using_mic) default(private) shared(adv_dt, this, vof_n, volume_flux_tot, volume_flux_sub)
       
       ! Normalize the donor fluxes.
       call flux_renorm (this%fluxing_velocity, Vof_n, Volume_Flux_Tot, Volume_Flux_Sub, adv_dt, this%mesh)
-      
+
       ! Compute the acceptor fluxes.
       call flux_acceptor (volume_flux_sub, this%gmesh)
       
@@ -262,11 +263,11 @@ contains
       call vof_bounds (this%vof, volume_flux_tot, this%mesh)
       
       !$omp end parallel
-            
+      !call LS_fatal ("stop here")
+
       !write(*,*) 'completed subcycle, dt =',adv_dt
     end do
     !!$omp end parallel
-
     call stop_timer("Volume Tracking")
 
   end subroutine advect_volume
@@ -286,19 +287,23 @@ contains
   subroutine flux_renorm (Fluxing_Velocity, Vof_n, Volume_Flux_Tot, Volume_Flux_Sub, adv_dt, mesh)
     use unstr_mesh_type
 
-    real(r8), intent(in)    :: fluxing_velocity(:,:), vof_n(:,:), adv_dt, volume_flux_tot(:,:,:)
-    real(r8), intent(inout) :: volume_flux_sub(:,:,:)
-    class(unstr_mesh), intent(in) :: mesh
+    real(r8),          intent(in)    :: fluxing_velocity(:,:), vof_n(:,:), adv_dt, volume_flux_tot(:,:,:)
+    real(r8),          intent(inout) :: volume_flux_sub(:,:,:)
+    class(unstr_mesh), intent(in)    :: mesh
 
-    integer :: n,ierr
+    integer :: n,ierr, j
 
     !$omp do
     do n = 1,mesh%ncell
       call renorm_cell (volume_flux_sub(:,:,n), volume_flux_tot(:,:,n), vof_n(:,n), &
            adv_dt*Fluxing_Velocity(:,n)*mesh%area(mesh%cnode(:,n)), mesh%volume(n), ierr)
       if (ierr /= 0) then
-        write(*,'(a,i10)') 'cell id:       ',n
+        write(*,'(a,i10)')     'cell id:       ',n
         write(*,'(a,3f14.10)') 'cell centroid: ',sum(mesh%x(:,mesh%cnode(:,n)), dim=2) / 8.0_r8
+        write(*,'(a,3f14.4)')  'vof:           ',vof_n(:,n)
+        do j = 1,nfc
+          write(*,'(a,3f14.4)')  'volume flux:   ',volume_flux_sub(:,j,n)
+        end do
         call LS_fatal ('FLUX_RENORM: cannot reassign face flux to any other material')
       end if
     end do ! cell loop
@@ -520,8 +525,8 @@ contains
   subroutine vof_bounds (vof, volume_flux_tot, mesh)
     use array_utils, only: last_true_loc
 
-    real(r8), intent(inout) :: Vof(:,:),Volume_Flux_Tot(:,:,:)
-    type(unstr_mesh), intent(in) :: mesh
+    real(r8),         intent(inout) :: vof(:,:),Volume_Flux_Tot(:,:,:)
+    type(unstr_mesh), intent(in)    :: mesh
 
     integer  :: m, n, void_m, vmc, nmat
     real(r8) :: Ftot, Ftot_m1, void_volume, Delta_Vol(size(vof,dim=1))
@@ -548,10 +553,10 @@ contains
           end if
         end if
       end do
-
+      
       ! make sure the sum of vofs is within bounds
       Ftot = sum(vof(:,n))
-      if (Ftot == 1.0_r8) cycle 
+      if (Ftot == 1.0_r8) cycle
 
       ! Renormalize the liquid volume fractions.
 
@@ -593,7 +598,6 @@ contains
         call adjust_flux_total (Volume_Flux_Tot(:,:,n), Ftot, mesh%volume(n), Delta_Vol, boundary_flag(:,n))
         vof(:,n) = vof(:,n) + delta_vol(:) / mesh%volume(n)
       end if
-
     end do ! cells
     !$omp end do nowait
     
@@ -645,8 +649,8 @@ contains
       ! Adjust the volume changes.
       do f = 1,nfc
         ! Don't change dirichlet velocity BCs.
-        if (local_BC(f)==2) cycle
-        Volume_Flux_Tot(f) = (1.0_r8-sign(1.0_r8,volume_flux_tot(f))*Change_Fraction)*Volume_Flux_Tot(f)
+        if (local_BC(f)/=2) &
+             Volume_Flux_Tot(f) = (1.0_r8-sign(1.0_r8,volume_flux_tot(f))*Change_Fraction)*Volume_Flux_Tot(f)
       end do
       
     else ! there is some flow for this material
@@ -690,12 +694,12 @@ contains
   !=======================================================================
   subroutine adjust_flux_total (volume_flux_tot, current_vof, volume, delta_vol, local_BC)
     real(r8), intent(inout) :: Volume_Flux_Tot(:,:)
-    real(r8), intent(in) :: Current_Vof, volume
-    integer,  intent(in) :: local_BC(:)
-    real(r8), intent(out) :: Delta_Vol(size(volume_flux_tot,dim=1))
+    real(r8), intent(in)    :: Current_Vof, volume
+    integer,  intent(in)    :: local_BC(:)
+    real(r8), intent(out)   :: Delta_Vol(:) !size(volume_flux_tot,dim=1)
 
-    integer :: f, m, v, nmat
-    real(r8) :: Inflow_Volume, Outflow_Volume, Volume_Change, Total_Flow, Change_Fraction
+    integer        :: f, m, v, nmat
+    real(r8)       :: Inflow_Volume, Outflow_Volume, Volume_Change, Total_Flow, Change_Fraction
     character(128) :: message
 
     nmat = size(volume_flux_tot,dim=1)
@@ -734,7 +738,7 @@ contains
       Delta_Vol = 0.0_r8
       do m = 1, nmat
         if(is_void(m)) cycle
-        do f = 1, nfc
+        do f = 1,nfc
           if (local_BC(f)==2) cycle ! Don't change dirichlet velocity BCs.
           ! adjust material transfers
           Delta_Vol(m) = Delta_Vol(m) + Change_Fraction*abs(Volume_Flux_Tot(m,f))
@@ -763,9 +767,9 @@ contains
     integer :: f
 
     outflow = 0.0_r8
-    do f = 1, nfc
+    do f = 1,nfc
       ! Don't change dirichlet velocity BCs.
-      if (local_BC(f)==2 .and. Volume_Flux_Tot(f) > 0.0_r8) &
+      if (local_BC(f)/=2 .and. Volume_Flux_Tot(f) > 0.0_r8) &
            Outflow = Outflow + Volume_Flux_Tot(f)
     end do
 
@@ -780,7 +784,7 @@ contains
     inflow = 0.0_r8
     do f = 1, nfc
       ! Don't change dirichlet velocity BCs.
-      if (local_BC(f)==2 .and. Volume_Flux_Tot(f) < 0.0_r8) &
+      if (local_BC(f)/=2 .and. Volume_Flux_Tot(f) < 0.0_r8) &
            Inflow = Inflow - Volume_Flux_Tot(f)
     end do
     
@@ -790,7 +794,7 @@ contains
     use locate_plane_module
     use polyhedron_type
     use int_norm_module, only: interface_normal
-    use hex_types,           only: hex_f, hex_e
+    use hex_types,       only: hex_f, hex_e
 
     class(vof_solver), intent(inout) :: this
 
@@ -842,7 +846,6 @@ contains
     vof_slv%mesh  => mesh
     vof_slv%gmesh => gmesh
 
-    
     ! initialize the vof
     vof_slv%vof(1,cell_index(1,1,1)) = 1.0_r8
     vof_slv%vof(1,cell_index(1,2,1)) = 1.0_r8

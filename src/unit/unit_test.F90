@@ -5,6 +5,7 @@
 program unit_test
   use kinds,                  only: r8
   use volume_track_module,    only: volume_track_unit_test_suite
+  use volume_track_nd_module, only: volume_track_nd_unit_test
   use polyhedron_type,        only: polyhedron_unit_test
   use surface_type,           only: surface_unit_test
   use locate_plane_module,    only: locate_plane_unit_test_suite
@@ -23,9 +24,10 @@ program unit_test
   call polyhedron_unit_test ()
   call surface_unit_test ()
 
-  ! ! nested dissection locate plane
+  ! nested dissection locate plane
   call locate_plane_nd_unit_test_suite ()
   call multimat_cell_unit_test_suite ()
+  call volume_track_nd_unit_test ()
 
   ! multiple interfaces tests
   call parallel_interfaces_test ()
