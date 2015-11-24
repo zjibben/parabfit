@@ -806,8 +806,9 @@ contains
     do ni = 1,this%nmat-1
       call this%intrec(ni)%purge ()
     end do
-    
-    int_norm = interface_normal (this%vof, this%mesh, this%gmesh) ! compute interface normal vectors for all the materials.
+
+    ! compute interface normal vectors for all the materials.
+    int_norm = interface_normal (this%vof, this%mesh, this%gmesh, this%advect_method==ONION_SKIN) 
     
     do i = 1,this%mesh%ncell
       do ni = 1,this%nmat-1

@@ -14,7 +14,7 @@ module array_utils
   private
 
   public :: first_true_loc,last_true_loc,xrange,reorder,insertion_sort,mag,prj,int2str,&
-       reverse,invert,isZero
+       reverse,invert,isZero, index_of
 
   ! interface append
   !   procedure append_polygon
@@ -292,4 +292,17 @@ contains
 
   end function invert
 
+  ! returns the index of the first entry of value n in array
+  ! returns -1 if not found
+  integer function index_of (n, array)
+    integer, intent(in) :: n, array(:)
+
+    do index_of = 1,size(array)
+      if (array(index_of)==n) return
+    end do
+    index_of = -1 ! value not found
+    ! call LS_fatal ('value not found in array')    
+
+  end function index_of
+  
 end module array_utils

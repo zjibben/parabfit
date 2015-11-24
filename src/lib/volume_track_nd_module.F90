@@ -129,7 +129,7 @@ contains
 
     ! compute interface normal vectors for all the materials.
     ! TODO: the norm gets calculated differently for nested dissection??
-    int_norm = interface_normal (vof, mesh, gmesh)
+    int_norm = interface_normal (vof, mesh, gmesh, .false.)
 
     if (dump_intrec) then
       do ni = 1,ninterfaces
@@ -138,7 +138,8 @@ contains
     end if
     
     ! calculate the flux volumes for each face
-    !i=4
+    !!$omp parallel do default(private) shared(mesh,hex_f,hex_e,gmesh,vof,int_norm,dump_intrec,intrec) &
+    !!$omp shared(volume_flux_sub, adv_dt, fluxing_velocity)
     do i = 1,mesh%ncell
       ! send cell data to the multimat_cell type
       call cell%init (mesh%x(:,mesh%cnode(:,i)), hex_f, hex_e, mesh%volume(i), gmesh%outnorm(:,:,i))
@@ -152,19 +153,8 @@ contains
 
       volume_flux_sub(:,:,i) = cell%outward_volflux (adv_dt, fluxing_velocity(:,i))
     end do
+    !!$omp end parallel do
 
-    ! i = 4
-    ! write(*,*)
-    ! write(*,'(a,3f14.4)') 'vof  ',vof(:,i)
-    ! do f = 1,nmat
-    !   write(*,'(a,3f14.4)') 'norm ',int_norm(:,f,i)
-    ! end do
-    ! do f = 1,nfc
-    !   write(*,'(a,i3,3es14.4)') 'volflux ',f,volume_flux_sub(:,f,i)
-    ! end do
-    !call LS_fatal ("stop here")
-    !write(*,*) 'completed iteration'
-    
   end subroutine volume_track_nd
   
 end module volume_track_nd_module

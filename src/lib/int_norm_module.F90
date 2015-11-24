@@ -28,12 +28,13 @@ contains
   !   material by computing the gradient of material volume fractions
   !
   !=======================================================================
-  function interface_normal (Vof, mesh, gmesh)
+  function interface_normal (Vof, mesh, gmesh, do_onion_skin)
     use timer_tree_type
 
     real(r8),         intent(in) :: Vof(:,:)
     type(unstr_mesh), intent(in) :: mesh
     type(mesh_geom),  intent(in) :: gmesh
+    logical,          intent(in) :: do_onion_skin
     real(r8)                     :: interface_normal(3,size(vof,1),size(vof,2))
 
     integer :: m, n, mi, mid(2), nmat, nmat_in_cell
@@ -44,7 +45,7 @@ contains
     
     ! Calculate the volume fraction gradient for each material
     ! recall interface normal is in opposite direction of gradient
-    do m = 1, nmat
+    do m = 1,nmat
       interface_normal(:,m,:) = -gradient (Vof(m,:), mesh, gmesh)
     end do
     
@@ -54,25 +55,21 @@ contains
     ! if cell has two materials only, their normal should be consistent
     
     !$omp parallel do default(private) shared(interface_normal,vof,mesh,gmesh,nmat)
-    do n = 1,size(vof, dim=2) ! loop through cells
-      ! ! Calculate the volume fraction gradient for each material
-      ! ! recall interface normal is in opposite direction of gradient
-      ! do m = 1,nmat
-      !   interface_normal(:,m,n) = -gradient_cell (Vof(m,:), n, mesh, gmesh)
-      ! end do
-      
+    do n = 1,mesh%ncell
       ! if there are more than 2 materials in the cell
       ! Sum the gradients in priority order.  This is equivalent to calculating the
       !  interface normal for a material composed of the first few materials
       nmat_in_cell = count(vof(:,n) > 0.0_r8)
       if (nmat_in_cell > 2) then
+        
         do m = 2,nmat
-          if (Vof(m,n) > alittle) then
-            Interface_Normal(:,m,n) = Interface_Normal(:,m,n) + Interface_Normal(:,1,n)
-          else
-            Interface_Normal(:,m,n) =                           Interface_Normal(:,1,n)
+          if (vof(m,n) > alittle .and. do_onion_skin) then
+            interface_normal(:,m,n) = interface_normal(:,m,n) + interface_normal(:,1,n)
+          else if (vof(m,n) <= alittle) then
+            interface_normal(:,m,n) =                           interface_normal(:,1,n)
           end if
         end do
+        
       else if (nmat_in_cell == 2) then ! if there are only two materials in the cell, ensure the normals are consistent
         mid = 0
         ! identify the material IDs in the cells
@@ -92,6 +89,7 @@ contains
         call eliminate_noise (interface_normal(:,m,n))
         call normalize (interface_normal(:,m,n))
       end do
+
     end do ! cell loop
     !$omp end parallel do
 
@@ -99,13 +97,14 @@ contains
     
   end function interface_normal
 
-  function interface_normal_cell (Vof, n, mesh, gmesh) result(interface_normal)
+  function interface_normal_cell (Vof, n, mesh, gmesh, do_onion_skin) result(interface_normal)
     use timer_tree_type
 
     real(r8),         intent(in) :: Vof(:,:)
     integer,          intent(in) :: n
     type(unstr_mesh), intent(in) :: mesh
     type(mesh_geom),  intent(in) :: gmesh
+    logical,          intent(in) :: do_onion_skin
     real(r8)                     :: interface_normal(3,size(vof,1))
     
     integer :: m, mi, mid(2), nmat, nmat_in_cell
@@ -120,7 +119,7 @@ contains
     ! Calculate the volume fraction gradient for each material
     ! recall interface normal is in opposite direction of gradient
     do m = 1,nmat
-      interface_normal(:,m) = -gradient_cell (Vof(m,:), n, mesh, gmesh)
+      interface_normal(:,m) = -gradient_cell (vof(m,:), n, mesh, gmesh)
     end do
 
     ! if there are more than 2 materials in the cell
@@ -129,10 +128,10 @@ contains
     nmat_in_cell = count(vof(:,n) > 0.0_r8)
     if (nmat_in_cell > 2) then
       do m = 2,nmat
-        if (Vof(m,n) > alittle) then
-          Interface_Normal(:,m) = Interface_Normal(:,m) + Interface_Normal(:,1)
-        else
-          Interface_Normal(:,m) =                         Interface_Normal(:,1)
+        if (vof(m,n) > alittle .and. do_onion_skin) then
+          interface_normal(:,m) = interface_normal(:,m) + interface_normal(:,1)
+        else if (vof(m,n) <= alittle) then
+          interface_normal(:,m) =                         interface_normal(:,1)
         end if
       end do
     else if (nmat_in_cell == 2) then ! if there are only two materials in the cell, ensure the normals are consistent

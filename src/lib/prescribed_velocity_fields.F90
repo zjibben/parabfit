@@ -24,7 +24,7 @@ contains
     integer , intent(in) :: field
     real(r8)             :: prescribed_velocity(3)
 
-    real(r8) :: periodT
+    real(r8)            :: periodT
     real(r8), parameter :: PI = 4.0_r8 * atan(1.0_r8)
 
     prescribed_velocity = 0.0_r8

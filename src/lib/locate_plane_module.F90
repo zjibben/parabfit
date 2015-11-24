@@ -278,17 +278,10 @@ contains
          V_b, V_c, P, Q, R, S
 
     ! Initialize values before the iteration loop
-    i = 0
-    iter = 0
-    Rho_a = Rho_Min
-    Rho_b = Rho_Max
-    Rho_c = 0.0_r8
-    Rho_d = 0.0_r8
-    Rho_e = 0.0_r8
-    P = 0.0_r8
-    Q = 0.0_r8
-    R = 0.0_r8
-    S = 0.0_r8
+    i = 0; iter = 0
+    Rho_a = Rho_Min; Rho_b = Rho_Max
+    Rho_c = 0.0_r8; Rho_d = 0.0_r8; Rho_e = 0.0_r8
+    P = 0.0_r8; Q = 0.0_r8; R = 0.0_r8; S = 0.0_r8
     V_a = V_Min - this%Vof*this%Volume
     V_b = V_Max - this%Vof*this%Volume
     V_c = V_b

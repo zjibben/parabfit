@@ -23,14 +23,12 @@
 
 module truncate_volume_module
   use kinds,  only: r8
-  use consts, only: alittle
+  use consts, only: alittle,nfc,nvf
   implicit none
   private
 
   public :: truncate_volume, truncate_face, face_param, truncvol_data
 
-  integer,  parameter :: nvf = 4 ! number of vertices per cell face
-  integer,  parameter :: nfc = 6 ! number of faces
   real(r8), parameter :: eps(4) = (/ 1.0_r8, -1.0_r8, 1.0_r8, -1.0_r8 /)
 
   type truncvol_data
@@ -43,24 +41,16 @@ module truncate_volume_module
   
 contains
 
-  ! <><><><><><><><><><><><> PUBLIC ROUTINES <><><><><><><><><><><><><><><>
-  
-  !=======================================================================
-  ! Purpose(s):
-  !
-  !   Compute and store various face parameters needed
-  !   for the volume truncation calculation
-  !
-  !=======================================================================
+  ! Compute and store various face parameters needed for the volume truncation calculation
   type(truncvol_data) function face_param (cell, option, face, int_flux_vol_coord)
-    use hex_types, only: reconstruction_hex, face_node
+    use hex_types,     only: reconstruction_hex, hex_f
     use cell_geometry, only: cross_product
     use logging_services
 
     class(reconstruction_hex), intent(in) :: cell
-    character(9), intent(in) :: option
-    integer,      intent(in) :: face
-    real(r8),     intent(in), optional :: int_flux_vol_coord(:,:)
+    character(9),       intent(in) :: option
+    integer,            intent(in) :: face
+    real(r8), optional, intent(in) :: int_flux_vol_coord(:,:)
 
     integer  :: i, j, n
     real(r8) :: Tmp1(3)
@@ -72,10 +62,10 @@ contains
     ! For option = 'full_cell', use the donor cell vertices (Cell_Coord)
     ! For option = 'flux_cell', use the vertices of the flux volume (Xv_flux)
     if (option == 'full_cell') then
-      face_param%X = cell%node(:,face_node(:,face))
+      face_param%X = cell%node(:,hex_f(:,face))
     else if (option == 'flux_cell') then
       if (.not.present(int_flux_vol_coord)) call LS_fatal('when calculating flux_cell face_param, int_flux_vol_coord is required')
-      face_param%X = int_flux_vol_coord(:,face_node(:,face))
+      face_param%X = int_flux_vol_coord(:,hex_f(:,face))
     end if
     
     ! Compute K   (the Area Vector of the ruled surface)
@@ -170,12 +160,7 @@ contains
          +          face_param%MUi(3) - face_param%MUi(4)
   end function face_param
   
-  !=======================================================================
-  ! Purpose(s):
-  !  
-  !   Compute the truncation volume.
-  !
-  !=======================================================================
+  ! Compute the truncation volume.
   real(r8) function truncate_volume (cell, trunc_vol)
     use hex_types, only: reconstruction_hex
 
@@ -195,13 +180,8 @@ contains
 
   end function truncate_volume
 
-  !=======================================================================
-  ! Purpose(s):
-  !
-  !   Compute the volume truncated at the current
-  !   hex face by the plane given by X*Normal - Ro = 0
-  !
-  !=======================================================================
+  ! Compute the volume truncated at the current
+  ! hex face by the plane given by X*Normal - Ro = 0
   function truncate_face (cell, trunc_vol_face) result(Vf)
     use hex_types, only: reconstruction_hex
 

@@ -41,47 +41,14 @@ module hex_types
     ! contains
     !   procedure              :: locate_plane
   end type reconstruction_hex
-
-  ! truchas face ordering and node numbering
-  ! integer, parameter, public :: face_node(4,6) = &
-  !      [ &
-  !      [4,8,7,3], & ! y-
-  !      [5,1,2,6], & ! y+
-  !      [5,8,4,1], & ! x+
-  !      [6,2,3,7], & ! x-
-  !      [3,2,1,4], & ! z-
-  !      [7,8,5,6]  & ! z+
-  !      ]
-
-  ! ! truchas face ordering and pececillo node numbering
-  ! integer, parameter, public :: face_node(4,6) = &
-  !      [ &
-  !      [2,6,5,1], & ! y-
-  !      [7,3,4,8], & ! y+
-  !      [7,6,2,3], & ! x+
-  !      [8,4,1,5], & ! x-
-  !      [1,4,3,2], & ! z-
-  !      [5,6,7,8]  & ! z+
-  !      ]
-
-  ! pececillo face ordering and node numbering
-  integer, parameter, public :: face_node(4,6) = &
-       [ &
-       [7,3,4,8], & ! y+
-       [2,6,5,1], & ! y-
-       [8,4,1,5], & ! x-
-       [7,6,2,3], & ! x+
-       [1,4,3,2], & ! z-
-       [5,6,7,8]  & ! z+
-       ]
   
-  integer, parameter, public :: hex_f(4,6) = [ &
-       [ 3,4,8,7 ], & ! face vertices
-       [ 1,2,6,5 ], &
-       [ 1,5,8,4 ], &
-       [ 2,3,7,6 ], &
-       [ 1,4,3,2 ], &
-       [ 5,6,7,8 ]  &
+  integer, parameter, public :: hex_f(4,6) = [ & ! face vertices
+       [ 3,4,8,7 ], & ! y+
+       [ 1,2,6,5 ], & ! y-
+       [ 1,5,8,4 ], & ! x-
+       [ 2,3,7,6 ], & ! x+
+       [ 1,4,3,2 ], & ! z-
+       [ 5,6,7,8 ]  & ! z+
        ]
   integer, parameter, public :: hex_e(2,12) = [ &
        [ 1,2 ], & ! edge vertices
@@ -98,7 +65,7 @@ module hex_types
        [ 8,5 ]  &
        ]
 
-  ! unit test cube vertex positions
+  ! cube vertex positions for unit testing
   real(r8), parameter, public :: cube_v(3,8) = [ &
        [ 0.0_r8, 0.0_r8, 0.0_r8 ], &
        [ 1.0_r8, 0.0_r8, 0.0_r8 ], &
@@ -113,21 +80,21 @@ module hex_types
 contains
 
   subroutine init_cell_data (this, node, volume, face_area, face_normal, cfpar)
-    class(cell_data), intent(out) :: this
-    real(r8),         intent(in) :: node(3,8)
-    real(r8),         intent(in), optional :: volume, face_area(6), face_normal(3,6)
-    integer,          intent(in), optional :: cfpar
+    class(cell_data),   intent(out) :: this
+    real(r8),           intent(in)  :: node(3,8)
+    real(r8), optional, intent(in)  :: volume, face_area(6), face_normal(3,6)
+    integer,  optional, intent(in)  :: cfpar
 
     integer :: f
     
-    this%node   = node
+    this%node = node
 
     if (present(volume)) then
       this%volume = volume
     else
       this%volume = this%calc_volume ()
     end if
-
+    
     if (present(face_area) .and. present(face_normal) .and. present(cfpar)) then
       this%face_area = face_area
       do f = 1,6
@@ -156,13 +123,13 @@ contains
     integer :: f
     
     do f = 1,6
-      this%face_normal(:,f) = quad_face_normal(this%node(:,face_node(:,f)))
+      this%face_normal(:,f) = quad_face_normal(this%node(:,hex_f(:,f)))
       this%face_area(f) = vector_length(this%face_normal(:,f))
       this%face_normal(:,f) = this%face_normal(:,f) / sqrt(sum(this%face_normal(:,f)**2))
 
       ! ensure the normals are outward facing
       this%face_normal(:,f) = calculate_outward_normal (this%face_normal(:,f), sum(this%node, dim=2)/8.0_r8, &
-           sum(this%node(:,face_node(:,f)), dim=2)/4.0_r8)
+           sum(this%node(:,hex_f(:,f)), dim=2)/4.0_r8)
     end do
     
   end subroutine calc_face_areas_and_normals
@@ -174,11 +141,11 @@ contains
     real(r8) :: outward_dir(3)
     
     outward_dir = face_center - cell_center
-
+    
     if ( sum(normal*outward_dir)>0.0_r8 ) then
       outward_normal = normal
     else
-      outward_normal = - normal
+      outward_normal = -normal
     end if
     
   end function calculate_outward_normal

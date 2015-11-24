@@ -166,7 +166,7 @@ contains
       !$omp do
       do i = 1,mesh%ncell
         nmat_in_cell = count(vof(:,i) > 0.0_r8)
-        int_norm = interface_normal_cell (vof, i, mesh, gmesh)
+        int_norm = interface_normal_cell (vof, i, mesh, gmesh, .true.)
         call cell%init (mesh%x(:,mesh%cnode(:,i)), mesh%volume(i), mesh%area(mesh%cface(:,i)), &
              mesh%normal(:,mesh%cface(:,i)), mesh%cfpar(i))
         volume_flux_sub(:,:,i) = cell_volume_flux (adv_dt, cell, fluidRho(i), vof(:,i), &
@@ -176,7 +176,7 @@ contains
       !$omp end do nowait
     else
       allocate(int_norm_global(3,nmat,mesh%ncell))
-      int_norm_global = interface_normal (vof, mesh, gmesh) ! compute interface normal vectors for all the materials.
+      int_norm_global = interface_normal (vof, mesh, gmesh, .true.) ! compute interface normal vectors for all the materials.
       call start_timer ("reconstruct/advect")   ! Start the volume track timer
 
       !$omp parallel do default(private) shared(volume_flux_sub,mesh,adv_dt,fluidRho,vof,int_norm_global) &

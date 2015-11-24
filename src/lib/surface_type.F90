@@ -24,7 +24,9 @@ module surface_type
     private
     type(polygon), public, allocatable :: element(:)
   contains
-    procedure :: append
+    procedure, private :: append_polygon
+    procedure, private :: append_surf
+    generic   :: append => append_polygon, append_surf
     procedure :: write_gmv
     procedure :: write_ply
     procedure :: purge
@@ -36,22 +38,12 @@ contains
     use polyhedron_type
     use plane_type
     use array_utils, only: mag
-    use hex_types,   only: hex_f,hex_e
+    use hex_types,   only: hex_f,hex_e,cube_v
 
     type(surface)    :: surf
     type(polyhedron) :: cube
     type(plane)      :: P
     type(polygon)    :: element
-    real(r8)         :: cube_v(3,8) = [ &
-         [ 0.0_r8, 0.0_r8, 0.0_r8 ], & ! vertex positions
-         [ 1.0_r8, 0.0_r8, 0.0_r8 ], &
-         [ 1.0_r8, 1.0_r8, 0.0_r8 ], &
-         [ 0.0_r8, 1.0_r8, 0.0_r8 ], &
-         [ 0.0_r8, 0.0_r8, 1.0_r8 ], &
-         [ 1.0_r8, 0.0_r8, 1.0_r8 ], &
-         [ 1.0_r8, 1.0_r8, 1.0_r8 ], &
-         [ 0.0_r8, 1.0_r8, 1.0_r8 ]  &
-         ]
     integer          :: f,nV
 
     ! generate a cube and use its faces as the definition of a surface, then print to file
@@ -76,7 +68,7 @@ contains
   end subroutine surface_unit_test
 
   ! append element to the end of array (increasing array size by 1)
-  subroutine append (this, new_element)
+  subroutine append_polygon (this, new_element)
     class(surface), intent(inout) :: this
     class(polygon), intent(in)    :: new_element
 
@@ -97,7 +89,32 @@ contains
       this%element(1) = new_element
     end if
 
-  end subroutine append
+  end subroutine append_polygon
+
+  ! append elements of another surface to
+  subroutine append_surf (this, surf)
+    class(surface), intent(inout) :: this
+    class(surface), intent(in)    :: surf
+
+    type(polygon)                 :: tmp(size(this%element))
+    integer                       :: N,Nsurf
+
+    Nsurf = size(surf%element)
+    if (Nsurf==0 .or. .not.allocated(surf%element)) return
+
+    if (allocated(this%element)) then
+      N = size(this%element)
+      tmp = this%element
+      deallocate(this%element)
+      allocate(this%element(N+Nsurf))
+      this%element(1:N) = tmp
+      this%element(N+1:N+Nsurf) = surf%element
+    else
+      allocate(this%element(Nsurf))
+      this%element = surf%element
+    end if
+
+  end subroutine append_surf
 
   subroutine purge (this)
     class(surface), intent(inout) :: this
@@ -206,6 +223,7 @@ contains
 
     ! clean up
     close (99)
+
   end subroutine write_ply
 
 end module surface_type

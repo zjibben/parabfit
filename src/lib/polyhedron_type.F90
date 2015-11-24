@@ -8,12 +8,11 @@
 !! October 2015
 !!
 !! References:
-!!     1. Mirtich. Fast and Accurate Computation of Polehedral Mass Properties. Journal of Graphics Tools, 1996.
+!!     1. Hopcroft and Kahn. A Paradigm for Robust Geometric Algorithms. Algorithmica, 1992
 !! 
 
 module polyhedron_type
   use kinds,  only: r8
-  use consts, only: alpha
   use logging_services
   use polygon_type
   implicit none
@@ -27,7 +26,7 @@ module polyhedron_type
     real(r8), allocatable :: x(:,:),face_normal(:,:)      ! vertex positions and face outward normals
     integer,  allocatable :: face_vid(:,:), edge_vid(:,:) ! face and edge IDs
     real(r8)              :: vol                          ! volume
-    ! Ideally vol should be private, but Fortran then also hides it from child types
+    ! ideally vol should be private, but Fortran then also hides it from child types
   contains
     procedure, private :: init_polyhedron
     procedure, private :: init_polyhedron_copy
@@ -45,20 +44,14 @@ contains
 
   subroutine polyhedron_unit_test ()
     use plane_type
-    use hex_types,   only: hex_f, hex_e
+    use hex_types,   only: hex_f, hex_e, cube_v
     use array_utils, only: isZero
 
     type(polyhedron) :: cube,pyramid,pyramid3,cutcube,tmp(2)
-    real(r8)         :: cube_v(3,8) = [ &
-         [ 0.0_r8, 0.0_r8, 0.0_r8 ], & ! vertex positions
-         [ 1.0_r8, 0.0_r8, 0.0_r8 ], &
-         [ 1.0_r8, 1.0_r8, 0.0_r8 ], &
-         [ 0.0_r8, 1.0_r8, 0.0_r8 ], &
-         [ 0.0_r8, 0.0_r8, 1.0_r8 ], &
-         [ 1.0_r8, 0.0_r8, 1.0_r8 ], &
-         [ 1.0_r8, 1.0_r8, 1.0_r8 ], &
-         [ 0.0_r8, 1.0_r8, 1.0_r8 ]  &
-         ]
+    type(polygon)    :: intpoly
+    type(plane)      :: P
+    real(r8)         :: volume,tmpr1,tmpr2
+    logical          :: success
     real(r8)         :: pyr3_v(3,4) = [ &
          [ 0.0_r8, 0.0_r8, 0.0_r8 ], & ! vertex positions
          [ 0.0_r8, 1.0_r8, 0.0_r8 ], &
@@ -141,11 +134,6 @@ contains
          [  9,5 ], &
          [  8,4 ]  &
          ]
-
-    real(r8)         :: volume,tmpr1,tmpr2
-    type(polygon)    :: intpoly
-    type(plane)      :: P
-    logical          :: success
 
     write(*,*)
     write(*,*) 'POLYHEDRON'
@@ -428,6 +416,7 @@ contains
   ! the first element returned is in front of the plane
   ! the second element returned is behind the plane
   function split (this,P)
+    use consts, only: alpha
     use plane_type
     
     class(polyhedron), intent(in) :: this
@@ -495,6 +484,7 @@ contains
   end function volume_behind_plane
 
   ! WARNING: need to update this routine to pass face normals down to the child polyhedron
+  ! Reference [1]
   type(polyhedron) function polyhedron_on_side_of_plane (this,valid_side,side,intpoly,v_assoc_pe)
     use array_utils, only: xrange,first_true_loc
 
@@ -525,12 +515,6 @@ contains
     x(:,nParVerts+1:nParVerts+intpoly%nVerts) = intpoly%x ! add vertices from plane-polyhedron intersections
     nVerts = nVerts + intpoly%nVerts
 
-    ! write(*,*) 
-    ! write(*,*) nVerts
-    ! do v = 1,nVerts
-    !   write(*,'(i3,3f14.4)') v,x(:,v)
-    ! end do
-
     ! edges
     nEdges = 0
     do e = 1,this%nEdges
@@ -557,12 +541,6 @@ contains
     end do
     nEdges = nEdges + 1
     edge_vid(:,nEdges) = [nVerts,nParVerts+1] ! complete the loop
-
-    ! write(*,*)
-    ! write(*,*) nedges
-    ! do e = 1,nedges
-    !   write(*,'(i3,a,2i5)') e,'  ',edge_vid(:,e)
-    ! end do
 
     ! construct a set of faces from the edge information
     ! note these will not be in a particular order, like pececillo would expect for hexes
@@ -628,12 +606,6 @@ contains
       face_vid(1:nVerts-nParVerts,nFaces) = xrange (nParVerts+1,nVerts)
     end if
 
-    ! write(*,*)
-    ! write(*,*) 'nfaces: ',nfaces
-    ! do f = 1,nfaces
-    !   write(*,'(i3,a,6i5)') f,'  ',face_vid(:,f)
-    ! end do
-
     ! initialize final polyhedron
     tmp = maxval(count(face_vid(:,:) /= 0,dim=1)) ! the maximum number of vertices on a face
     call polyhedron_on_side_of_plane%init (x(:,1:nVerts), face_vid(1:tmp,1:nFaces), edge_vid(:,1:nEdges))
@@ -646,17 +618,13 @@ contains
 
     class(polyhedron), intent(in) :: this
     integer,           intent(in) :: v(2)
-
-    integer :: e
-
-    edge_containing_vertices = 0 ! result for edge not found
-    do e = 1,this%nEdges
-      if (all(this%edge_vid(:,e)==v) .or. all(this%edge_vid(:,e)==reverse (v))) then
-        ! found edge
-        edge_containing_vertices = e
-        exit
-      end if
+    
+    do edge_containing_vertices = 1,this%nEdges
+      if ( all(this%edge_vid(:,edge_containing_vertices)==v) .or. &
+           all(this%edge_vid(:,edge_containing_vertices)==reverse (v))) &
+           return
     end do
+    edge_containing_vertices = 0 ! result for edge not found
 
   end function edge_containing_vertices
 

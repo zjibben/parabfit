@@ -4,7 +4,6 @@
 !! Zechariah J. Jibben <zjibben@lanl.gov>
 !! July 2014
 !!
-!!
 !! cneighbor(f,n) is the cell id of the neighbor to cell n opposite local face id f
 !! fneighbor(f,n) is the local face id of the face belonging to the neighbor to cell n opposite local face id f
 !! vcell(:,v) are the cell ids of cells containing node v
@@ -28,7 +27,7 @@ contains
 
   subroutine init (this, mesh)
     class(mesh_geom), intent(out) :: this
-    type(unstr_mesh), intent(in) :: mesh
+    type(unstr_mesh), intent(in)  :: mesh
 
     integer :: i,f
     
@@ -67,7 +66,7 @@ contains
   
   function cells_neighboring_vertices (mesh)
     type(unstr_mesh), intent(in) :: mesh
-    integer :: cells_neighboring_vertices(8,mesh%nnode)
+    integer                      :: cells_neighboring_vertices(8,mesh%nnode)
 
     integer :: i,n,nid,j(mesh%nnode)
 
@@ -121,11 +120,10 @@ contains
   subroutine cells_connected_to_faces (fcell,flid,mesh)
     use unstr_mesh_type
 
-    type(unstr_mesh), intent(in) :: mesh
-    integer, intent(out) :: fcell(2,mesh%nface),flid(2,mesh%nface)
+    type(unstr_mesh), intent(in)  :: mesh
+    integer,          intent(out) :: fcell(2,mesh%nface),flid(2,mesh%nface)
 
     integer :: i,f,fid,j(mesh%nface)
-
     
     j = 1; fcell = -1; flid = -1
 

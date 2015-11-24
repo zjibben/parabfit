@@ -1,40 +1,35 @@
+!=======================================================================
+! Purpose(s):
+!
+!   Define the variables and procedures associated with 
+!   computing the advection flux volume.
+!
+! Public Interface(s):
+!
+!   * call FLUX_VOL_VERTICES (Fluxing_Velocity, Flux_Vol)
+!
+!     Compute the vertices that describe the flux volume.
+!
+! Contains: FLUX_VOL_VERTICES
+!           SCREWED_VOLUME
+!
+! Author(s): Douglas B. Kothe (LANL Group T-3, dbk@lanl.gov)
+!            S. Jay Mosso (LANL Group X-HM, sjm@lanl.gov)
+!
+!=======================================================================
+
 module flux_volume_module
-  !=======================================================================
-  ! Purpose(s):
-  !
-  !   Define the variables and procedures associated with 
-  !   computing the advection flux volume.
-  !
-  ! Public Interface(s):
-  !
-  !   * call FLUX_VOL_VERTICES (Fluxing_Velocity, Flux_Vol)
-  !
-  !     Compute the vertices that describe the flux volume.
-  !
-  ! Contains: FLUX_VOL_VERTICES
-  !           SCREWED_VOLUME
-  !
-  ! Author(s): Douglas B. Kothe (LANL Group T-3, dbk@lanl.gov)
-  !            S. Jay Mosso (LANL Group X-HM, sjm@lanl.gov)
-  !
-  !=======================================================================
-  use kinds, only: r8
+  use kinds,  only: r8
+  use consts, only: nvc,ndim,nvf,nfc,alittle,cutvof
   use logging_services
   implicit none
   private
 
   public :: flux_vol_quantity, flux_vol_vertices
   
-  ! Maximum allowable iterations for the flux volume vertex location
+  ! maximum allowable iterations for the flux volume vertex location
   integer,  parameter :: flux_vol_iter_max = 10
-  integer,  parameter :: ndim = 3
-  integer,  parameter :: nvc = 8
-  integer,  parameter :: nvf = 4
-  integer,  parameter :: nfc = 6
-  real(r8), parameter :: alittle = epsilon(1.0_r8)
-  real(r8), parameter :: cutvof = 1.0e-8_r8
 
-  ! Define flux_vol_quantity structure
   type flux_vol_quantity
     integer  :: Fc           ! face number through which we this cell is fluxing
     real(r8) :: Vol          ! Volume of the flux
@@ -43,8 +38,6 @@ module flux_volume_module
 
 contains
   
-  ! <><><><><><><><><><><><> PUBLIC ROUTINES <><><><><><><><><><><><><><><>
-
   !=======================================================================
   ! Purpose(s):
   !
@@ -71,22 +64,6 @@ contains
     type(flux_vol_quantity), intent(inout) :: flux_vol
 
     integer :: n, v, ia, ib, e, iter, &
-         ! Edge_ends(2,nvf,nfc) = reshape( [ &
-         ! 3,2,  4,1,  7,6,  8,5,   & ! face 1 edges
-         ! 1,4,  2,3,  5,8,  6,7,   & ! face 2 edges
-         ! 1,2,  4,3,  5,6,  8,7,   & ! face 3 edges
-         ! 2,1,  3,4,  6,5,  7,8,   & ! face 4 edges
-         ! 1,5,  2,6,  3,7,  4,8,   & ! face 5 edges
-         ! 5,1,  6,2,  7,3,  8,4 ], & ! face 6 edges
-         ! [2,nvf,nfc] )
-         ! Edge_ends(2,nvf,nfc) = reshape( [ &
-         ! 1,4,  2,3,  5,8,  6,7,   & ! face 1 edges
-         ! 3,2,  4,1,  7,6,  8,5,   & ! face 2 edges
-         ! 3,4,  2,1,  7,8,  6,5,   & ! face 3 edges
-         ! 4,3,  1,2,  8,7,  5,6,   & ! face 4 edges
-         ! 3,7,  4,8,  1,5,  2,6,   & ! face 5 edges
-         ! 7,3,  8,4,  5,1,  6,2 ], & ! face 6 edges
-         ! [2,nvf,nfc] )
          Edge_ends(2,nvf,nfc) = reshape( [ &
          3,2,  4,1,  7,6,  8,5,   & ! face 2 edges
          1,4,  2,3,  5,8,  6,7,   & ! face 1 edges
@@ -95,14 +72,6 @@ contains
          3,7,  4,8,  1,5,  2,6,   & ! face 5 edges
          7,3,  8,4,  5,1,  6,2 ], & ! face 6 edges
          [2,nvf,nfc] )
-         ! Edge_ends(2,nvf,nfc) = reshape( [ &
-         ! 2,3,  1,4,  6,7,  5,8,   & ! face 2 edges
-         ! 4,1,  3,2,  8,5,  7,6,   & ! face 1 edges
-         ! 3,4,  2,1,  7,8,  6,5,   & ! face 4 edges
-         ! 4,3,  1,2,  8,7,  5,6,   & ! face 3 edges
-         ! 7,3,  8,4,  5,1,  6,2,   & ! face 5 edges
-         ! 3,7,  4,8,  1,5,  2,6 ], & ! face 6 edges
-         ! [2,nvf,nfc] )
     real(r8)       :: Percnt(nvf), tmp(8)
     real(r8)       :: Uedge(ndim,nvf)
     real(r8)       :: Volume, Mult, ndotuedge

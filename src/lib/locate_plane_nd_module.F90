@@ -119,6 +119,7 @@ contains
 
   logical function locate_plane_nd_unit_test (poly, P, vol)
     use consts,      only: cutvof
+    use array_utils, only: isZero
 
     type(polyhedron), intent(in) :: poly
     type(plane),      intent(in) :: P
@@ -127,7 +128,7 @@ contains
     type(plane) :: P_out
     
     P_out = locate_plane_nd (poly, P%normal, vol)
-    locate_plane_nd_unit_test = abs(P%rho - P_out%rho) < cutvof
+    locate_plane_nd_unit_test = isZero (P%rho - P_out%rho, cutvof)
     
   end function locate_plane_nd_unit_test
 
@@ -136,6 +137,7 @@ contains
   ! Alternatively, should we return the two polyhedra? If they are already
   ! calculated, it would save resplitting the input polyhedron.
   type(plane) function locate_plane_nd (poly, norm, vol)
+    use consts, only: cutvof
     use polyhedron_type
     use plane_type
     
@@ -153,7 +155,7 @@ contains
     
     ! start Brent's method
     locate_plane_nd%normal = norm
-    locate_plane_nd%rho = brent (rho_min, rho_mid, rho_max, volume_error)
+    locate_plane_nd%rho = brent (volume_error, rho_min, rho_mid, rho_max, cutvof, 100)
 
   end function locate_plane_nd
 
