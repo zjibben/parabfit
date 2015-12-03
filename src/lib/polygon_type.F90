@@ -77,8 +77,9 @@ contains
       i = 3
       do while (all(isZero (this%norm)))
         if (i>this%nVerts) then
+          write(*,*) 'nVerts',this%nVerts
           do j = 1,this%nVerts
-            write(*,*) this%x(:,j)
+            write(*,'(a,i3,3es14.4)') 'vertex ',j,this%x(:,j)
           end do
           call LS_fatal ("polygon only consists of a line")
         end if

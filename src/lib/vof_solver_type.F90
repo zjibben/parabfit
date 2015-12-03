@@ -240,7 +240,7 @@ contains
              this%nmat, this%fluidRho, this%intrec, dump_intrec)
       case (NESTED_DISSECTION)
         call volume_track_nd (volume_flux_sub, adv_dt, this%mesh, this%gmesh, this%vof, this%fluxing_velocity, &
-             this%nmat, this%fluidRho, this%intrec, dump_intrec)
+             this%fluidRho, this%intrec, dump_intrec)
       case default
         call LS_fatal ("invalid advection method")
       end select
@@ -799,7 +799,7 @@ contains
     class(vof_solver), intent(inout) :: this
 
     real(r8)               :: int_norm(3,this%nmat,this%mesh%ncell), vofint
-    integer                :: i,ni,ninterfaces,locate_plane_niters
+    integer                :: i,ni,locate_plane_niters
     type(locate_plane_hex) :: plane_cell
     type(polyhedron)       :: poly
     

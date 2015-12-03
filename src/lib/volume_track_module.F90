@@ -135,13 +135,13 @@ contains
     use surface_type
     !use devices,   only: using_mic
     
-    real(r8),         intent(in)    :: adv_dt, vof(:,:), fluxing_velocity(:,:), fluidrho(:)
-    type(unstr_mesh), intent(in)    :: mesh
-    type(mesh_geom),  intent(in)    :: gmesh
-    integer,          intent(in)    :: nmat
-    real(r8),         intent(out)   :: volume_flux_sub(:,:,:)
-    type(surface),    intent(inout) :: intrec(:)
-    logical,          intent(in)    :: dump_intrec
+    real(r8),         intent(in)  :: adv_dt, vof(:,:), fluxing_velocity(:,:), fluidrho(:)
+    type(unstr_mesh), intent(in)  :: mesh
+    type(mesh_geom),  intent(in)  :: gmesh
+    integer,          intent(in)  :: nmat
+    real(r8),         intent(out) :: volume_flux_sub(:,:,:)
+    type(surface),    intent(out) :: intrec(:)
+    logical,          intent(in)  :: dump_intrec
     !real(r8)                      :: volume_flux_sub(nmat, 6, mesh%ncell)
 
     integer               :: ninterfaces, i, ni, nmat_in_cell !(mesh%ncell)

@@ -155,7 +155,7 @@ contains
     
     ! start Brent's method
     locate_plane_nd%normal = norm
-    locate_plane_nd%rho = brent (volume_error, rho_min, rho_mid, rho_max, cutvof, 100)
+    locate_plane_nd%rho = brent (volume_error, rho_min, rho_mid, rho_max, cutvof/2.0_r8, 100)
 
   end function locate_plane_nd
 

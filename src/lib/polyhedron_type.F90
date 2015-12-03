@@ -235,7 +235,7 @@ contains
     real(r8), optional, intent(in)  :: vol, face_normal(:,:)
     
     integer :: f,nV
-
+    
     this%nVerts = size(x,     dim=2)
     this%nEdges = size(edge_v,dim=2)
     this%nFaces = size(face_v,dim=2)
@@ -243,23 +243,23 @@ contains
          this%face_vid(size(face_v,dim=1),this%nFaces),&
          this%edge_vid(size(edge_v,dim=1),this%nEdges),&
          this%face_normal(3,this%nFaces) )
-
+    
     this%x = x
     this%edge_vid = edge_v
     this%face_vid = face_v
-
+    
     if (present(vol)) then
       this%vol = vol
     else
       this%vol = 0.0_r8
     end if
-
+    
     if (present(face_normal)) then
       this%face_normal = face_normal
     else
       this%face_normal = 0.0_r8
     end if
-
+    
     ! if the faces are of type polygon
     ! do f = 1,this%nFaces
     !   nV = count(face_v(:,f) /= 0) ! number of vertices on this face

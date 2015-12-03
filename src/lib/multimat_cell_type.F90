@@ -22,13 +22,14 @@ module multimat_cell_type
   ! of polyhedra each describing the geometry of a
   ! particular material
   type, extends(polyhedron), public :: multimat_cell
-    !integer                       :: nmat
+    integer                       :: nmat ! number of materials actually present in cell
     !integer,          allocatable :: mat_id(:)
     type(polyhedron), allocatable :: mat_poly(:)
   contains
     procedure :: partition
     procedure :: volumes_behind_plane
     procedure :: outward_volflux
+    procedure :: interface_polygon
   end type multimat_cell
   
 contains
@@ -182,14 +183,14 @@ contains
     real(r8),             intent(in)    :: vof(:), norm(:,:)
 
     type(polyhedron) :: tmp(2),remainder
-    integer          :: m,nm,nmat_in_cell
+    integer          :: m,nm
 
     if (allocated(this%mat_poly)) deallocate(this%mat_poly)
     allocate(this%mat_poly(size(vof)))
 
     call remainder%init (this)
 
-    nmat_in_cell = count(cutvof < vof(:))
+    this%nmat = count(cutvof < vof(:))
     nm = 0
 
     do m = 1,size(vof)
@@ -200,7 +201,7 @@ contains
       ! use the plane to generate the polyhedron for this material,
       ! and update the free-space polyhedron
 
-      if (nm==nmat_in_cell .or. 1.0_r8-cutvof < vof(m)) then
+      if (nm==this%nmat .or. 1.0_r8-cutvof < vof(m)) then
         ! if this is the final material in the cell,
         ! it gets the entire remainder of the polyhedron
         this%mat_poly(m) = remainder
@@ -211,8 +212,6 @@ contains
         remainder = tmp(1)
         this%mat_poly(m) = tmp(2)
       end if
-      
-      ! TODO: save the last face of each polyhedron as the interface reconstruction for dumping purposes
     end do
     
   end subroutine partition
@@ -265,5 +264,35 @@ contains
     end do
 
   end function outward_volflux
+
+  ! returns a polygon for a desired interface
+  type(polygon) function interface_polygon (this,m)
+    use polygon_type
+    use array_utils, only: last_true_loc
+
+    class(multimat_cell), intent(in) :: this
+    integer,              intent(in) :: m
+
+    integer :: interface_face_id,nVerts
+
+    interface_polygon%nVerts = 0
+    ! if this polyhedron doesn't exist, or the polyhedron describes a pure cell,
+    ! there is no interface to find
+    if (m > size(this%mat_poly) .or. this%nmat<2 .or. this%mat_poly(m)%nVerts<4) return
+
+    ! by the convention set in polyhedron_type%polyhedron_on_side_of_plane,
+    ! the face corresponding to the phase interface is the last face
+    ! in the polyhedron
+    interface_face_id = size(this%mat_poly(m)%face_vid, dim=2)
+
+    ! count how many real vertices are listed for this face (0s represent non-existent vertices)
+    nVerts = last_true_loc (this%mat_poly(m)%face_vid(:,interface_face_id)>0)
+
+    ! initialize the polyhedron with the vertices used by the interface face
+    ! and the corresponding normal vector
+    call interface_polygon%init (this%mat_poly(m)%x(:,this%mat_poly(m)%face_vid(1:nVerts,interface_face_id))) !, &
+         !this%mat_poly(m)%face_normal(:,interface_face_id))
+
+  end function interface_polygon
 
 end module multimat_cell_type

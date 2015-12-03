@@ -54,7 +54,7 @@ contains
     write(*,*) 'POLYHEDRON'
     write(*,*) '===================================================='
 
-    call volume_track_nd (volflux, 0.01_r8, mesh, gmesh, vof, fluxing_velocity, nmat, fluidRho, intrec, .false.)
+    call volume_track_nd (volflux, 0.01_r8, mesh, gmesh, vof, fluxing_velocity, fluidRho, intrec, .false.)
 
     volflux_ex = 0.0_r8
     
@@ -100,60 +100,62 @@ contains
 
   end subroutine volume_track_nd_unit_test
 
-  subroutine volume_track_nd (volume_flux_sub, adv_dt, mesh, gmesh, Vof, fluxing_velocity, nmat, fluidRho, &
-       intrec, dump_intrec)
-    use plane_type
+  subroutine volume_track_nd (volume_flux_sub, adv_dt, mesh, gmesh, vof, fluxing_velocity, fluidRho, intrec, dump_intrec)
     use multimat_cell_type
     use unstr_mesh_type
     use mesh_geom_type
     use surface_type
+    use timer_tree_type
     use hex_types,       only: hex_f,hex_e
     use int_norm_module, only: interface_normal
-    use consts,          only: cutvof,nfc
-    use logging_services ! DEBUGGING
     
     real(r8),         intent(out) :: volume_flux_sub(:,:,:)
     real(r8),         intent(in)  :: adv_dt, vof(:,:), fluxing_velocity(:,:), fluidrho(:)
     type(unstr_mesh), intent(in)  :: mesh
     type(mesh_geom),  intent(in)  :: gmesh
-    integer,          intent(in)  :: nmat
     type(surface),    intent(out) :: intrec(:)
     logical,          intent(in)  :: dump_intrec
 
     type(multimat_cell)  :: cell
-    type(plane)          :: flux_plane
-    real(r8)             :: xf(3), int_norm(3,nmat,mesh%ncell)
-    integer              :: i,f,ni,ninterfaces
-
-    ninterfaces = nmat-1
-
-    ! compute interface normal vectors for all the materials.
-    ! TODO: the norm gets calculated differently for nested dissection??
-    int_norm = interface_normal (vof, mesh, gmesh, .false.)
-
+    real(r8)             :: int_norm(3,size(vof,dim=1),mesh%ncell)
+    integer              :: i,m
+    
     if (dump_intrec) then
-      do ni = 1,ninterfaces
-        call intrec(ni)%purge ()
+      do m = 1,size(intrec)
+        call intrec(m)%purge ()
       end do
     end if
+
+    ! compute interface normal vectors for all the materials
+    int_norm = interface_normal (vof, mesh, gmesh, .false.)
     
     ! calculate the flux volumes for each face
-    !!$omp parallel do default(private) shared(mesh,hex_f,hex_e,gmesh,vof,int_norm,dump_intrec,intrec) &
-    !!$omp shared(volume_flux_sub, adv_dt, fluxing_velocity)
+    call start_timer ("reconstruct/advect")
+    !!$omp parallel do
+    !!$omp parallel do default(private) shared(mesh,gmesh, hex_f,hex_e, int_norm)
+    !!$omp parallel do default(private) shared(volume_flux_sub, vof,int_norm,fluxing_velocity,adv_dt, mesh,gmesh, hex_f,hex_e)
+    !!$omp parallel do default(private) shared(mesh,gmesh,hex_f,hex_e,vof,int_norm,dump_intrec,intrec) &
+    !!$omp shared(volume_flux_sub,adv_dt,fluxing_velocity,fluidRho)
     do i = 1,mesh%ncell
       ! send cell data to the multimat_cell type
       call cell%init (mesh%x(:,mesh%cnode(:,i)), hex_f, hex_e, mesh%volume(i), gmesh%outnorm(:,:,i))
-
+      
       ! partition the cell based on vofs and norms
       call cell%partition (vof(:,i), int_norm(:,:,i))
 
+      ! dump the interface reconstruction, if requested
       if (dump_intrec) then
-        ! TODO: dump interface reconstruction
+        do m = 1,size(intrec)
+          call intrec(m)%append (cell%interface_polygon (m))
+        end do
       end if
-
+      
+      ! calculate the outward volume flux
       volume_flux_sub(:,:,i) = cell%outward_volflux (adv_dt, fluxing_velocity(:,i))
     end do
     !!$omp end parallel do
+
+    call stop_timer ("reconstruct/advect")
 
   end subroutine volume_track_nd
   

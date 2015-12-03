@@ -168,13 +168,12 @@ contains
   subroutine run (this, stat, errmsg)
     !use velocity_to_faces_func
 
-    class(flow_sim), intent(inout) :: this
-    integer, intent(out) :: stat
-    character(:), allocatable, intent(out) :: errmsg
+    class(flow_sim),           intent(inout) :: this
+    integer,                   intent(out)   :: stat
+    character(:), allocatable, intent(out)   :: errmsg
 
-    integer :: n, status
-    real(r8) :: t, hnext
-    real(r8), allocatable :: u(:)
+    integer       :: n
+    real(r8)      :: t
     character(80) :: string(2)
     
     call start_timer ('integration')
@@ -226,7 +225,6 @@ contains
     real(r8),        intent(in)    :: dt,t
 
     real(r8)           :: flow_dt,tlocal,CFL
-    integer            :: ns_subcycles
     integer, save      :: iter = 0
     real(r8), parameter :: maxdt = 1e-2_r8 ! maximum allowed timestep -- make this user-specified from the input file
     !integer, parameter :: nsteps = 10      ! for scaling tests

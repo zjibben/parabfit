@@ -8,7 +8,6 @@
 !! Last revised 9 Nov 2012.
 !!
 
-
 module int_norm_module
   use kinds,  only: r8
   use consts, only: alittle,nfc,ndim
@@ -21,23 +20,24 @@ module int_norm_module
 
 contains
 
-    !=======================================================================
+  !=======================================================================
   ! Purpose(s):
   !
   !   This routine calculates the interface normal for each
   !   material by computing the gradient of material volume fractions
   !
   !=======================================================================
-  function interface_normal (Vof, mesh, gmesh, do_onion_skin)
+  function interface_normal (vof, mesh, gmesh, do_onion_skin)
     use timer_tree_type
+    use array_utils, only: first_true_loc,last_true_loc
 
-    real(r8),         intent(in) :: Vof(:,:)
+    real(r8),         intent(in) :: vof(:,:)
     type(unstr_mesh), intent(in) :: mesh
     type(mesh_geom),  intent(in) :: gmesh
     logical,          intent(in) :: do_onion_skin
-    real(r8)                     :: interface_normal(3,size(vof,1),size(vof,2))
+    real(r8)                     :: interface_normal(3,size(vof,dim=1),mesh%ncell)
 
-    integer :: m, n, mi, mid(2), nmat, nmat_in_cell
+    integer :: m, n, mid(2), nmat, nmat_in_cell
 
     call start_timer ("normal calculation")
 
@@ -46,19 +46,14 @@ contains
     ! Calculate the volume fraction gradient for each material
     ! recall interface normal is in opposite direction of gradient
     do m = 1,nmat
-      interface_normal(:,m,:) = -gradient (Vof(m,:), mesh, gmesh)
+      interface_normal(:,m,:) = -gradient (vof(m,:), mesh, gmesh)
     end do
     
-    ! mmfran 07/22/11 --- begin changes
-    ! bug fix for material order independent results
-    ! consider special case the cell contains only two materials
-    ! if cell has two materials only, their normal should be consistent
-    
-    !$omp parallel do default(private) shared(interface_normal,vof,mesh,gmesh,nmat)
+    !$omp parallel do default(private) shared(interface_normal,vof,mesh,nmat,do_onion_skin)
     do n = 1,mesh%ncell
-      ! if there are more than 2 materials in the cell
-      ! Sum the gradients in priority order.  This is equivalent to calculating the
-      !  interface normal for a material composed of the first few materials
+      ! If there are more than 2 materials in the cell and doing onion skin,
+      ! sum the gradients in priority order. This is equivalent to calculating the
+      ! interface normal for a material composed of the first few materials.
       nmat_in_cell = count(vof(:,n) > 0.0_r8)
       if (nmat_in_cell > 2) then
         
@@ -71,23 +66,15 @@ contains
         end do
         
       else if (nmat_in_cell == 2) then ! if there are only two materials in the cell, ensure the normals are consistent
-        mid = 0
         ! identify the material IDs in the cells
-        mi=1; m=1
-        do while (mi<=2)
-          if (Vof(m,n) > 0.0_r8) then
-            mid(mi) = m
-            mi = mi+1
-          endif
-          m = m+1
-        end do
-        
+        mid(1) = first_true_loc (vof(:,n)>0.0_r8)
+        mid(2) =  last_true_loc (vof(:,n)>0.0_r8)
         interface_normal(:,mid(2),n) = -interface_normal(:,mid(1),n)
       end if
       
       do m = 1,nmat
         call eliminate_noise (interface_normal(:,m,n))
-        call normalize (interface_normal(:,m,n))
+        call normalize       (interface_normal(:,m,n))
       end do
 
     end do ! cell loop
@@ -97,34 +84,31 @@ contains
     
   end function interface_normal
 
-  function interface_normal_cell (Vof, n, mesh, gmesh, do_onion_skin) result(interface_normal)
+  ! calculate the interface normal in a single cell
+  function interface_normal_cell (vof, n, mesh, gmesh, do_onion_skin) result(interface_normal)
     use timer_tree_type
+    use array_utils, only: first_true_loc,last_true_loc
 
-    real(r8),         intent(in) :: Vof(:,:)
+    real(r8),         intent(in) :: vof(:,:)
     integer,          intent(in) :: n
     type(unstr_mesh), intent(in) :: mesh
     type(mesh_geom),  intent(in) :: gmesh
     logical,          intent(in) :: do_onion_skin
-    real(r8)                     :: interface_normal(3,size(vof,1))
+    real(r8)                     :: interface_normal(3,size(vof,dim=1))
     
-    integer :: m, mi, mid(2), nmat, nmat_in_cell
+    integer :: m, mid(2), nmat, nmat_in_cell
 
     nmat = size(vof, dim=1)
         
-    ! mmfran 07/22/11 --- begin changes
-    ! bug fix for material order independent results
-    ! consider special case the cell contains only two materials
-    ! if cell has two materials only, their normal should be consistent
-    
     ! Calculate the volume fraction gradient for each material
     ! recall interface normal is in opposite direction of gradient
     do m = 1,nmat
       interface_normal(:,m) = -gradient_cell (vof(m,:), n, mesh, gmesh)
     end do
 
-    ! if there are more than 2 materials in the cell
-    ! Sum the gradients in priority order.  This is equivalent to calculating the
-    !  interface normal for a material composed of the first few materials
+    ! If there are more than 2 materials in the cell and we are doing onion skin,
+    ! sum the gradients in priority order. This is equivalent to calculating the
+    ! interface normal for a material composed of the first few materials
     nmat_in_cell = count(vof(:,n) > 0.0_r8)
     if (nmat_in_cell > 2) then
       do m = 2,nmat
@@ -135,23 +119,15 @@ contains
         end if
       end do
     else if (nmat_in_cell == 2) then ! if there are only two materials in the cell, ensure the normals are consistent
-      mid = 0
       ! identify the material IDs in the cells
-      mi=1; m=1
-      do while (mi<=2)
-        if (Vof(m,n) > 0.0_r8) then
-          mid(mi) = m
-          mi = mi+1
-        endif
-        m = m+1
-      end do
-
+      mid(1) = first_true_loc (vof(:,n)>0.0_r8)
+      mid(2) =  last_true_loc (vof(:,n)>0.0_r8)
       interface_normal(:,mid(2)) = -interface_normal(:,mid(1))
     end if
 
     do m = 1,nmat
       call eliminate_noise (interface_normal(:,m))
-      call normalize (interface_normal(:,m))
+      call normalize       (interface_normal(:,m))
     end do
     
   end function interface_normal_cell
@@ -170,7 +146,6 @@ contains
 
   pure subroutine eliminate_noise (a)
     real(r8), intent(inout) :: a(3)
-
     if (abs(a(1)) < alittle) a(1) = 0.0_r8
     if (abs(a(2)) < alittle) a(2) = 0.0_r8
     if (abs(a(3)) < alittle) a(3) = 0.0_r8
@@ -195,10 +170,10 @@ contains
   !          using some flux function.
   !
   !=======================================================================
-  function gradient (Phi, mesh, gmesh)
+  function gradient (phi, mesh, gmesh)
     use timer_tree_type
 
-    real(r8),         intent(in) :: Phi(:)
+    real(r8),         intent(in) :: phi(:)
     type(unstr_mesh), intent(in) :: mesh
     type(mesh_geom),  intent(in) :: gmesh
     real(r8)                     :: gradient(3,size(phi))
@@ -212,21 +187,21 @@ contains
     ! this is calculated through the average of node values at a face
     ! the node values are calculated through the average of neighboring cell values
     ! this could be modified and moved inside the following loop, although some effort would be duplicated that way
-    phi_f = face_avg_global (vertex_avg_global (Phi, mesh, gmesh), mesh)
+    phi_f = face_avg_global (vertex_avg_global (phi, mesh, gmesh), mesh)
     
     ! green-gauss method
     ! Loop over faces, accumulating the product
-    ! Phi_f*Face_Normal for each area vector component
+    ! phi_f*Face_Normal for each area vector component
 
     !$omp parallel do default(private) shared(gradient,phi_f,mesh,gmesh)
     do i = 1,mesh%ncell
       ! Accumulate the dot product
       gradient(:,i) = 0.0_r8
       do f = 1,nfc
-        Gradient(:,i) = Gradient(:,i) + gmesh%outnorm(:,f,i)*mesh%area(mesh%cface(f,i))*Phi_f(mesh%cface(f,i))
+        gradient(:,i) = gradient(:,i) + gmesh%outnorm(:,f,i)*mesh%area(mesh%cface(f,i))*phi_f(mesh%cface(f,i))
       end do
+      gradient(:,i) = gradient(:,i) / mesh%volume(i) ! normalize by cell volume
 
-      Gradient(:,i) = Gradient(:,i) / mesh%volume(i) ! normalize by cell volume
       call eliminate_noise (gradient(:,i))
     end do
     !$omp end parallel do
@@ -283,7 +258,7 @@ contains
     type(unstr_mesh), intent(in) :: mesh
     real(r8)                     :: x_face(mesh%nface)
 
-    integer :: f,i
+    integer :: f
 
     ! interpolate vertex values to each face (see note 1)
     !$omp parallel do default(private) shared(x_face,x_vtx,mesh)
@@ -324,7 +299,7 @@ contains
     integer,          intent(in) :: n
     type(unstr_mesh), intent(in) :: mesh
     type(mesh_geom),  intent(in) :: gmesh
-    real(r8)                     :: X_vertex(mesh%nnode)
+    !real(r8)                     :: X_vertex(mesh%nnode)
 
     integer  :: i,cellid
     real(r8) :: tmp1,tmp2
