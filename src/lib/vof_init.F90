@@ -41,6 +41,7 @@ contains
   ! to calculate the volume fractions given an interface
   subroutine vof_initialize (mesh, plist, vof, matl_ids, nmat) !cell_matls)
     use unstr_mesh_type
+    use parameter_list_type
 
     type(unstr_mesh), pointer, intent(in)    :: mesh
     type(parameter_list),      intent(in)    :: plist
