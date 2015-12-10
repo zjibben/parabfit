@@ -40,7 +40,7 @@ contains
     integer :: m, n, mid(2), nmat, nmat_in_cell
 
     call start_timer ("normal calculation")
-
+    
     nmat = size(vof, dim=1)
     
     ! Calculate the volume fraction gradient for each material
@@ -51,12 +51,11 @@ contains
     
     !$omp parallel do default(private) shared(interface_normal,vof,mesh,nmat,do_onion_skin)
     do n = 1,mesh%ncell
-      ! If there are more than 2 materials in the cell and doing onion skin,
-      ! sum the gradients in priority order. This is equivalent to calculating the
-      ! interface normal for a material composed of the first few materials.
       nmat_in_cell = count(vof(:,n) > 0.0_r8)
       if (nmat_in_cell > 2) then
-        
+        ! If there are more than 2 materials in the cell and doing onion skin,
+        ! sum the gradients in priority order. This is equivalent to calculating the
+        ! interface normal for a material composed of the first few materials.
         do m = 2,nmat
           if (vof(m,n) > alittle .and. do_onion_skin) then
             interface_normal(:,m,n) = interface_normal(:,m,n) + interface_normal(:,1,n)
@@ -64,8 +63,8 @@ contains
             interface_normal(:,m,n) =                           interface_normal(:,1,n)
           end if
         end do
-        
-      else if (nmat_in_cell == 2) then ! if there are only two materials in the cell, ensure the normals are consistent
+      else if (nmat_in_cell == 2) then
+        ! if there are only two materials in the cell, ensure the normals are consistent
         ! identify the material IDs in the cells
         mid(1) = first_true_loc (vof(:,n)>0.0_r8)
         mid(2) =  last_true_loc (vof(:,n)>0.0_r8)
@@ -76,12 +75,11 @@ contains
         call eliminate_noise (interface_normal(:,m,n))
         call normalize       (interface_normal(:,m,n))
       end do
-
-    end do ! cell loop
+    end do
     !$omp end parallel do
 
     call stop_timer ("normal calculation")
-    
+
   end function interface_normal
 
   ! calculate the interface normal in a single cell
@@ -118,7 +116,8 @@ contains
           interface_normal(:,m) =                         interface_normal(:,1)
         end if
       end do
-    else if (nmat_in_cell == 2) then ! if there are only two materials in the cell, ensure the normals are consistent
+    else if (nmat_in_cell == 2) then
+      ! if there are only two materials in the cell, ensure the normals are consistent
       ! identify the material IDs in the cells
       mid(1) = first_true_loc (vof(:,n)>0.0_r8)
       mid(2) =  last_true_loc (vof(:,n)>0.0_r8)
@@ -133,19 +132,20 @@ contains
   end function interface_normal_cell
   
   pure subroutine normalize (n)
+
     real(r8), intent(inout) :: n(:)
 
     real(r8) :: tmp
     
     tmp = sqrt(sum(n**2))              ! calculate the denominator
-    if (abs(tmp) > alittle)  n = n/tmp ! invert when it won't blow up
+    if (abs(tmp) > alittle)  n = n/tmp ! normalize when it won't blow up
     call eliminate_noise (n)           ! set tiny components to zero
     if (all(n == 0.0_r8)) n = 1.0_r8   ! set all components to 1.0 in pure cells
     
   end subroutine normalize
 
   pure subroutine eliminate_noise (a)
-    real(r8), intent(inout) :: a(3)
+    real(r8), intent(inout) :: a(:)
     if (abs(a(1)) < alittle) a(1) = 0.0_r8
     if (abs(a(2)) < alittle) a(2) = 0.0_r8
     if (abs(a(3)) < alittle) a(3) = 0.0_r8

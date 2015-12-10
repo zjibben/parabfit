@@ -229,6 +229,7 @@ contains
   end subroutine polyhedron_unit_test
 
   subroutine init_polyhedron (this, x, face_v, edge_v, vol, face_normal)
+
     class(polyhedron),  intent(out) :: this
     real(r8),           intent(in)  :: x(:,:)
     integer,            intent(in)  :: face_v(:,:), edge_v(:,:)
@@ -239,10 +240,16 @@ contains
     this%nVerts = size(x,     dim=2)
     this%nEdges = size(edge_v,dim=2)
     this%nFaces = size(face_v,dim=2)
-    allocate( this%x(3,this%nVerts), & !this%face(this%nFaces), &
+
+    if (allocated(this%x))           deallocate(this%x)
+    if (allocated(this%face_vid))    deallocate(this%face_vid)
+    if (allocated(this%edge_vid))    deallocate(this%edge_vid)
+    if (allocated(this%face_normal)) deallocate(this%face_normal)
+    
+    allocate(this%x(3,this%nVerts),& !this%face(this%nFaces),&
          this%face_vid(size(face_v,dim=1),this%nFaces),&
          this%edge_vid(size(edge_v,dim=1),this%nEdges),&
-         this%face_normal(3,this%nFaces) )
+         this%face_normal(3,this%nFaces))
     
     this%x = x
     this%edge_vid = edge_v
@@ -279,6 +286,11 @@ contains
     this%nEdges = poly%nEdges
     this%nFaces = poly%nFaces
     !this%vol    = poly%vol
+
+    if (allocated(this%x))           deallocate(this%x)
+    if (allocated(this%face_vid))    deallocate(this%face_vid)
+    if (allocated(this%edge_vid))    deallocate(this%edge_vid)
+    if (allocated(this%face_normal)) deallocate(this%face_normal)
 
     allocate( this%x(3,this%nVerts), & !this%face(this%nFaces), &
          this%face_vid(size(poly%face_vid,dim=1),this%nFaces),&

@@ -240,7 +240,7 @@ contains
              this%nmat, this%fluidRho, this%intrec, dump_intrec)
       case (NESTED_DISSECTION)
         call volume_track_nd (volume_flux_sub, adv_dt, this%mesh, this%gmesh, this%vof, this%fluxing_velocity, &
-             this%fluidRho, this%intrec, dump_intrec)
+             this%fluidRho, this%intrec, dump_intrec .and. p==volume_track_subcycles)
       case default
         call LS_fatal ("invalid advection method")
       end select

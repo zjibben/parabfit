@@ -140,7 +140,7 @@ contains
     type(mesh_geom),  intent(in)  :: gmesh
     integer,          intent(in)  :: nmat
     real(r8),         intent(out) :: volume_flux_sub(:,:,:)
-    type(surface),    intent(out) :: intrec(:)
+    type(surface),    intent(out) :: intrec(:) ! surface reconstruction for dumping purposes
     logical,          intent(in)  :: dump_intrec
     !real(r8)                      :: volume_flux_sub(nmat, 6, mesh%ncell)
 
@@ -176,11 +176,12 @@ contains
       !$omp end do nowait
     else
       allocate(int_norm_global(3,nmat,mesh%ncell))
-      int_norm_global = interface_normal (vof, mesh, gmesh, .true.) ! compute interface normal vectors for all the materials.
-      call start_timer ("reconstruct/advect")   ! Start the volume track timer
+      int_norm_global = interface_normal (vof, mesh, gmesh, .true.) ! compute interface normal vectors for all materials
+      call start_timer ("reconstruct/advect")
 
-      !$omp parallel do default(private) shared(volume_flux_sub,mesh,adv_dt,fluidRho,vof,int_norm_global) &
-      !$omp shared(nmat,fluxing_velocity,ninterfaces,dump_intrec,intrec) !,nmat_in_cell,gmesh)
+      !$omp parallel do default(private) &
+      !$omp shared(volume_flux_sub, mesh, adv_dt, fluidRho, vof, int_norm_global, nmat, &
+      !$omp        fluxing_velocity, ninterfaces,dump_intrec,intrec) !,nmat_in_cell,gmesh)
       do i = 1,mesh%ncell
         nmat_in_cell = count(vof(:,i) > 0.0_r8)
         call cell%init (mesh%x(:,mesh%cnode(:,i)), mesh%volume(i), mesh%area(mesh%cface(:,i)), &
@@ -192,7 +193,7 @@ contains
       !$omp end parallel do
 
       deallocate(int_norm_global)
-      call stop_timer ("reconstruct/advect") ! Stop the volume track timer
+      call stop_timer ("reconstruct/advect")
     end if
 
   end subroutine volume_track

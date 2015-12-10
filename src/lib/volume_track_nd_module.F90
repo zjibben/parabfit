@@ -100,13 +100,13 @@ contains
 
   end subroutine volume_track_nd_unit_test
 
-  subroutine volume_track_nd (volume_flux_sub, adv_dt, mesh, gmesh, vof, fluxing_velocity, fluidRho, intrec, dump_intrec)
-    use multimat_cell_type
+  subroutine volume_track_nd (volume_flux_sub, adv_dt, mesh, gmesh, vof, fluxing_velocity, fluidRho,&
+       intrec, dump_intrec)
+
     use unstr_mesh_type
     use mesh_geom_type
     use surface_type
     use timer_tree_type
-    use hex_types,       only: hex_f,hex_e
     use int_norm_module, only: interface_normal
     
     real(r8),         intent(out) :: volume_flux_sub(:,:,:)
@@ -116,9 +116,8 @@ contains
     type(surface),    intent(out) :: intrec(:)
     logical,          intent(in)  :: dump_intrec
 
-    type(multimat_cell)  :: cell
-    real(r8)             :: int_norm(3,size(vof,dim=1),mesh%ncell)
-    integer              :: i,m
+    real(r8) :: int_norm(3,size(vof,dim=1),mesh%ncell)
+    integer  :: i,m
     
     if (dump_intrec) then
       do m = 1,size(intrec)
@@ -128,35 +127,57 @@ contains
 
     ! compute interface normal vectors for all the materials
     int_norm = interface_normal (vof, mesh, gmesh, .false.)
-    
+
     ! calculate the flux volumes for each face
     call start_timer ("reconstruct/advect")
-    !!$omp parallel do
-    !!$omp parallel do default(private) shared(mesh,gmesh, hex_f,hex_e, int_norm)
-    !!$omp parallel do default(private) shared(volume_flux_sub, vof,int_norm,fluxing_velocity,adv_dt, mesh,gmesh, hex_f,hex_e)
-    !!$omp parallel do default(private) shared(mesh,gmesh,hex_f,hex_e,vof,int_norm,dump_intrec,intrec) &
-    !!$omp shared(volume_flux_sub,adv_dt,fluxing_velocity,fluidRho)
+
+    !$omp parallel do default(private) &
+    !$omp shared(mesh, gmesh, vof, int_norm, dump_intrec, intrec, volume_flux_sub, adv_dt, &
+    !$omp        fluxing_velocity, fluidRho)
     do i = 1,mesh%ncell
-      ! send cell data to the multimat_cell type
-      call cell%init (mesh%x(:,mesh%cnode(:,i)), hex_f, hex_e, mesh%volume(i), gmesh%outnorm(:,:,i))
-      
-      ! partition the cell based on vofs and norms
-      call cell%partition (vof(:,i), int_norm(:,:,i))
-
-      ! dump the interface reconstruction, if requested
-      if (dump_intrec) then
-        do m = 1,size(intrec)
-          call intrec(m)%append (cell%interface_polygon (m))
-        end do
-      end if
-      
-      ! calculate the outward volume flux
-      volume_flux_sub(:,:,i) = cell%outward_volflux (adv_dt, fluxing_velocity(:,i))
+      volume_flux_sub(:,:,i) = cell_outward_volflux (mesh%x(:,mesh%cnode(:,i)), mesh%volume(i), &
+          gmesh%outnorm(:,:,i), vof(:,i), int_norm(:,:,i), dump_intrec, intrec, adv_dt, &
+          fluxing_velocity(:,i), fluidRho(i))
     end do
-    !!$omp end parallel do
-
+    !$omp end parallel do
+    
     call stop_timer ("reconstruct/advect")
-
+    
   end subroutine volume_track_nd
+
+  function cell_outward_volflux (x, vol, outnorm, vof, int_norm, dump_intrec, intrec, adv_dt, &
+       fluxing_velocity, fluidRho)
+    
+    use consts,    only: nfc
+    use hex_types, only: hex_f,hex_e
+    use multimat_cell_type
+    use surface_type
+    
+    real(r8),      intent(in)    :: x(:,:), vol, outnorm(:,:), vof(:), int_norm(:,:), adv_dt, &
+         fluxing_velocity(:), fluidRho
+    type(surface), intent(inout) :: intrec(:)
+    logical,       intent(in)    :: dump_intrec
+    real(r8)                     :: cell_outward_volflux(size(vof),nfc)
+    
+    type(multimat_cell) :: cell
+    integer :: m
+    
+    ! send cell data to the multimat_cell type
+    call cell%init (x, hex_f, hex_e, vol, outnorm)
+
+    ! partition the cell based on vofs and norms
+    call cell%partition (vof, int_norm)
+
+    ! dump the interface reconstruction, if requested
+    if (dump_intrec) then
+      do m = 1,size(intrec)
+        call intrec(m)%append (cell%interface_polygon (m))
+      end do
+    end if
+
+    ! calculate the outward volume flux
+    cell_outward_volflux = cell%outward_volflux (adv_dt, fluxing_velocity)
+
+  end function cell_outward_volflux
   
 end module volume_track_nd_module

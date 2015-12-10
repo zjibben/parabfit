@@ -110,7 +110,7 @@ contains
 
     ! print plane reconstructions (should grab from input file, currently set to true)
     ! also only dump interface reconstruction if running in serial (TODO: fix this)
-    this%dump_intrec = .true. .and. omp_get_max_threads () == 1
+    this%dump_intrec = .true. .and. omp_get_max_threads() == 1
 
     call stop_timer ('vof-solver')
 
