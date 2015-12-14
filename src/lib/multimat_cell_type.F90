@@ -201,7 +201,7 @@ contains
       ! use the plane to generate the polyhedron for this material,
       ! and update the free-space polyhedron
 
-      if (nm==this%nmat .or. 1.0_r8-cutvof < vof(m)) then
+      if (nm==this%nmat .or. (1.0_r8-cutvof)*remainder%volume () < vof(m)*this%volume ()) then
         ! if this is the final material in the cell,
         ! it gets the entire remainder of the polyhedron
         this%mat_poly(m) = remainder

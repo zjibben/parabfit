@@ -149,7 +149,7 @@ contains
     
     ! initialize error function
     call volume_error%init (norm, poly, vol)
-    
+
     ! get bounds for Brent's method
     call rho_bracket (rho_min, rho_mid, rho_max, norm, poly, volume_error)
     
@@ -174,6 +174,8 @@ contains
     integer                              :: i
     integer, parameter                   :: iter_max = 10
 
+    type(plane) :: P
+
     err_min = -huge(1.0_r8); rho_min = -huge(1.0_r8)
     err_max =  huge(1.0_r8); rho_max =  huge(1.0_r8)
 
@@ -194,7 +196,20 @@ contains
       end if
     end do
 
-    ! Check if the bounds were not set? None of them are huge, right?
+    ! make sure the bounds were set
+    if (rho_min==-huge(1.0_r8) .or. rho_max==huge(1.0_r8)) then
+      P%normal = norm
+      call poly%print_data (normalized=.true.)
+      !write(*,*) 'volume ',poly%volume ()
+      do i = 1,poly%nVerts
+        rho = sum(poly%x(:,i)*norm)
+        err = volume_error%signed_eval(rho)
+        P%rho = rho
+        write(*,'(a,i3,3es14.4)') 'vertex, rho, error, vol: ', i, rho, err, poly%volume_behind_plane (P)
+      end do
+      write(*,'(a,2es14.4)') 'rho min,max: ', rho_min, rho_max
+      call LS_fatal ('rho bounds not set')
+    end if
 
     ! Brent's method requires a guess minimum, find one
     ! first check a middle point found by weighting by the inverse of the error magnitudes
@@ -212,6 +227,7 @@ contains
       i = i+1
     end do
 
+    ! make sure the midpoint was set
     if (i>iter_max .and. (rho_mid >= rho_max .or. rho_mid <= rho_min)) then
       write(*,*) rho_min,rho_mid,rho_max
       call LS_fatal('too many bracketing iterations!')

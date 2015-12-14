@@ -24,9 +24,10 @@ module surface_type
     private
     type(polygon), public, allocatable :: element(:)
   contains
+    procedure, private :: append_polyhedron
     procedure, private :: append_polygon
     procedure, private :: append_surf
-    generic   :: append => append_polygon, append_surf
+    generic   :: append => append_polygon, append_surf, append_polyhedron
     procedure :: write_gmv
     procedure :: write_ply
     procedure :: purge
@@ -90,6 +91,38 @@ contains
     end if
 
   end subroutine append_polygon
+
+  ! append a polyhedron to the surface
+  ! (may instead want to write a routine in the polyhedron type that returns a surface)
+  subroutine append_polyhedron (this, poly)
+
+    use polyhedron_type
+
+    class(surface),    intent(inout) :: this
+    class(polyhedron), intent(inout) :: poly
+
+    integer       :: nV,N,f
+    type(polygon) :: face,tmp(size(this%element))
+
+    if (allocated(this%element)) then
+      N = size(this%element)
+      tmp = this%element
+      deallocate(this%element)
+      allocate(this%element(N+poly%nFaces))
+      this%element(1:N) = tmp
+    else
+      N = 0
+      allocate(this%element(poly%nFaces))
+    end if
+
+    do f = N+1,N+poly%nFaces
+      nV = count(poly%face_vid(:,f) /= 0) ! number of vertices on this face
+      call face%init (poly%x(:,poly%face_vid(1:nV,f)), poly%face_normal(:,f))
+
+      this%element(f) = face
+    end do
+    
+  end subroutine append_polyhedron
 
   ! append elements of another surface to
   subroutine append_surf (this, surf)

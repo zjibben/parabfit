@@ -36,6 +36,9 @@ contains
 
   ! perform Brent's method
   function brent (f,x_min,x_mid,x_max,tol,iter_max) result(x)
+
+    use logging_services
+
     class(brent_func), intent(in) :: f
     real(r8),          intent(in) :: x_min,x_mid,x_max,tol
     integer,           intent(in) :: iter_max
@@ -105,7 +108,9 @@ contains
     end do
 
     ! too many iterations if we get here
-    write(*,*) 'too many brent iterations! error: ',fx
+    write(*,'(a,2es14.4)') 'error:  ',fx,x
+    write(*,'(a,3es14.4)') 'bounds: ',x_min,x_mid,x_max
+    call LS_fatal('too many brent iterations!')
 
   end function brent
   

@@ -285,7 +285,7 @@ contains
     this%nVerts = poly%nVerts
     this%nEdges = poly%nEdges
     this%nFaces = poly%nFaces
-    !this%vol    = poly%vol
+    this%vol    = poly%vol
 
     if (allocated(this%x))           deallocate(this%x)
     if (allocated(this%face_vid))    deallocate(this%face_vid)
@@ -335,6 +335,11 @@ contains
       if (.not.isZero (face%norm(1))) volume = volume + face%norm(1) * face%intXdA (1)
     end do
     this%vol = volume
+
+    ! if (isnan(volume)) then
+    !   call this%print_data ()
+    !   call LS_fatal ('polyhedron volume is NaN')
+    ! end if
 
   end function volume
 
@@ -492,7 +497,18 @@ contains
       behind = this%polyhedron_on_side_of_plane (-1, side, intpoly, v_assoc_pe)
     end if
     volume_behind_plane = behind%volume ()
-    
+
+    if (isnan(volume_behind_plane)) then
+      write(*,*)
+      write(*,'(9i3)') side
+      call this%print_data (normalized=.true.)
+      do v = 1,size(intpoly%x,dim=2)
+        write(*,*) intpoly%x(:,v)
+      end do
+      call behind%print_data (normalized=.true.)
+      call LS_fatal ('polyhedron volume is NaN')
+    end if
+
   end function volume_behind_plane
 
   ! WARNING: need to update this routine to pass face normals down to the child polyhedron
@@ -506,14 +522,16 @@ contains
     type(polygon),     intent(in) :: intpoly       ! polygon of intersection coordinates
     integer,           intent(in) :: v_assoc_pe(:) ! intersection polygon vertex id for a given parent edge id
 
-    integer       :: e,v,f, nV, nVerts, nParVerts, nEdges, nFaces, tmp, &
+    integer       :: e,v,f, nV, nVerts, nParVerts, nEdges, nFaces, tmp, invalid_side, new_v, &
          p2c_vid(this%nVerts), &                   ! parent to child vertex id (given parent vertex id, give the child's id)
          edge_vid(2,this%nEdges+intpoly%nVerts), & ! could have intpoly%nVerts more edges than parent polyhedron
          face_vid(size(this%face_vid,dim=1)+2,this%nFaces+1) ! could have 1 more face and faces could be 2 longer than parent
     ! note: an updated planar face can only include 1 more node than the original, but I'm not sure if there is a limit
     !       to how many nodes the entirely new face can have. For cubes the number is 2.
-    real(r8)      :: x(3,this%nVerts+intpoly%nVerts) 
-    
+    real(r8)      :: x(3,this%nVerts+intpoly%nVerts)
+
+    invalid_side = -valid_side
+
     ! make a list of vertices
     nVerts = 0; p2c_vid = 0
     do v = 1,this%nVerts
@@ -586,9 +604,12 @@ contains
           
           ! add the new vertices associated with this face
           ! the first is the one that cuts the edge we just stopped on
-          face_vid(tmp  ,nFaces) = nParVerts + &
-               v_assoc_pe(this%edge_containing_vertices ([this%face_vid(mod(v-2,nV)+1,f),this%face_vid(mod(v-1,nV)+1,f)]))
-          tmp = tmp+1
+          new_v = nParVerts + &
+              v_assoc_pe(this%edge_containing_vertices ([this%face_vid(mod(v-2,nV)+1,f),this%face_vid(mod(v-1,nV)+1,f)]))
+          if (.not.any(face_vid(1:tmp-1,nFaces)==new_v)) then
+            face_vid(tmp  ,nFaces) = new_v
+            tmp = tmp+1
+          end if
 
           ! find the next valid vertex
           do while (side(this%face_vid(mod(v-1,nV)+1,f))/=valid_side)
@@ -596,16 +617,19 @@ contains
           end do
 
           ! the second new vertex is on this edge
-          face_vid(tmp  ,nFaces) = nParVerts + &
-               v_assoc_pe(this%edge_containing_vertices ([this%face_vid(mod(v-2,nV)+1,f),this%face_vid(mod(v-1,nV)+1,f)]))
-          tmp = tmp+1
+          new_v = nParVerts + &
+              v_assoc_pe(this%edge_containing_vertices ([this%face_vid(mod(v-2,nV)+1,f),this%face_vid(mod(v-1,nV)+1,f)]))
+          if (.not.any(face_vid(1:tmp-1,nFaces)==new_v)) then
+            face_vid(tmp  ,nFaces) = new_v
+            tmp = tmp+1
+          end if
 
           ! continue adding vertices that were part of the original face
           do while (v<=nV)
             face_vid(tmp,nFaces) = p2c_vid(this%face_vid(v,f))
             v = v+1; tmp = tmp+1
           end do
-
+          
         end if
       end if
     end do
@@ -640,16 +664,30 @@ contains
 
   end function edge_containing_vertices
 
-  subroutine print_data (this)
+  subroutine print_data (this,normalized)
+
     class(polyhedron), intent(in) :: this
+    logical, optional, intent(in) :: normalized
 
     integer :: v,e,f
+    real(r8) :: x0(3),xl(3)
+    logical :: normalizedh
 
+    normalizedh = merge(normalized, .false., present(normalized))
+    
     write(*,*) 'POLYHEDRON DATA:'
 
-    do v = 1,this%nVerts
-      write(*,'(a,i3,a,3es14.4)') 'x ',v,':  ',this%x(:,v)
-    end do
+    if (normalizedh) then
+      x0 = minval(this%x,dim=2)
+      xl = maxval(this%x,dim=2) - x0
+      do v = 1,this%nVerts
+        write(*,'(a,i3,a,3es14.4)') 'x ',v,':  ',(this%x(:,v)-x0)/xl
+      end do
+    else
+      do v = 1,this%nVerts
+        write(*,'(a,i3,a,3es14.4)') 'x ',v,':  ',this%x(:,v)
+      end do
+    end if
     write(*,*)
     
     do e = 1,this%nEdges
@@ -660,6 +698,9 @@ contains
     do f = 1,this%nFaces
       write(*,'(a,i3,a,10i4)') 'face ',f,':  ',this%face_vid(:,f)
     end do
+    write(*,*)
+
+    write(*,'(a,es14.4)') 'volume ',this%vol
     write(*,*)
 
   end subroutine print_data

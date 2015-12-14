@@ -140,6 +140,16 @@ contains
         if (stat /= 0) call LS_fatal (context//errmsg)
         ! should do some check here to ensure center is of length 3
         ASSERT(size(obj_ptr%center)==3)
+      type is (halfsphere_t)
+        call property%get ('normal'     , obj_ptr%normal, stat=stat, errmsg=errmsg)
+        if (stat /= 0) call LS_fatal (context//errmsg)
+        call property%get ('center'     , obj_ptr%center, stat=stat, errmsg=errmsg)
+        if (stat /= 0) call LS_fatal (context//errmsg)
+        call property%get ('radius'     , obj_ptr%radius, stat=stat, errmsg=errmsg)
+        if (stat /= 0) call LS_fatal (context//errmsg)
+        ! should do some check here to ensure center/normal are of length 3
+        ASSERT(size(obj_ptr%center)==3)
+        ASSERT(size(obj_ptr%normal)==3)
       type is (plane_t)
         call property%get ('normal'     , obj_ptr%normal , stat=stat, errmsg=errmsg)
         if (stat /= 0) call LS_fatal (context//errmsg)
@@ -172,7 +182,8 @@ contains
     type is (sphere_t)
       location_is_inside = sum((x-this%center)**2) <= this%radius**2
     type is (halfsphere_t)
-      location_is_inside = sum((x-this%center)**2) <= this%radius**2 .and. sum(x*this%normal) <= 0.0_r8
+      location_is_inside = sum((x-this%center)**2) <= this%radius**2 &
+          .and. sum((x-this%center)*this%normal) <= 0.0_r8
     class default ! all
       location_is_inside = .true.
       !call LS_fatal('location_is_inside: unrecognized shape')
