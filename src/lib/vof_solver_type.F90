@@ -111,7 +111,7 @@ contains
     this%nmat = size(this%matl_id)
 
     allocate(this%vof(this%nmat,this%mesh%ncell), this%vof0(this%nmat,this%mesh%ncell), &
-         this%intrec(this%nmat-1))
+         this%intrec(this%nmat))
 
     ! these needs to be done appropriately and elsewhere
     ! for right now, this just exists so that we can run simple tests,
@@ -793,6 +793,7 @@ contains
   subroutine update_intrec_surf (this)
     use locate_plane_module
     use polyhedron_type
+    use multimat_cell_type
     use int_norm_module, only: interface_normal
     use hex_types,       only: hex_f, hex_e
 
@@ -801,9 +802,10 @@ contains
     real(r8)               :: int_norm(3,this%nmat,this%mesh%ncell), vofint
     integer                :: i,ni,locate_plane_niters
     type(locate_plane_hex) :: plane_cell
+    type(multimat_cell)    :: ndcell
     type(polyhedron)       :: poly
     
-    do ni = 1,this%nmat-1
+    do ni = 1,size(this%intrec)
       call this%intrec(ni)%purge ()
     end do
 
@@ -811,15 +813,29 @@ contains
     int_norm = interface_normal (this%vof, this%mesh, this%gmesh, this%advect_method==ONION_SKIN) 
     
     do i = 1,this%mesh%ncell
-      do ni = 1,this%nmat-1
-        vofint = min(max(sum(this%vof(1:ni,i)), 0.0_r8), 1.0_r8)
-        if (cutvof < vofint .and. vofint < 1.0_r8 - cutvof) then
-          call plane_cell%init (int_norm(:,ni,i), vofint, this%mesh%volume(i), this%mesh%x(:,this%mesh%cnode(:,i)))
-          call plane_cell%locate_plane (locate_plane_niters)
-          call poly%init (plane_cell%node, hex_f, hex_e)
-          call this%intrec(ni)%append (poly%intersection_verts (plane_cell%P))
-        end if
-      end do
+      select case (this%advect_method)
+      case (ONION_SKIN)
+        do ni = 1,size(this%intrec)
+          vofint = min(max(sum(this%vof(1:ni,i)), 0.0_r8), 1.0_r8)
+          if (cutvof < vofint .and. vofint < 1.0_r8 - cutvof) then
+            call plane_cell%init (int_norm(:,ni,i), vofint, this%mesh%volume(i), this%mesh%x(:,this%mesh%cnode(:,i)))
+            call plane_cell%locate_plane (locate_plane_niters)
+            call poly%init (plane_cell%node, hex_f, hex_e)
+            call this%intrec(ni)%append (poly%intersection_verts (plane_cell%P))
+          end if
+        end do
+      case (NESTED_DISSECTION)
+        ! send cell data to the multimat_cell type
+        call ndcell%init (this%mesh%x(:,this%mesh%cnode(:,i)), hex_f, hex_e, this%mesh%volume(i), this%gmesh%outnorm(:,:,i))
+
+        ! partition the cell based on vofs and norms
+        call ndcell%partition (this%vof(:,i), int_norm(:,:,i))
+
+        ! dump the interface reconstruction, if requested
+        do ni = 1,size(this%intrec)
+          call this%intrec(ni)%append (ndcell%interface_polygon (ni))
+        end do
+      end select
     end do
     
   end subroutine update_intrec_surf

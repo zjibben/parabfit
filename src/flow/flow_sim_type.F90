@@ -299,7 +299,7 @@ contains
 
     ! dump the interface reconstruction
     if (this%dump_intrec) then
-      do m = 1,this%vof_solver%nmat-1
+      do m = 1,size(this%vof_solver%intrec)
         call this%vof_solver%intrec(m)%write_ply ('surf_'//trim(int2str(m))//'.ply.'//trim(nstr))
       end do
     end if

@@ -187,6 +187,7 @@ contains
 
     if (allocated(this%mat_poly)) deallocate(this%mat_poly)
     allocate(this%mat_poly(size(vof)))
+    this%mat_poly(:)%nVerts = 0
 
     call remainder%init (this)
 
@@ -267,8 +268,8 @@ contains
 
   ! returns a polygon for a desired interface
   type(polygon) function interface_polygon (this,m)
+
     use polygon_type
-    use array_utils, only: last_true_loc
 
     class(multimat_cell), intent(in) :: this
     integer,              intent(in) :: m
@@ -281,12 +282,11 @@ contains
     if (m > size(this%mat_poly) .or. this%nmat<2 .or. this%mat_poly(m)%nVerts<4) return
 
     ! by the convention set in polyhedron_type%polyhedron_on_side_of_plane,
-    ! the face corresponding to the phase interface is the last face
-    ! in the polyhedron
-    interface_face_id = size(this%mat_poly(m)%face_vid, dim=2)
+    ! the face corresponding to the phase interface is the last face in the polyhedron
+    interface_face_id = this%mat_poly(m)%nFaces
 
     ! count how many real vertices are listed for this face (0s represent non-existent vertices)
-    nVerts = last_true_loc (this%mat_poly(m)%face_vid(:,interface_face_id)>0)
+    nVerts = count(this%mat_poly(m)%face_vid(:,interface_face_id)/=0)
 
     ! initialize the polyhedron with the vertices used by the interface face
     ! and the corresponding normal vector
