@@ -52,8 +52,7 @@ contains
     d1 = this%signed_distance(x(:,1))
     d2 = this%signed_distance(x(:,2))
     
-    ! if the signed distances are opposite, the two points
-    ! are on opposite sides of the plane
+    ! if the signed distances have opposite signs, the two points are on opposite sides of the plane
     intersects = sign(1.0_r8,d1)/=sign(1.0_r8,d2) .or. isZero (d1) .or. isZero (d2)
     ! what does sign return for sign(1.0,0.0)?
   end function intersects

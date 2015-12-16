@@ -38,7 +38,7 @@ contains
     real(r8), optional, intent(inout) :: norm(:)
 
     this%nVerts = size(x, dim=2)
-    allocate( this%x(3,this%nVerts) )
+    allocate(this%x(3,this%nVerts))
     this%x = x
 
     if (present(norm)) then
@@ -49,24 +49,19 @@ contains
     
   end subroutine init_polygon
 
+  ! calculate the normal via cross product from vectors defined by 3 vertices
   subroutine update_plane_normal (this,norm)
     use cell_geometry, only: cross_product
     use array_utils,   only: isZero
 
     class(polygon),     intent(inout) :: this
-    real(r8), optional, intent(inout) :: norm(:)
-  
+    real(r8), optional, intent(inout) :: norm(:) ! return the newly calculated norm if it wasn't known
+    
     integer :: i,j
 
-    ! calculate the normal via cross product from vectors defined by 3 vertices
-    
-    ! the direction of the normal is assumed from the node ordering (and
-    ! assuming convex)
+    ! the direction of the normal is assumed from the node ordering (and assuming convex)
 
-    ! if the polygon has >3 verteces, it could be
-    ! non-planar and we should subdivide
-    
-    ! make sure we pick 3 vertices that don't all lie in the same plane
+    ! if the polygon has >3 verteces, it could be non-planar and we should subdivide
     if (present(norm)) then
       this%norm = norm
     else
@@ -75,18 +70,19 @@ contains
 
     if (all(isZero (this%norm))) then
       i = 3
-      do while (all(isZero (this%norm)))
-        if (i>this%nVerts) then
-          write(*,*) 'nVerts',this%nVerts
-          do j = 1,this%nVerts
-            write(*,'(a,i3,3es14.4)') 'vertex ',j,this%x(:,j)
-          end do
-          call LS_fatal ("polygon only consists of a line")
-        end if
+      ! make sure we pick 3 vertices that don't all lie in the same plane
+      do while (all(isZero (this%norm)) .and. i<=this%nVerts)
         this%norm = cross_product ( this%x(:,2) - this%x(:,1), this%x(:,i) - this%x(:,1))
         this%norm = this%norm / sqrt(sum(this%norm**2)) ! normalize
         i = i + 1
       end do
+      if (i>this%nVerts .and. all(isZero(this%norm))) then
+        write(*,*) 'nVerts',this%nVerts
+        do j = 1,this%nVerts
+          write(*,'(a,i3,3es14.4)') 'vertex ',j,this%x(:,j)
+        end do
+        call LS_fatal ("polygon only consists of a line")
+      end if
       if (present(norm)) norm = this%norm
     end if
 

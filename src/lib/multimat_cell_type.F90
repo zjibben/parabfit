@@ -22,7 +22,7 @@ module multimat_cell_type
   ! of polyhedra each describing the geometry of a
   ! particular material
   type, extends(polyhedron), public :: multimat_cell
-    integer                       :: nmat ! number of materials actually present in cell
+    integer                       :: nmat,m ! number of materials actually present in cell
     !integer,          allocatable :: mat_id(:)
     type(polyhedron), allocatable :: mat_poly(:)
   contains
@@ -206,6 +206,7 @@ contains
         ! if this is the final material in the cell,
         ! it gets the entire remainder of the polyhedron
         this%mat_poly(m) = remainder
+        if (this%nmat==1) this%m = m ! if this is the only material, store its ID
         exit
       else
         ! if this is not the final material in the cell, split the cell
@@ -234,17 +235,18 @@ contains
 
   end function volumes_behind_plane
 
-  function outward_volflux (this, adv_dt, fluxing_velocity)
+  function outward_volflux (this, adv_dt, fluxing_velocity, face_area)
     use consts, only: nfc,cutvof
     use plane_type
     
     class(multimat_cell), intent(inout) :: this !inout because of call to volume
     real(r8),             intent(in)    :: adv_dt, fluxing_velocity(:)
+    real(r8), optional,   intent(in)    :: face_area(:)
     real(r8)                            :: outward_volflux(size(this%mat_poly),nfc)
 
     type(plane) :: flux_plane
     real(r8)    :: xf(3)
-    integer     :: f,nV
+    integer     :: f,nV,m
     
     do f = 1,nfc
       if (fluxing_velocity(f) < cutvof*this%volume ()) then
@@ -260,7 +262,13 @@ contains
         flux_plane%rho  = sum(xf*flux_plane%normal) + adv_dt * fluxing_velocity(f)
         
         ! find the volume of the materials behind the flux plane
-        outward_volflux(:,f) = this%volumes_behind_plane (flux_plane)
+        if (this%nmat==1 .and. present(face_area)) then
+          ! pure hex cells are easy, don't cut up polyhedrons to calculate the flux volume
+          outward_volflux(:,f) = 0.0_r8
+          outward_volflux(this%m,f) = adv_dt * fluxing_velocity(f) * face_area(f)
+        else
+          outward_volflux(:,f) = this%volumes_behind_plane (flux_plane)
+        end if
       end if
     end do
 
@@ -284,7 +292,7 @@ contains
     ! by the convention set in polyhedron_type%polyhedron_on_side_of_plane,
     ! the face corresponding to the phase interface is the last face in the polyhedron
     interface_face_id = this%mat_poly(m)%nFaces
-
+    
     ! count how many real vertices are listed for this face (0s represent non-existent vertices)
     nVerts = count(this%mat_poly(m)%face_vid(:,interface_face_id)/=0)
 

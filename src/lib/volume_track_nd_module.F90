@@ -136,8 +136,8 @@ contains
     !$omp        fluxing_velocity, fluidRho)
     do i = 1,mesh%ncell
       volume_flux_sub(:,:,i) = cell_outward_volflux (mesh%x(:,mesh%cnode(:,i)), mesh%volume(i), &
-          gmesh%outnorm(:,:,i), vof(:,i), int_norm(:,:,i), dump_intrec, intrec, adv_dt, &
-          fluxing_velocity(:,i), fluidRho(i))
+          mesh%area(mesh%cface(:,i)), gmesh%outnorm(:,:,i), vof(:,i), int_norm(:,:,i), dump_intrec, &
+          intrec, adv_dt, fluxing_velocity(:,i), fluidRho(i))
     end do
     !$omp end parallel do
     
@@ -145,7 +145,7 @@ contains
     
   end subroutine volume_track_nd
 
-  function cell_outward_volflux (x, vol, outnorm, vof, int_norm, dump_intrec, intrec, adv_dt, &
+  function cell_outward_volflux (x, vol, farea, outnorm, vof, int_norm, dump_intrec, intrec, adv_dt,&
        fluxing_velocity, fluidRho)
     
     use consts,    only: nfc
@@ -153,8 +153,8 @@ contains
     use multimat_cell_type
     use surface_type
     
-    real(r8),      intent(in)    :: x(:,:), vol, outnorm(:,:), vof(:), int_norm(:,:), adv_dt, &
-         fluxing_velocity(:), fluidRho
+    real(r8),      intent(in)    :: x(:,:), vol, farea(:), outnorm(:,:), vof(:), int_norm(:,:), &
+        adv_dt, fluxing_velocity(:), fluidRho
     type(surface), intent(inout) :: intrec(:)
     logical,       intent(in)    :: dump_intrec
     real(r8)                     :: cell_outward_volflux(size(vof),nfc)
@@ -176,7 +176,7 @@ contains
     end if
 
     ! calculate the outward volume flux
-    cell_outward_volflux = cell%outward_volflux (adv_dt, fluxing_velocity)
+    cell_outward_volflux = cell%outward_volflux (adv_dt, fluxing_velocity, farea)
 
   end function cell_outward_volflux
   
