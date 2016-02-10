@@ -125,12 +125,8 @@ contains
       tmp  = key(i)
       tmpX = x(:,i)
       j = i
-      ! do while (j>1 .and. key(j-1)>tmp)
-      !   key(j) = key(j-1)
-      !   x(:,j) = x(:,j-1)
-      !   j = j-1
-      ! end do
-      do while (j>1) ! fortran debug mode doesn't short-circuit, so we segfault if the two checks are together
+      do while (j>1)
+        ! fortran doesn't guarantee short-circuiting, so we segfault if the two checks are together
         if (key(j-1)>tmp) then
           key(j) = key(j-1)
           x(:,j) = x(:,j-1)
@@ -157,12 +153,8 @@ contains
       tmp  = key(i)
       tmpX = x(i)
       j = i
-      ! do while (j>1 .and. key(j-1)>tmp)
-      !   key(j) = key(j-1)
-      !   x(j)   = x(j-1)
-      !   j = j-1
-      ! end do
-      do while (j>1) ! fortran debug mode doesn't short-circuit, so we segfault if the two checks are together
+      do while (j>1)
+        ! fortran doesn't guarantee short-circuiting, so we segfault if the two checks are together
         if (key(j-1)>tmp) then
           key(j) = key(j-1)
           x(j)   = x(j-1)

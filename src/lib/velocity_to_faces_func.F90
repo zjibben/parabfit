@@ -18,11 +18,12 @@ module velocity_to_faces_func
 
 contains
 
-  subroutine velocity_to_faces(fluxing_velocity, velocity_cc, mesh, gmesh, t, prescribed, prescribed_case)
+  subroutine velocity_to_faces(fluxing_velocity, velocity_cc, mesh, gmesh, t, &
+      prescribed, prescribed_case)
+
     use unstr_mesh_type
     use prescribed_velocity_fields
     use mesh_geom_type
-    implicit none
 
     real(r8),          intent(inout)        :: fluxing_velocity(:,:)
     real(r8),          intent(in)           :: velocity_cc(:,:)
@@ -32,27 +33,21 @@ contains
     logical,           intent(in), optional :: prescribed
     integer,           intent(in), optional :: prescribed_case
 
-    ! local variables
     logical  :: prescribedh
-    integer  :: f,n
-    real(r8) :: face_center(3),cell_center(3),outward_normal(3)
+    integer  :: i,f
 
-    if (present(prescribed)) then
-      prescribedh = prescribed
-    else
-      prescribedh = .false.
-    end if
+    prescribedh = merge(prescribed, .false., present(prescribed))
 
     if (prescribedh) then
-      if (.not.present(prescribed_case)) call LS_fatal ('velocity_to_faces expected prescribed field case')
+      if (.not.present(prescribed_case)) &
+          call LS_fatal ('velocity_to_faces expected prescribed field case')
 
       !$omp parallel do default(private) shared(fluxing_velocity,mesh,gmesh,t,prescribed_case)
-      do n = 1,mesh%ncell
+      do i = 1,mesh%ncell
         do f = 1,6
-          ! face center is the average of the face node positions
-          face_center = sum(mesh%x(:,mesh%fnode(:,mesh%cface(f,n))), dim=2) / 4.0_r8 
-          
-          fluxing_velocity(f,n) = sum(prescribed_velocity (face_center, t, prescribed_case) * gmesh%outnorm(:,f,n) )
+          fluxing_velocity(f,i) = dot_product(&
+              prescribed_velocity (gmesh%fc(:,mesh%cface(f,i)), t, prescribed_case),&
+              gmesh%outnorm(:,f,i))
         end do
       end do
       !$omp end parallel do

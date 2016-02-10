@@ -2,7 +2,17 @@
 !! FLOW_SOLVER_TYPE
 !!
 !! This module defines a class that encapsulates a (time) solver for the
-!! Navier-Stokes equations. 
+!! Navier-Stokes equations.
+!!
+!! TODO: * Figure out what the prepass is and how to do it. Basically,
+!!         Truchas executes
+!!           if (cycle_number == 0) then
+!!             ! Special operations required during the prepass
+!!             prelim_projection_iterations = mac_projection_iterations !or 0 if all solid
+!!             prelim_viscous_iterations = viscous_iterations           !or 0 if all solid
+!!             velocity_cc = velocity_cc_n
+!!           end if
+!!         on the first cycle.
 !!
 !! Zechariah J. Jibben <zjibben@lanl.gov>
 !! June 2015
@@ -14,197 +24,313 @@
 module NS_solver_type
 
   use kinds, only: r8
+  use parameter_list_type
   use unstr_mesh_type
+  use mesh_geom_type
+  use matl_props_type
   use logging_services
+  use bndry_func_class
   implicit none
   private
   
+  ! use projection_data_module, only: mac_projection_iterations, prelim_projection_iterations
+  ! use viscous_data_module,    only: prelim_viscous_iterations, viscous_iterations
+
   type, public :: NS_solver
-     private
-     !type(HC_model), pointer :: model => null() ! reference only -- do not own
-     type(unstr_mesh), pointer :: mesh => null() ! reference only -- do not own
-     
-     !! Pending/current state
-     real(r8) :: t, dt
-     real(r8), public, allocatable :: velocity(:,:) ! potentially a target
-     real(r8), public, allocatable :: fluidRho(:)
-     real(r8), pointer :: vof(:,:) ! reference only -- do not own
-     logical, public   :: use_prescribed_velocity
-     integer, public   :: prescribed_velocity_case
-   contains
-     procedure :: init
-     procedure :: init_matls
-     procedure :: set_initial_state
-     ! procedure :: test_initial_state
-     ! procedure :: time
-     ! procedure :: get_interpolated_solution
-     ! procedure :: get_solution_view
-     ! procedure :: get_solution_copy
-     ! procedure :: write_metrics
-     !procedure :: advance_state
-     !procedure :: commit_pending_state
-     final :: NS_solver_delete
+    private
+
+    type(unstr_mesh), pointer :: mesh => null()  ! reference only -- do not own
+    type(mesh_geom),  pointer :: gmesh => null() ! reference only -- do not own
+    type(matl_props), pointer :: mprop => null() ! reference only -- do not own
+
+    real(r8), pointer :: vof(:,:)           => null() ! reference only -- do not own
+    real(r8), pointer :: volume_flux(:,:,:) => null() ! reference only -- do not own
+
+    !! Pending/current state
+    real(r8) :: t, dt
+    type(parameter_list), pointer :: hypre_params => null()
+
+    real(r8), public, allocatable :: velocity_cc(:,:), pressure_cc(:), fluxing_velocity(:,:), &
+        fluidRho(:)
+    real(r8), allocatable :: gradP_dynamic_cc(:,:), fluidVof(:), body_force(:)
+    class(bndry_func), allocatable :: pressure_bc, velocity_bc
+    logical         :: boussinesq_approximation
+    logical, public :: use_prescribed_velocity, fluid_flow
+    integer, public :: prescribed_velocity_case
+  contains
+    procedure :: init
+    procedure :: init_matls
+    procedure :: set_initial_state
+    procedure :: step
+    procedure, private :: update_prescribed_velocity
+    procedure, private :: fluid_to_move
+    procedure, private :: fluid_properties
   end type NS_solver
 
 contains
-  
-  subroutine NS_solver_delete (this)
-    type(NS_solver), intent(inout) :: this
-    ! if (associated(this%precon)) deallocate(this%precon)
-    ! if (associated(this%norm)) deallocate(this%norm)
-    ! if (associated(this%integ_model)) deallocate(this%integ_model)
-    !if (associated(this%velocity)) deallocate(this%velocity)
-  end subroutine NS_solver_delete
-  
-  subroutine init (this, mesh, params)
-    
-    use parameter_list_type
-    
+
+  subroutine init (this, mesh, gmesh, mprop, params)
+
+    use consts, only: ndim,nfc
+    use bc_factory_type
+
     class(NS_solver), intent(out) :: this
-    !type(HC_model), intent(in), target :: model
     type(unstr_mesh), intent(in), target :: mesh
+    type(mesh_geom),  intent(in), target :: gmesh
+    type(matl_props), intent(in), target :: mprop
     type(parameter_list) :: params
-    
+
     type(parameter_list), pointer :: plist
     character(:), allocatable :: context,errmsg
     integer :: stat
-    ! this%model => model
+    type(bc_factory) :: bcfact
 
     this%mesh => mesh
-    allocate(this%velocity(3,this%mesh%ncell), this%fluidRho(this%mesh%ncell))
-    ! allocate(this%u(this%model%num_dof()))
+    this%gmesh => gmesh
+    this%mprop => mprop
+    allocate(this%velocity_cc(ndim,this%mesh%ncell), this%pressure_cc(this%mesh%ncell), &
+        this%fluidRho(this%mesh%ncell), this%fluidVof(this%mesh%ncell), &
+        this%gradP_dynamic_cc(ndim,this%mesh%ncell), this%fluxing_velocity(nfc,this%mesh%ncell))
 
-    this%fluidRho = 1.0_r8 ! just set this to 1 everywhere for now
-    
-    !! check for prescribed velocity case
     context = 'processing ' // params%name() // ': '
+
+    !! check for prescribed velocity case
     this%use_prescribed_velocity = params%is_scalar('prescribed-velocity')
     if (this%use_prescribed_velocity) then
       call params%get ('prescribed-velocity', this%prescribed_velocity_case, stat=stat, errmsg=errmsg)
       if (stat /= 0) call LS_fatal (context//errmsg)
     end if
-
-
     
-    ! !! Create the preconditioner
-    ! context = 'processing ' // params%name() // ': '
-    ! if (params%is_sublist('preconditioner')) then
-    !   plist => params%sublist('preconditioner')
-    !   allocate(this%precon)
-    !   call this%precon%init (this%model, plist)
-    ! else
-    !   call LS_fatal (context//'missing "preconditioner" sublist parameter')
-    ! end if
+    !! for now, ignore buoyancy
+    this%boussinesq_approximation = .false.
 
-    ! !! Create the error norm
-    ! if (params%is_sublist('error-norm')) then
-    !   allocate(this%norm)
-    !   plist => params%sublist('error-norm')
-    !   call this%norm%init (this%model, plist)
-    ! else
-    !   call LS_fatal (context//'missing "error-norm" sublist parameter')
-    ! end if
-    
-    ! !! Create the IDAESOL model
-    ! allocate(this%integ_model)
-    ! call this%integ_model%init (this%model, this%precon, this%norm)
+    !! check for a body force
+    if (params%is_scalar('body-force')) then
+      call params%get ('body-force', this%body_force, stat=stat, errmsg=errmsg)
+      if (stat /= 0) call LS_fatal (context//errmsg)
+    else
+      allocate(this%body_force(ndim))
+      this%body_force = 0.0_r8
+    end if
 
-    ! !! Create the IDAESOL integrator
-    ! if (params%is_sublist('integrator')) then
-    !   plist => params%sublist('integrator')
-    !   call this%integ%init (this%integ_model, plist)
-    ! else
-    !   call LS_fatal (context//'missing "integrator" sublist parameter')
-    ! end if
+    !! store the hypre parameters
+    if (params%is_sublist('hypre-params')) then
+      this%hypre_params => params%sublist('hypre-params')
+    else
+      call LS_fatal (context//'missing "hypre-params" sublist parameter')
+    end if
+
+    !! initialize boundary conditions
+    if (params%is_sublist('bc')) then
+      call bcfact%init (this%mesh, params%sublist('bc'))
+      call bcfact%alloc_bc ('dirichlet-pressure', this%pressure_bc)
+      call bcfact%alloc_bc ('dirichlet-velocity', this%velocity_bc)
+    else
+      call LS_fatal (context//'missing "bc" sublist parameter')
+    end if
     
   end subroutine init
 
-  subroutine init_matls(this, vof)
+  ! point vof-related quantities to the arrays owned by the vof solver
+  subroutine init_matls (this, vof, volume_flux)
+
     class(NS_solver), intent(inout) :: this
-    real(r8), dimension(:,:), intent(in), target :: vof
-    
+    real(r8), target, intent(in)    :: vof(:,:), volume_flux(:,:,:)
+
     this%vof => vof
+    this%volume_flux => volume_flux
+
   end subroutine init_matls
-  
-  subroutine set_initial_state (this) !, t, temp, dt)
-    use prescribed_velocity_fields, only: prescribed_velocity
-    
+
+  ! initialize state variables
+  subroutine set_initial_state (this)
+
     class(NS_solver), intent(inout) :: this
-    !real(r8), intent(in) :: t, temp(:), dt
 
-    integer :: i
-    ! integer :: stat
-    ! character(:), allocatable :: errmsg
-    !real(r8), allocatable :: udot(:)
+    ! set initial time
+    this%t = 0.0_r8
 
-    ! allocate(udot(size(this%u)))
-    ! call compute_initial_state (this%model, t, temp, dt, this%u, udot, stat, errmsg)
-    ! if (stat /= 0) call LS_fatal ('HC_SOLVER%SET_INITIAL_STATE: ' // errmsg)
-    ! call this%integ%set_initial_state (t, this%u, udot)
+    ! TODO: * set initial values based on user input, especially fluidRho and fluidVof
+    !       * maybe thread this?
+    
+    if (this%use_prescribed_velocity) then
+      call this%update_prescribed_velocity ()
+    else
+      this%velocity_cc = 0.0_r8
+    end if
 
-    do i = 1,this%mesh%ncell
-       this%velocity(:,i) = prescribed_velocity (this%mesh%x(:,i), 0.0_r8, this%prescribed_velocity_case)
-    end do
+    this%pressure_cc = 0.0_r8
+    this%gradP_dynamic_cc = 0.0_r8
+    this%fluidRho = 1.0_r8
+    this%fluidVof = 1.0_r8
     
   end subroutine set_initial_state
-  
-  ! !=======================================================================
-  ! ! Purpose(s):
-  ! !
-  ! !   Navier-Stokes (NS) driver: increment NS equations by one time step.
-  ! !
-  ! !======================================================================
-  ! subroutine step (t)
-  !   use fluid_data_module,      only: fluid_flow, fluidRho, Solid_Face, fluid_to_move, Fluxing_Velocity
-  !   use parameter_module,       only: ncells, nfc, ndim
-  !   use predictor_module,       only: predictor
-  !   use projection_data_module, only: Face_Density, mac_projection_iterations, prelim_projection_iterations
-  !   use projection_module,      only: PROJECTION
-  !   use property_module,        only: FLUID_PROPERTIES
-  !   use time_step_module,       only: cycle_number
-  !   use viscous_data_module,    only: prelim_viscous_iterations, viscous_iterations
-  !   use zone_module,            only: Zone
 
-  !   real(r8), intent(in) :: t
-    
-  !   real(r8) :: fluidDeltaRho(ncells)    
-  !   logical :: solid_face(nfc,ncells), isPureImmobile(ncells)
-  !   integer :: status
+  ! sets the velocity to a prescribed value across the entire domain
+  subroutine update_prescribed_velocity (this)
 
+    use prescribed_velocity_fields, only: prescribed_velocity
 
-  !   if (.not.fluid_flow) return
+    class(NS_solver), intent(inout) :: this
 
-  !   allocate (Face_Density(nfc,ncells), STAT = status)
-    
-  !   ! Evaluate cell properties excluding immobile materials, and
-  !   ! check that there are at least some flow equations to solve
-  !   fluidRho = 0.0_r8
-  !   call fluid_properties (fluid_to_move, t)
+    integer :: i
 
-  !   if (fluid_to_move) then
-  !     call predictor ()  ! Predictor Step
-  !     call projection () ! Projection Step
+    do i = 1,this%mesh%ncell
+      this%velocity_cc(:,i) = prescribed_velocity (this%mesh%x(:,i), this%t, &
+          this%prescribed_velocity_case)
+    end do
+
+  end subroutine update_prescribed_velocity
+
+  ! Navier-Stokes (NS) driver: increment NS equations by one time step.
+  ! TODO: figure out a smarter way of sending the hypre_hybrid parameters down the pipeline
+  subroutine step (this, dt, t)
+
+    use consts, only: ndim
+    use predictor_module
+    use projection_module
+
+    class(NS_solver), intent(inout) :: this
+    real(r8),         intent(in)    :: dt, t
+
+    real(r8) :: fluidRho_n(this%mesh%ncell), fluidVof_n(this%mesh%ncell), rho(this%mesh%ncell), & !, Face_Density(nfc,this%mesh%ncell)
+        velocity_cc_n(ndim,this%mesh%ncell), min_fluidRho
+    logical  :: solid_face(this%mesh%nface), is_pure_immobile(this%mesh%ncell)
+
+    ! evaluate cell properties excluding immobile materials, and
+    ! check that there are at least some flow equations to solve
+    call this%fluid_properties (rho, fluidRho_n, fluidVof_n, velocity_cc_n, &
+        min_fluidRho, solid_face, is_pure_immobile)
+
+    ! TODO: check if we are using a prescribed velocity
+
+    ! Step the incompressible Navier-Stokes equations
+    if (this%fluid_to_move(is_pure_immobile, solid_face)) then
+      ! WARNING: hardcoding inviscid flow for now
+      call predictor (this%velocity_cc, this%gradP_dynamic_cc, dt, this%mprop%density, &
+          this%volume_flux, this%fluidRho, fluidRho_n, this%fluidVof, fluidVof_n, velocity_cc_n, &
+          .true., this%mesh, this%gmesh)
+      call projection (this%velocity_cc, this%fluxing_velocity, this%pressure_cc, this%gradP_dynamic_cc, &
+          dt, this%fluidRho, fluidRho_n, this%fluidVof, this%vof, this%mprop%sound_speed, this%body_force, &
+          solid_face, is_pure_immobile, this%mprop%is_immobile, min_fluidRho, &
+          this%velocity_bc, this%pressure_bc, this%mesh, this%gmesh, this%hypre_params)
+    else ! Everything solid; set velocities to zero and check again in the next timestep.
+      this%fluxing_velocity = 0.0_r8
+      this%velocity_cc = 0.0_r8
+    end if
+
+  end subroutine step
+
+  ! calculate fluid properties such as various density quantities,
+  ! whether cells are immobile, whether faces are solid,
+  ! and zero out velocities on immobile cells and solid faces
+  subroutine fluid_properties (this, cellRho, fluidRho_n, fluidVof_n, velocity_cc_n, &
+      min_fluidRho, solid_face, is_pure_immobile)
+
+    use consts, only: nfc, cutvof, fluid_cutoff
+
+    class(NS_solver), intent(inout) :: this
+    real(r8),         intent(out)   :: cellRho(:), fluidRho_n(:), fluidVof_n(:), &
+        velocity_cc_n(:,:), min_fluidRho
+    logical,          intent(out)   :: solid_face(:), is_pure_immobile(:)
+
+    logical :: real_fluidVof(size(fluidVof_n))
+    integer :: i, f
+
+    do i = 1,this%mesh%ncell
+      ! save previous timestep values
+      fluidRho_n(i) = this%fluidRho(i) 
+      fluidVof_n(i) = this%fluidVof(i) 
       
-  !     if (cycle_number == 0) then
-  !       ! Special operations required during the prepass
-  !       prelim_projection_iterations = mac_projection_iterations
-  !       prelim_viscous_iterations = viscous_iterations
-  !       Zone%Vc = Zone%Vc_Old
-  !     end if
-  !   else
-  !     ! Everything solid; set velocities to zero and check again in the next timestep.
-  !     Fluxing_Velocity = 0
-  !     Zone%Vc = 0
-  !     Zone%Vc_Old = 0
+      ! update current/next timestep values from the recent interface advection update
+      cellRho(i)  = sum(this%vof(:,i)*this%mprop%density) ! TODO: is this used anywhere?
 
-  !     if (cycle_number == 0) then
-  !       prelim_projection_iterations = 0
-  !       prelim_viscous_iterations = 0
-  !     end if
-  !   end if
+      ! TODO: modify fluidRho with fluidDeltaRho, if following the Boussinesq approximation
+      this%fluidRho(i) = sum(this%vof(:,i)*this%mprop%density, mask=.not.this%mprop%is_immobile) &
+          / merge(this%fluidVof(i), 1.0_r8, this%fluidVof(i) > 0.0_r8)
+
+      this%fluidVof(i) = sum(this%vof(:,i),         mask=.not.this%mprop%is_immobile)
+
+      ! vof of mobile and non-void materials
+      real_fluidVof(i) = sum(this%vof(:,i), &
+          mask=.not.this%mprop%is_immobile .and. .not.this%mprop%is_void)
+      
+      ! cutRho(i) = sum(cutVof*this%mprop%density, &
+      !     mask=.not.this%mprop%is_immobile .and. .not.this%mprop%is_void .and. this%vof(:,i)>0.0_r8)
+      
+      is_pure_immobile(i) = this%fluidVof(i) < fluid_cutoff !&
+          ! ! subroutine turn_off_flow
+          ! .or. .not.any(this%gmesh%xc(:,i) < region(:)%x1(:) .or. this%gmesh%xc(:,i) > region(:)%x2(:))
+
+      ! zero out velocities in cells which have completely
+      ! solidified between the last flow call and this one
+      ! TODO: don't modify velocity here--enforce this condition in projection where it is set
+      if (is_pure_immobile(i) .or. this%fluidRho(i) == 0.0_r8) this%velocity_cc(:,i) = 0.0_r8
+
+      ! save previous timestep velocity
+      velocity_cc_n(:,i) = this%velocity_cc(:,i)
+    end do
     
-  !   deallocate (Face_Density)
+    min_fluidRho = minval(this%fluidRho*this%fluidVof/real_FluidVof, mask=real_FluidVof > 0.0_r8)
+    
+    ! a solid face is one where either connected cell is pure immobile
+    do f = 1,this%mesh%nface
+      ! TODO: modify behavior at boundaries, where there is no neighboring cell
+      solid_face(f) = any(is_pure_immobile(this%gmesh%fcell(:,f)))
+    end do
 
-  ! end subroutine step
-  
+    ! with some way to grab the local face id of a face given its global id,
+    ! this could be merged into the above face loop
+    ! for it to work in parallel, would also need to be sure threads are not
+    ! trying to write to a cell simultaneously
+    ! could also make fluxing_velocity a 1D array over faces, but that is much more work
+    ! TODO: don't modify fluxing_velocity here
+    do i = 1,this%mesh%ncell
+      do f = 1,nfc
+        if (solid_face(this%mesh%cface(f,i))) this%fluxing_velocity(f,i) = 0.0_r8
+      end do
+    end do
+
+  end subroutine fluid_properties
+
+  ! decide whether or not fluid flow is needed for this step
+  logical function fluid_to_move (this, is_pure_immobile, solid_face)
+
+    use consts, only: nfc
+
+    class(NS_solver), intent(in) :: this
+    logical,          intent(in) :: is_pure_immobile(:), solid_face(:)
+
+    integer :: i, f
+
+    ! check if we can skip flow in this timestep
+    ! we can skip the flow if there is no inflow of real fluid
+    ! and there is no flow within the mesh
+    
+    fluid_to_move = .false.
+    do i = 1,this%mesh%ncell
+      if (is_pure_immobile(i)) cycle
+
+      ! check if there is any flow inside the mesh
+      do f = 1,nfc
+        fluid_to_move = .not.solid_face(f) .and. this%gmesh%cneighbor(f,i) > 0
+        
+        ! if we have found any fluid motion, we don't need to check the rest of the mesh
+        if (fluid_to_move) return
+      end do
+    end do
+
+    ! TODO: check boundaries
+    ! if (boundary_cond(f)==DIRICHLET_PRESSURE) then
+    !   if (BC_mat(f) /= NULL_I) fluid_to_move = material_density(BC_mat(f)) > 0.0_r8
+    ! else if (boundary_cond(f)==DIRICHLET_VELOCITY) then
+    !   ! unfortunately, can't check both these if statements at once
+    !   ! because fortran doesn't short-circuit, which can lead to segfaults
+    !   if (BC_mat(f) /= NULL_I) &
+    !       if (material_density(BC_mat(f)) > 0.0_r8) &
+    !       fluid_to_move = dot_product(BC_vel(:,f), gmesh%outnorm(:,f,c)) < 0.0_r8
+    ! end if
+
+  end function fluid_to_move
+
 end module NS_solver_type

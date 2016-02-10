@@ -190,7 +190,7 @@ contains
     this%mat_poly(:)%nVerts = 0
 
     call remainder%init (this)
-
+    
     this%nmat = count(cutvof < vof(:))
     nm = 0
 

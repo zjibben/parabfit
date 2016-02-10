@@ -131,9 +131,7 @@ contains
     ! calculate the flux volumes for each face
     call start_timer ("reconstruct/advect")
 
-    !$omp parallel do default(private) &
-    !$omp shared(mesh, gmesh, vof, int_norm, dump_intrec, intrec, volume_flux_sub, adv_dt, &
-    !$omp        fluxing_velocity, fluidRho)
+    !$omp parallel do schedule(dynamic,100)
     do i = 1,mesh%ncell
       volume_flux_sub(:,:,i) = cell_outward_volflux (mesh%x(:,mesh%cnode(:,i)), mesh%volume(i), &
           mesh%area(mesh%cface(:,i)), gmesh%outnorm(:,:,i), vof(:,i), int_norm(:,:,i), dump_intrec, &

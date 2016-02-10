@@ -1,5 +1,8 @@
 project(Pececillo-Lib)
 
+# # This contains utilities for the flow solver
+# add_subdirectory(flow)
+
 include_directories(${Pececillo_SOURCE_DIR}/src/lib)
 include_directories(${Pececillo_MODULE_DIR} ${Petaca_MODULE_DIR})
 include_directories(${HYPRE_INCLUDE_DIRS})
@@ -67,8 +70,12 @@ set(Pececillo_SOURCE_FILES
     nka_type.F90
 
 # Flow Modules
+    matl_props_type.F90
     prescribed_velocity_fields.F90
     velocity_to_faces_func.F90
+    flow/body_force_module.F90
+    predictor_module.F90
+    projection_module.F90
     
 # Vof modules
     consts.F90

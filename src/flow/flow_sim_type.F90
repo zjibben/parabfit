@@ -15,6 +15,7 @@ module flow_sim_type
   use kinds, only: r8
   use unstr_mesh_type
   use mesh_geom_type
+  use matl_props_type
   use NS_solver_type
   use vof_solver_type
   use logging_services
@@ -27,6 +28,7 @@ module flow_sim_type
     type(mesh_geom)           :: gmesh
     type(NS_solver), pointer  :: ns_solver  => null()
     type(vof_solver), pointer :: vof_solver => null()
+    type(matl_props), pointer :: mprop      => null()
     !! Integration control
     real(r8) :: dt_init
     real(r8) :: dt_min
@@ -84,13 +86,23 @@ contains
     call this%gmesh%init (this%mesh)
     call stop_timer ('mesh')
 
+    !! Load material properties
+    write(*,*) 'Reading material properties...'
+    if (params%is_sublist('material-properties')) then
+      plist => params%sublist('material-properties')
+      allocate(this%mprop)
+      call this%mprop%init (plist)
+    else
+      call LS_fatal ('missing "material-properties" sublist parameter')
+    end if
+    
     !! Create the navier stokes solver.
     write(*,*) 'initializing Navier-Stokes solver...'
     call start_timer ('ns-solver')
     if (params%is_sublist('ns-solver')) then
       plist => params%sublist('ns-solver')
       allocate(this%ns_solver)
-      call this%ns_solver%init (this%mesh, plist)
+      call this%ns_solver%init (this%mesh, this%gmesh, this%mprop, plist)
     else
       call LS_fatal ('missing "ns-solver" sublist parameter')
     end if
@@ -102,8 +114,9 @@ contains
     if (params%is_sublist('vof-solver')) then
       plist => params%sublist('vof-solver')
       allocate(this%vof_solver)
-      call this%vof_solver%init (this%mesh, this%gmesh, this%ns_solver%velocity, this%ns_solver%fluidRho, plist)
-      call this%ns_solver%init_matls(this%vof_solver%vof)
+      call this%vof_solver%init (this%mesh, this%gmesh, this%ns_solver%velocity_cc, &
+          this%ns_solver%fluxing_velocity, this%ns_solver%fluidRho, plist)
+      call this%ns_solver%init_matls(this%vof_solver%vof, this%vof_solver%volume_flux_tot)
     else
       call LS_fatal ('missing "vof-solver" sublist parameter')
     end if
@@ -215,6 +228,7 @@ contains
     stat = 0
     call stop_timer ('integration')
 
+    ! TODO: set some sort of exact state type to compare to
     write(*,*) 'l1 error = ',l1_error(this%vof_solver%vof,this%vof_solver%vof0)
   end subroutine run
 
@@ -231,15 +245,18 @@ contains
 
     tlocal = 0.0_r8
     do while (tlocal<dt) ! .and. iter<nsteps)
-      !call this%ns_solver%update_flowfield (flow_dt)
-
+      !if (ns_solver%fluid_flow) call this%ns_solver%update_flowfield (flow_dt)
+      
       ! project the cell centered velocity from the flowsolver to the faces
-      call velocity_to_faces (this%vof_solver%fluxing_velocity, this%ns_solver%velocity, this%mesh, this%gmesh, t+tlocal, &
-           this%ns_solver%use_prescribed_velocity, this%ns_solver%prescribed_velocity_case)
+      ! TODO: delete this subroutine altogether and update using ns_solver
+      call velocity_to_faces (this%ns_solver%fluxing_velocity, this%ns_solver%velocity_cc, &
+          this%mesh, this%gmesh, t+tlocal, this%ns_solver%use_prescribed_velocity, &
+          this%ns_solver%prescribed_velocity_case)
 
-      ! update the timestep -- probably needs to be fixed for non-cubic cells
+      ! update the timestep
+      ! TODO: pick a smarter time step size--this will cause problems for particularly long cells
       CFL = 0.25_r8
-      flow_dt = min( CFL*minval(this%mesh%volume**(1.0_r8/3.0_r8))/maxval(this%vof_solver%fluxing_velocity), dt-tlocal, maxdt )
+      flow_dt = min( CFL*minval(this%mesh%volume**(1.0_r8/3.0_r8))/maxval(this%ns_solver%fluxing_velocity), dt-tlocal, maxdt )
       
       ! advect material
       call this%vof_solver%advect_mass (flow_dt, this%dump_intrec .and. flow_dt==dt-tlocal )
@@ -281,9 +298,9 @@ contains
     call gmv_begin_variables (time=t)
 
     ! write velocities (TODO: how do I write a vector to each cell?)
-    call gmv_write_cell_var (this%mesh, this%ns_solver%velocity(1,:), 'u1')
-    call gmv_write_cell_var (this%mesh, this%ns_solver%velocity(2,:), 'u2')
-    call gmv_write_cell_var (this%mesh, this%ns_solver%velocity(3,:), 'u3')
+    call gmv_write_cell_var (this%mesh, this%ns_solver%velocity_cc(1,:), 'u1')
+    call gmv_write_cell_var (this%mesh, this%ns_solver%velocity_cc(2,:), 'u2')
+    call gmv_write_cell_var (this%mesh, this%ns_solver%velocity_cc(3,:), 'u3')
 
     ! write all material vofs
     do m = 1,this%vof_solver%nmat
