@@ -99,6 +99,7 @@ contains
     if (this%use_prescribed_velocity) then
       call params%get ('prescribed-velocity', this%prescribed_velocity_case, stat=stat, errmsg=errmsg)
       if (stat /= 0) call LS_fatal (context//errmsg)
+      return
     end if
     
     !! for now, ignore buoyancy
@@ -169,15 +170,22 @@ contains
   ! sets the velocity to a prescribed value across the entire domain
   subroutine update_prescribed_velocity (this)
 
+    use consts, only: nfc
     use prescribed_velocity_fields, only: prescribed_velocity
 
     class(NS_solver), intent(inout) :: this
 
-    integer :: i
-
+    integer :: i,f
+    
     do i = 1,this%mesh%ncell
-      this%velocity_cc(:,i) = prescribed_velocity (this%mesh%x(:,i), this%t, &
+      this%velocity_cc(:,i) = prescribed_velocity (this%gmesh%xc(:,i), this%t, &
           this%prescribed_velocity_case)
+
+      do f = 1,nfc
+        this%fluxing_velocity(f,i) = dot_product( &
+            prescribed_velocity (this%gmesh%fc(:,this%mesh%cface(f,i)), this%t, this%prescribed_velocity_case), &
+            this%gmesh%outnorm(:,f,i))
+      end do
     end do
 
   end subroutine update_prescribed_velocity
@@ -197,27 +205,34 @@ contains
         velocity_cc_n(ndim,this%mesh%ncell), min_fluidRho
     logical  :: solid_face(this%mesh%nface), is_pure_immobile(this%mesh%ncell)
 
-    ! evaluate cell properties excluding immobile materials, and
-    ! check that there are at least some flow equations to solve
-    call this%fluid_properties (rho, fluidRho_n, fluidVof_n, velocity_cc_n, &
-        min_fluidRho, solid_face, is_pure_immobile)
+    this%t = t
 
-    ! TODO: check if we are using a prescribed velocity
+    ! check if we are using a prescribed velocity
+    if (this%use_prescribed_velocity) then
+      call this%update_prescribed_velocity ()
+    else
+      ! evaluate cell properties excluding immobile materials, and
+      ! check that there are at least some flow equations to solve
+      call this%fluid_properties (rho, fluidRho_n, fluidVof_n, velocity_cc_n, &
+          min_fluidRho, solid_face, is_pure_immobile)
 
-    ! Step the incompressible Navier-Stokes equations
-    if (this%fluid_to_move(is_pure_immobile, solid_face)) then
-      ! WARNING: hardcoding inviscid flow for now
-      call predictor (this%velocity_cc, this%gradP_dynamic_cc, dt, this%mprop%density, &
-          this%volume_flux, this%fluidRho, fluidRho_n, this%fluidVof, fluidVof_n, velocity_cc_n, &
-          .true., this%mesh, this%gmesh)
-      call projection (this%velocity_cc, this%fluxing_velocity, this%pressure_cc, this%gradP_dynamic_cc, &
-          dt, this%fluidRho, fluidRho_n, this%fluidVof, this%vof, this%mprop%sound_speed, this%body_force, &
-          solid_face, is_pure_immobile, this%mprop%is_immobile, min_fluidRho, &
-          this%velocity_bc, this%pressure_bc, this%mesh, this%gmesh, this%hypre_params)
-    else ! Everything solid; set velocities to zero and check again in the next timestep.
-      this%fluxing_velocity = 0.0_r8
-      this%velocity_cc = 0.0_r8
+      ! step the incompressible Navier-Stokes equations
+      if (this%fluid_to_move(is_pure_immobile, solid_face)) then
+        ! WARNING: hardcoding inviscid flow for now
+        call predictor (this%velocity_cc, this%gradP_dynamic_cc, dt, this%mprop%density, &
+            this%volume_flux, this%fluidRho, fluidRho_n, this%fluidVof, fluidVof_n, velocity_cc_n, &
+            .true., this%mesh, this%gmesh)
+        call projection (this%velocity_cc, this%fluxing_velocity, this%pressure_cc, this%gradP_dynamic_cc, &
+            dt, this%fluidRho, fluidRho_n, this%fluidVof, this%vof, this%mprop%sound_speed, this%body_force, &
+            solid_face, is_pure_immobile, this%mprop%is_immobile, min_fluidRho, &
+            this%velocity_bc, this%pressure_bc, this%mesh, this%gmesh, this%hypre_params)
+      else ! Everything solid; set velocities to zero and check again in the next timestep.
+        this%fluxing_velocity = 0.0_r8
+        this%velocity_cc = 0.0_r8
+      end if
     end if
+
+    this%t = t+dt
 
   end subroutine step
 
