@@ -47,7 +47,7 @@ module NS_solver_type
 
     !! Pending/current state
     real(r8) :: t, dt
-    type(parameter_list), pointer :: hypre_params => null()
+    type(parameter_list), pointer :: projection_solver_params => null()
     
     real(r8), public, allocatable :: velocity_cc(:,:), pressure_cc(:), fluxing_velocity(:,:), &
         fluidRho(:)
@@ -112,11 +112,11 @@ contains
       this%body_force = 0.0_r8
     end if
 
-    !! store the hypre parameters
-    if (params%is_sublist('hypre-params')) then
-      this%hypre_params => params%sublist('hypre-params')
+    !! store the projection solver's hypre parameters
+    if (params%is_sublist('projection-solver')) then
+      this%projection_solver_params => params%sublist('projection-solver')
     else
-      call LS_fatal (context//'missing "hypre-params" sublist parameter')
+      call LS_fatal (context//'missing "projection-solver" sublist parameter')
     end if
 
     !! initialize boundary conditions
@@ -232,7 +232,7 @@ contains
         call projection (this%velocity_cc, this%fluxing_velocity, this%pressure_cc, this%gradP_dynamic_cc, &
             dt, this%fluidRho, fluidRho_n, this%fluidVof, this%vof, this%mprop%sound_speed, this%body_force, &
             solid_face, is_pure_immobile, this%mprop%is_immobile, min_fluidRho, &
-            this%velocity_bc, this%pressure_bc, this%mesh, this%gmesh, this%hypre_params)
+            this%velocity_bc, this%pressure_bc, this%mesh, this%gmesh, this%projection_solver_params)
       else ! Everything solid; set velocities to zero and check again in the next timestep.
         this%fluxing_velocity = 0.0_r8
         this%velocity_cc = 0.0_r8

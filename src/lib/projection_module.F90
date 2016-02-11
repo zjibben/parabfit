@@ -101,6 +101,7 @@ contains
             solid_face(mesh%cface(f,i)), gmesh%outnorm(:,f,i), gmesh%xc(:,[i, i_ngbr]), &
             gmesh%fc(:,mesh%cface(f,i)),  i_ngbr > 0)
 
+        ! TODO: this seems to be local to cell_lhs, why not move it inside that subroutine?
         face_area_over_rho(f) = merge(0.0_r8, mesh%area(mesh%cface(f,i)) / rho_face(f,i), &
             rho_face(f,i) == 0.0_r8 .or. fluidRho(i) == 0.0_r8 .or. is_pure_immobile(i))
       end do
@@ -136,10 +137,13 @@ contains
     call solver%solve (rhs, dP, stat)
     if (stat /= 0) call LS_fatal ("projection solver failed")
 
+    ! re-normalize pressure when not using dirichlet pressure BCs
+    if ((.not.allocated(pressure_bc%index) .or. size(pressure_bc%index)==0) &
+        .and. .not.any(fluidRho==0.0_r8 .or. is_pure_immobile)) &
+        dP = dP - sum(dP)/real(size(dP),r8)
+
     ! increment the cell centered pressure
     pressure_cc = pressure_cc + dP
-
-    ! WARNING: re-normalize pressure when not using dirichlet pressure BCs?
 
   contains
 
@@ -237,8 +241,14 @@ contains
         ! calculate the base Poisson system left and right hand sides
         rhs(i) = cell_rhs (fluxing_velocity(:,i), mesh%area(mesh%cface(:,i)), mesh%volume(i), &
             fluidRho(i), pressure_cc(i), gmesh%outnorm(:,:,i), min_face_fraction, min_fluid_rho, &
-            solid_face(mesh%cface(:,i)), is_pure_immobile(i)) &
-            + pressure_bc_value*face_area_over_rho / mesh%volume(i)
+            solid_face(mesh%cface(:,i)), is_pure_immobile(i)) !&
+        !+ pressure_bc_value*face_area_over_rho / mesh%volume(i)
+        ! NOTE: looking closer at Truchas, it seems like this line is executed, but with
+        !       pressure_bc_value set to zero, because we need to enforce zero pressure
+        !       difference, not some the pressure value in this case. I'm not sure why they evaluate
+        !       this line at all. Also note that in general the pressure BC could change in time,
+        !       so it isn't necessarily zero, but I don't think Truchas accounts for this.
+        ! TODO: modify this for time-varying pressure boundary conditions.
       end do
 
     end subroutine apply_pressure_bcs
@@ -323,7 +333,7 @@ contains
         
         tmp = face_area_over_rho(f) / cell_vol * dot_product(gmesh%outnorm(:,f,i), dx) / sum(dx**2)
         
-        call lhs%increment (i,i_ngbr, -tmp) ! WARNING: not sure if this is transposed or not
+        call lhs%increment (i,i_ngbr, -tmp)
         call lhs%increment (i,i, tmp)
       end do
       
