@@ -62,8 +62,9 @@ contains
       call params%get ('immobile-materials', immobile_materials, stat=stat, errmsg=errmsg)
       if (stat /= 0) call LS_fatal (context//errmsg)
       this%is_immobile(immobile_materials) = .true.
+      deallocate(immobile_materials)
     end if
-    
+
     !! get sound speeds
     allocate(this%sound_speed(this%nmat))
     this%sound_speed = 0.0_r8 ! default for non-void materials
@@ -73,9 +74,6 @@ contains
       ! TODO: some sort of check to ensure only void materials have a sound speed
     end if
 
-    !! clean up
-    deallocate(immobile_materials)
-    
   end subroutine init
-  
+
 end module matl_props_type

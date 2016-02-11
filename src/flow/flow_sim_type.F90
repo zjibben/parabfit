@@ -29,6 +29,7 @@ module flow_sim_type
     type(NS_solver), pointer  :: ns_solver  => null()
     type(vof_solver), pointer :: vof_solver => null()
     type(matl_props), pointer :: mprop      => null()
+
     !! Integration control
     real(r8) :: dt_init
     real(r8) :: dt_min
@@ -92,7 +93,7 @@ contains
     if (params%is_sublist('ns-solver')) then
       plist => params%sublist('ns-solver')
       allocate(this%ns_solver)
-      call this%ns_solver%init (this%mesh, this%gmesh, this%mprop, plist)
+      call this%ns_solver%init (this%mesh, this%gmesh, plist)
     else
       call LS_fatal ('missing "ns-solver" sublist parameter')
     end if
@@ -105,6 +106,7 @@ contains
         plist => params%sublist('material-properties')
         allocate(this%mprop)
         call this%mprop%init (plist)
+        call this%ns_solver%init_mprop (this%mprop)
       else
         call LS_fatal ('missing "material-properties" sublist parameter')
       end if
@@ -153,14 +155,7 @@ contains
     !! Set the initial flow field
     write(*,*) 'initializing velocity field...'
     call start_timer ('initial-state')
-    call this%ns_solver%set_initial_state()
-    ! plist => params%sublist('vof-solver')
-    ! if (plist%is_sublist('initial-vof')) then
-    !    plist => plist%sublist('initial-vof')
-    !    call this%vof_solver%set_initial_state(plist)
-    ! else
-    !    call LS_fatal ('missing "initial-vof" sublist parameter')
-    ! end if
+    call this%ns_solver%set_initial_state ()
 
     !! Generate the initial material configuration
     write(*,*) 'initializing material layout...'
@@ -233,7 +228,10 @@ contains
     real(r8)           :: flow_dt,tlocal,CFL
     integer, save      :: iter = 0
     real(r8), parameter :: maxdt = 1e-2_r8 ! maximum allowed timestep. TODO: make this user-specified from the input file
-    !integer, parameter :: nsteps = 10      ! for scaling tests
+    ! ! DEBUGGING/SCALING ##################
+    ! integer, parameter :: nsteps = 1
+    ! write(*,*) 'WARNING - number of timesteps forced'
+    ! ! DEBUGGING/SCALING ##################
 
     tlocal = 0.0_r8
     do while (tlocal<dt) ! .and. iter<nsteps)
@@ -244,17 +242,12 @@ contains
           CFL*minval(this%mesh%volume**(1.0_r8/3.0_r8))/maxval(this%ns_solver%fluxing_velocity), &
           dt-tlocal, &
           maxdt)
-      
-      call this%ns_solver%step (flow_dt, t+tlocal)
-      
-      ! ! project the cell centered velocity from the flowsolver to the faces
-      ! ! TODO: delete this subroutine altogether and update using ns_solver
-      ! call velocity_to_faces (this%ns_solver%fluxing_velocity, this%ns_solver%velocity_cc, &
-      !     this%mesh, this%gmesh, t+tlocal, this%ns_solver%use_prescribed_velocity, &
-      !     this%ns_solver%prescribed_velocity_case)
 
       ! advect material
       call this%vof_solver%advect_mass (flow_dt, this%dump_intrec .and. flow_dt==dt-tlocal )
+
+      ! update the pressure and flowfield
+      call this%ns_solver%step (flow_dt, t+tlocal)
 
       ! increment the local time
       tlocal = tlocal + flow_dt
@@ -296,6 +289,8 @@ contains
     call gmv_write_cell_var (this%mesh, this%ns_solver%velocity_cc(1,:), 'u1')
     call gmv_write_cell_var (this%mesh, this%ns_solver%velocity_cc(2,:), 'u2')
     call gmv_write_cell_var (this%mesh, this%ns_solver%velocity_cc(3,:), 'u3')
+    
+    call gmv_write_cell_var (this%mesh, this%ns_solver%pressure_cc, 'pressure')
 
     ! write all material vofs
     do m = 1,this%vof_solver%nmat

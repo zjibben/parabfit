@@ -42,7 +42,7 @@ contains
     type(parameter_list), pointer    :: params
 
     real(r8) :: dP(mesh%ncell), rho_face(nfc,mesh%ncell)
-
+    
     call pressure_poisson (pressure_cc, fluxing_velocity, dP, rho_face, velocity_cc, &
         gradP_dynamic_cc, fluidRho, fluidRho_n, fluidVof, vof, sound_speed, body_force, min_face_fraction, min_fluid_rho, &
         solid_face, is_pure_immobile, material_is_immobile, dt, velocity_bc, pressure_bc, mesh, gmesh, params)
@@ -80,9 +80,9 @@ contains
     type(hypre_hybrid) :: solver
 
     ! initialize the sparse left hand side matrix
-    lhs = init_disc (mesh%ncell, gmesh%cneighbor)
+    call init_disc (lhs, mesh%ncell, gmesh%cneighbor)
     call lhs%set_all (0.0_r8)
-
+    
     ! update the fluxing velocity, and set the values for the lhs and rhs of the Poisson system
     do i = 1,mesh%ncell
       ! calculate quantities on this cell's faces
@@ -101,14 +101,10 @@ contains
             solid_face(mesh%cface(f,i)), gmesh%outnorm(:,f,i), gmesh%xc(:,[i, i_ngbr]), &
             gmesh%fc(:,mesh%cface(f,i)),  i_ngbr > 0)
 
-        ! Set Coeff = Area_Face/Rho_Face.
-        ! If the face has Dirichlet BCs, then Coeff = -Area_Face*(X*n)/(Rho_Face*L**2),
-        ! where X is a vector from the cell to face centroid, n is the unit normal, and L is
-        ! the cell halfwidth.
         face_area_over_rho(f) = merge(0.0_r8, mesh%area(mesh%cface(f,i)) / rho_face(f,i), &
             rho_face(f,i) == 0.0_r8 .or. fluidRho(i) == 0.0_r8 .or. is_pure_immobile(i))
       end do
-
+      
       ! calculate the base Poisson system left and right hand sides
       ! only calculate rhs non-boundary cells for now
       if (.not.any(gmesh%cneighbor(:,i) < 1)) &
@@ -122,7 +118,7 @@ contains
       
       ! TODO: here add portions for different physics (e.g., surface tension)
     end do
-
+    
     ! apply boundary conditions
     call apply_velocity_bcs (fluxing_velocity, rho_face, rhs, velocity_bc, pressure_cc, fluidRho, &
         min_face_fraction, min_fluid_rho, solid_face, is_pure_immobile, mesh, gmesh)
@@ -138,8 +134,6 @@ contains
     call solver%setup ()
     dP = 0.0_r8 ! TODO: put a better initial guess here later, and thread it
     call solver%solve (rhs, dP, stat)
-
-    ! TODO: make sure the solver worked
     if (stat /= 0) call LS_fatal ("projection solver failed")
 
     ! increment the cell centered pressure
@@ -232,6 +226,8 @@ contains
         end if
 
         ! face area over density
+        ! since at Dirichlet BCs, Coeff = -Area_Face*(X*n)/(Rho_Face*L**2), where X is a vector
+        ! from the cell to face centroid, n is the unit normal, and L is the cell halfwidth.
         face_area_over_rho = merge(0.0_r8, &
             - mesh%area(fid) / rho_face(f,i) &
             * dot_product(gmesh%fc(:,fid)-gmesh%xc(:,i), gmesh%outnorm(:,f,i)) &
@@ -247,24 +243,25 @@ contains
 
     end subroutine apply_pressure_bcs
 
-    type(csr_matrix) function init_disc (ncell,cneighbor)
+    subroutine init_disc (matrix,ncell,cneighbor)
 
+      type(csr_matrix), intent(out) :: matrix
       integer, intent(in) :: ncell,cneighbor(:,:)
 
       type(csr_graph), pointer :: g
+      integer :: i
 
       allocate(g)
       call g%init (ncell)
       do i = 1,ncell
-        do f = 1,nfc
-          if (cneighbor(f,i)>0) call g%add_clique ([i,cneighbor(f,i)])
-        end do
+        call g%add_edge (i,i)
+        call g%add_edge (i, pack(cneighbor(:,i), mask=cneighbor(:,i)>0))
       end do
-      call g%add_complete
+      call g%add_complete ()
 
-      call init_disc%init(g, take_graph=.true.)
+      call matrix%init (g, take_graph=.true.)
 
-    end function init_disc
+    end subroutine init_disc
 
     real(r8) function cell_rhs (fluxing_velocity, face_area, cell_vol, fluidRho, pressure, &
         outnorm, min_face_fraction, min_fluid_rho, solid_face, is_pure_immobile)
@@ -321,17 +318,18 @@ contains
       do f = 1,nfc
         i_ngbr = gmesh%cneighbor(f,i)
         if (i_ngbr < 1) cycle ! any boundary conditions are applied to the rhs
-
+        
         dx  = gmesh%xc(:,i) - gmesh%xc(:,i_ngbr)
-
+        
         tmp = face_area_over_rho(f) / cell_vol * dot_product(gmesh%outnorm(:,f,i), dx) / sum(dx**2)
-
+        
         call lhs%increment (i,i_ngbr, -tmp) ! WARNING: not sure if this is transposed or not
         call lhs%increment (i,i, tmp)
       end do
-
+      
       ! void collapse term
-      call lhs%increment (i,i, cell_compressibility(vof, sound_speed, fluidRho, material_is_immobile) / dt**2)
+      call lhs%increment (i,i, &
+          cell_compressibility(vof, sound_speed, fluidRho, material_is_immobile) / dt**2)
 
     end subroutine cell_lhs
 
@@ -393,7 +391,7 @@ contains
           fluxing_velocity(f,i) = fluxing_velocity(f,i) &
               - dt/rho_face(f,i) * dot_product(grad_dP, gmesh%outnorm(:,f,i))
         end if
-
+        
         ! calculate the pressure (not dynamic) gradient on the face
         if (nid > 0) then
           gradP_face(:,f) = face_gradient (pressure_cc, gmesh%xc(:,[i, nid]))
@@ -401,7 +399,7 @@ contains
           gradP_face(:,f) = 0.0_r8
         end if
       end do
-      
+
       ! calculate new pressure gradient
       gradP_dynamic_cc_n = gradP_dynamic_cc(:,i)
       gradP_dynamic_cc(:,i) = calc_gradP_dynamic_cc (gradP_face, rho_face(:,i), fluidRho(i), &
@@ -441,7 +439,7 @@ contains
           if (rho_face(f) > 0.0_r8) &
               gradP_d = gradP_d + gradP_face(:,f)/rho_face(f) * abs(face_area(f)*outnorm(:,f))
         end do
-        gradP_d = gradP_d / sum(abs(face_area(f)*outnorm(:,f)), &
+        gradP_d = gradP_d / sum(abs(face_area)*sum(abs(outnorm), dim=1), &
             mask=.not.solid_face .and. neighbor_exists)
       end if
 

@@ -6,6 +6,8 @@
 !!
 !! TODO: * Figure out what the prepass is and how to do it. Basically,
 !!         Truchas executes
+!!           use projection_data_module, only: mac_projection_iterations, prelim_projection_iterations
+!!           use viscous_data_module,    only: prelim_viscous_iterations, viscous_iterations
 !!           if (cycle_number == 0) then
 !!             ! Special operations required during the prepass
 !!             prelim_projection_iterations = mac_projection_iterations !or 0 if all solid
@@ -33,9 +35,6 @@ module NS_solver_type
   implicit none
   private
   
-  ! use projection_data_module, only: mac_projection_iterations, prelim_projection_iterations
-  ! use viscous_data_module,    only: prelim_viscous_iterations, viscous_iterations
-
   type, public :: NS_solver
     private
 
@@ -49,17 +48,18 @@ module NS_solver_type
     !! Pending/current state
     real(r8) :: t, dt
     type(parameter_list), pointer :: hypre_params => null()
-
+    
     real(r8), public, allocatable :: velocity_cc(:,:), pressure_cc(:), fluxing_velocity(:,:), &
         fluidRho(:)
     real(r8), allocatable :: gradP_dynamic_cc(:,:), fluidVof(:), body_force(:)
     class(bndry_func), allocatable :: pressure_bc, velocity_bc
     logical         :: boussinesq_approximation
-    logical, public :: use_prescribed_velocity, fluid_flow
+    logical, public :: use_prescribed_velocity
     integer, public :: prescribed_velocity_case
   contains
     procedure :: init
     procedure :: init_matls
+    procedure :: init_mprop
     procedure :: set_initial_state
     procedure :: step
     procedure, private :: update_prescribed_velocity
@@ -69,7 +69,7 @@ module NS_solver_type
 
 contains
 
-  subroutine init (this, mesh, gmesh, mprop, params)
+  subroutine init (this, mesh, gmesh, params)
 
     use consts, only: ndim,nfc
     use bc_factory_type
@@ -77,7 +77,6 @@ contains
     class(NS_solver), intent(out) :: this
     type(unstr_mesh), intent(in), target :: mesh
     type(mesh_geom),  intent(in), target :: gmesh
-    type(matl_props), intent(in), target :: mprop
     type(parameter_list) :: params
 
     type(parameter_list), pointer :: plist
@@ -87,7 +86,6 @@ contains
 
     this%mesh => mesh
     this%gmesh => gmesh
-    this%mprop => mprop
     allocate(this%velocity_cc(ndim,this%mesh%ncell), this%pressure_cc(this%mesh%ncell), &
         this%fluidRho(this%mesh%ncell), this%fluidVof(this%mesh%ncell), &
         this%gradP_dynamic_cc(ndim,this%mesh%ncell), this%fluxing_velocity(nfc,this%mesh%ncell))
@@ -142,6 +140,15 @@ contains
     this%volume_flux => volume_flux
 
   end subroutine init_matls
+
+  subroutine init_mprop (this, mprop)
+
+    class(NS_solver), intent(inout) :: this
+    type(matl_props), target        :: mprop
+
+    this%mprop => mprop
+
+  end subroutine init_mprop
 
   ! initialize state variables
   subroutine set_initial_state (this)
@@ -206,7 +213,7 @@ contains
     logical  :: solid_face(this%mesh%nface), is_pure_immobile(this%mesh%ncell)
 
     this%t = t
-
+    
     ! check if we are using a prescribed velocity
     if (this%use_prescribed_velocity) then
       call this%update_prescribed_velocity ()
@@ -215,7 +222,7 @@ contains
       ! check that there are at least some flow equations to solve
       call this%fluid_properties (rho, fluidRho_n, fluidVof_n, velocity_cc_n, &
           min_fluidRho, solid_face, is_pure_immobile)
-
+      
       ! step the incompressible Navier-Stokes equations
       if (this%fluid_to_move(is_pure_immobile, solid_face)) then
         ! WARNING: hardcoding inviscid flow for now
@@ -233,7 +240,7 @@ contains
     end if
 
     this%t = t+dt
-
+    
   end subroutine step
 
   ! calculate fluid properties such as various density quantities,
@@ -251,7 +258,7 @@ contains
 
     logical :: real_fluidVof(size(fluidVof_n))
     integer :: i, f
-
+    
     do i = 1,this%mesh%ncell
       ! save previous timestep values
       fluidRho_n(i) = this%fluidRho(i) 
@@ -259,13 +266,13 @@ contains
       
       ! update current/next timestep values from the recent interface advection update
       cellRho(i)  = sum(this%vof(:,i)*this%mprop%density) ! TODO: is this used anywhere?
-
+      
       ! TODO: modify fluidRho with fluidDeltaRho, if following the Boussinesq approximation
       this%fluidRho(i) = sum(this%vof(:,i)*this%mprop%density, mask=.not.this%mprop%is_immobile) &
           / merge(this%fluidVof(i), 1.0_r8, this%fluidVof(i) > 0.0_r8)
 
       this%fluidVof(i) = sum(this%vof(:,i),         mask=.not.this%mprop%is_immobile)
-
+      
       ! vof of mobile and non-void materials
       real_fluidVof(i) = sum(this%vof(:,i), &
           mask=.not.this%mprop%is_immobile .and. .not.this%mprop%is_void)
@@ -293,7 +300,7 @@ contains
       ! TODO: modify behavior at boundaries, where there is no neighboring cell
       solid_face(f) = any(is_pure_immobile(this%gmesh%fcell(:,f)))
     end do
-
+    
     ! with some way to grab the local face id of a face given its global id,
     ! this could be merged into the above face loop
     ! for it to work in parallel, would also need to be sure threads are not
@@ -305,7 +312,7 @@ contains
         if (solid_face(this%mesh%cface(f,i))) this%fluxing_velocity(f,i) = 0.0_r8
       end do
     end do
-
+    
   end subroutine fluid_properties
 
   ! decide whether or not fluid flow is needed for this step

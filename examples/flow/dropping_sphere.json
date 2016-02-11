@@ -4,8 +4,9 @@
     "mesh": {
         "corner-min": [0.0, 0.0, 0.0],
         "corner-max": [1.0, 1.0, 1.0],
+        "intervals" : [ 4,4,4]
         //"intervals" : [ 16,  16,  16]
-        "intervals" : [ 32,  32,  32]
+        //"intervals" : [ 32,  32,  32]
         //"intervals" : [ 64,  64,  64]
         //"intervals" : [128, 128, 128]
     },
@@ -22,18 +23,24 @@
     },
     
     "ns-solver": {
-        "prescribed-velocity": 1,
+        "body-force": [0.0, 0.0, -9.8],
         "bc": {
             "no-slip-walls": { //is there any way to actually apply no-slip, rather than no-flux?
                 "condition": "dirichlet-velocity",
-                "face-sets": [1,2,3,4,5,6]
+                "face-sets": [1,2,3,4,5,6],
                 "data-constant": 0.0
             }
+        },
+        "hypre-params": {
+            "rel-tol": 1.0e-3,
+            "max-ds-iter": 1,
+            "max-amg-iter": 1,
+            "krylov-method": "cg"
         }
     },
 
     "material-properties": {
-        "densities": [0.1, 0.2],
+        "densities": [0.1, 0.2] //,
         //"immobile-materials": []
         //"material-sound-speeds": []
     },
