@@ -3,6 +3,9 @@
 !   projection operations.
 !
 
+! WARNING: at corner boundaries, where cells have more than one boundary face, need to make sure
+!          cell-center associated quantities are not calculated until the final face has finished
+
 module projection_module
 
   use kinds,  only: r8
@@ -47,7 +50,7 @@ contains
         gradP_dynamic_cc, fluidRho, fluidRho_n, fluidVof, vof, sound_speed, body_force, min_face_fraction, min_fluid_rho, &
         solid_face, is_pure_immobile, material_is_immobile, dt, velocity_bc, pressure_bc, mesh, gmesh, params)
     call velocity_projection (velocity_cc, pressure_cc, fluxing_velocity, gradP_dynamic_cc, &
-        fluidRho, dP, rho_face, dt, solid_face, is_pure_immobile, mesh, gmesh)
+        fluidRho, dP, rho_face, dt, solid_face, is_pure_immobile, pressure_bc, mesh, gmesh)
 
   end subroutine projection
 
@@ -111,10 +114,10 @@ contains
       if (.not.any(gmesh%cneighbor(:,i) < 1)) &
           rhs(i) = cell_rhs (fluxing_velocity(:,i), mesh%area(mesh%cface(:,i)), mesh%volume(i), &
           fluidRho(i), pressure_cc(i), gmesh%outnorm(:,:,i), min_face_fraction, min_fluid_rho, &
-          solid_face(mesh%cface(:,i)), is_pure_immobile(i))
+          dt, solid_face(mesh%cface(:,i)), is_pure_immobile(i))
       
       call cell_lhs (lhs, mesh%volume(i), dt, face_area_over_rho, fluidRho(i), vof(:,i), &
-          sound_speed, gmesh%fc(:,mesh%cface(:,i)), gmesh, i, is_pure_immobile(i), &
+          sound_speed, gmesh%fc(:,mesh%cface(:,i)), mesh, gmesh, i, is_pure_immobile(i), &
           material_is_immobile)
       
       ! TODO: here add portions for different physics (e.g., surface tension)
@@ -122,20 +125,30 @@ contains
     
     ! apply boundary conditions
     call apply_velocity_bcs (fluxing_velocity, rho_face, rhs, velocity_bc, pressure_cc, fluidRho, &
-        min_face_fraction, min_fluid_rho, solid_face, is_pure_immobile, mesh, gmesh)
+        min_face_fraction, min_fluid_rho, dt, solid_face, is_pure_immobile, mesh, gmesh)
     call apply_pressure_bcs (fluxing_velocity, rho_face, rhs, pressure_bc, velocity_cc, &
-        pressure_cc, gradP_dynamic_cc, fluidRho, min_face_fraction, min_fluid_rho, &
+        pressure_cc, gradP_dynamic_cc, fluidRho, min_face_fraction, min_fluid_rho, dt, &
         solid_face, is_pure_immobile, mesh, gmesh)
 
     ! WARNING: what about boundaries without a boundary condition set?
     !          still need to set the rhs there.
 
+    ! write(*,*) 'iter', dt
+    ! write(*,'(4f14.4)') lhs%values(1:4)
+    ! write(*,*) lhs%graph%adjncy(1:4)
+    
     ! solve the system
     call solver%init (lhs, params)
     call solver%setup ()
     dP = 0.0_r8 ! TODO: put a better initial guess here later, and thread it
     call solver%solve (rhs, dP, stat)
     if (stat /= 0) call LS_fatal ("projection solver failed")
+
+    ! do i = 1,size(dp)
+    !   write(*,*) 'dp, rhs', i, dp(i), rhs(i)
+    ! end do
+    ! write(*,*)
+    ! if (any(rhs>1.0_r8)) stop
 
     ! re-normalize pressure when not using dirichlet pressure BCs
     if ((.not.allocated(pressure_bc%index) .or. size(pressure_bc%index)==0) &
@@ -145,17 +158,25 @@ contains
     ! increment the cell centered pressure
     pressure_cc = pressure_cc + dP
 
+    ! do i = 1,mesh%ncell
+    !   write(*,'(a,9f14.5)') 'p, u', pressure_cc(i), velocity_cc(:,i), vof(1,i), fluidRho(i), &
+    !       gradp_dynamic_cc(:,i)
+    !   !write(*,'(a,6f14.5)') 'fv', fluxing_velocity(:,i)
+    ! end do
+    ! write(*,*) 'maxp', maxval(pressure_cc)
+    
   contains
 
     subroutine apply_velocity_bcs (fluxing_velocity, rho_face, rhs, velocity_bc, &
-        pressure_cc, fluidRho, min_face_fraction, min_fluid_rho, solid_face, is_pure_immobile, &
+        pressure_cc, fluidRho, min_face_fraction, min_fluid_rho, dt, solid_face, is_pure_immobile, &
         mesh, gmesh)
 
       use bndry_func_class
 
       real(r8),         intent(inout) :: fluxing_velocity(:,:), rho_face(:,:), rhs(:)
       class(bndry_func), intent(in)    :: velocity_bc
-      real(r8),         intent(in)    :: pressure_cc(:), fluidRho(:), min_face_fraction, min_fluid_rho
+      real(r8),         intent(in)    :: pressure_cc(:), fluidRho(:), min_face_fraction, &
+          min_fluid_rho, dt
       logical,          intent(in)    :: solid_face(:), is_pure_immobile(:)
       type(unstr_mesh), intent(in)    :: mesh
       type(mesh_geom),  intent(in)    :: gmesh
@@ -177,14 +198,14 @@ contains
         ! calculate the base Poisson system left and right hand sides
         rhs(i) = cell_rhs (fluxing_velocity(:,i), mesh%area(mesh%cface(:,i)), mesh%volume(i), &
             fluidRho(i), pressure_cc(i), gmesh%outnorm(:,:,i), min_face_fraction, min_fluid_rho, &
-            solid_face(mesh%cface(:,i)), is_pure_immobile(i))
+            dt, solid_face(mesh%cface(:,i)), is_pure_immobile(i))
       end do
 
     end subroutine apply_velocity_bcs
 
     subroutine apply_pressure_bcs (fluxing_velocity, rho_face, rhs, pressure_bc, &
         velocity_cc, pressure_cc, gradP_dynamic_cc, fluidRho, min_face_fraction, min_fluid_rho, &
-        solid_face, is_pure_immobile, mesh, gmesh)
+        dt, solid_face, is_pure_immobile, mesh, gmesh)
 
       use body_force_module, only: calc_gravityhead_bndry
       use bndry_func_class
@@ -192,7 +213,7 @@ contains
       real(r8),          intent(inout) :: fluxing_velocity(:,:), rho_face(:,:), rhs(:)
       class(bndry_func), intent(in)    :: pressure_bc
       real(r8),          intent(in)    :: velocity_cc(:,:), pressure_cc(:), gradP_dynamic_cc(:,:), &
-          fluidRho(:), min_face_fraction, min_fluid_rho
+          fluidRho(:), min_face_fraction, min_fluid_rho, dt
       logical,           intent(in)    :: solid_face(:), is_pure_immobile(:)
       type(unstr_mesh),  intent(in)    :: mesh
       type(mesh_geom),   intent(in)    :: gmesh
@@ -241,7 +262,7 @@ contains
         ! calculate the base Poisson system left and right hand sides
         rhs(i) = cell_rhs (fluxing_velocity(:,i), mesh%area(mesh%cface(:,i)), mesh%volume(i), &
             fluidRho(i), pressure_cc(i), gmesh%outnorm(:,:,i), min_face_fraction, min_fluid_rho, &
-            solid_face(mesh%cface(:,i)), is_pure_immobile(i)) !&
+            dt, solid_face(mesh%cface(:,i)), is_pure_immobile(i)) !&
         !+ pressure_bc_value*face_area_over_rho / mesh%volume(i)
         ! NOTE: looking closer at Truchas, it seems like this line is executed, but with
         !       pressure_bc_value set to zero, because we need to enforce zero pressure
@@ -274,10 +295,10 @@ contains
     end subroutine init_disc
 
     real(r8) function cell_rhs (fluxing_velocity, face_area, cell_vol, fluidRho, pressure, &
-        outnorm, min_face_fraction, min_fluid_rho, solid_face, is_pure_immobile)
+        outnorm, min_face_fraction, min_fluid_rho, dt, solid_face, is_pure_immobile)
 
       real(r8), intent(in) :: fluxing_velocity(:), face_area(:), cell_vol, fluidRho, pressure, &
-          outnorm(:,:), min_face_fraction, min_fluid_rho
+          outnorm(:,:), min_face_fraction, min_fluid_rho, dt
       logical,  intent(in) :: solid_face(:), is_pure_immobile
 
       ! Compute the RHS for the MAC projection, which is the
@@ -299,15 +320,24 @@ contains
         cell_rhs = sum(fluxing_velocity*face_area, mask=.not.solid_face) / (dt*cell_vol)
       end if
 
+      ! if (cell_rhs>1.0_r8) then
+      !   write(*,'(a,2es14.5,L)') 'bigrhs', cell_rhs, fluidrho, is_pure_immobile
+      !   write(*,'(a,6f14.5)') 'rhsfv', fluxing_velocity
+      !   write(*,'(a,6f14.5)') 'rhsfa', face_area
+      !   write(*,'(a,2es14.5)') 'rhsdtvol', dt, cell_vol
+      !   write(*,*)
+      ! end if
+
     end function cell_rhs
 
     ! this calculates a row of the left hand matrix of the pressure poisson system
     subroutine cell_lhs (lhs, cell_vol, dt, face_area_over_rho, fluidRho, vof, sound_speed, &
-        xf, gmesh, i, is_pure_immobile, material_is_immobile)
+        xf, mesh, gmesh, i, is_pure_immobile, material_is_immobile)
 
       type(csr_matrix), intent(inout) :: lhs
       real(r8),         intent(in)    :: cell_vol, dt, fluidRho, vof(:), sound_speed(:), &
           face_area_over_rho(:), xf(:,:)
+      type(unstr_mesh), intent(in)    :: mesh
       type(mesh_geom),  intent(in)    :: gmesh
       integer,          intent(in)    :: i ! local cell id (matrix row)
       logical,          intent(in)    :: is_pure_immobile, material_is_immobile(:)
@@ -327,19 +357,34 @@ contains
       ! TODO: modify for nonorthogonal meshes
       do f = 1,nfc
         i_ngbr = gmesh%cneighbor(f,i)
-        if (i_ngbr < 1) cycle ! any boundary conditions are applied to the rhs
+        ! if (i_ngbr < 1) cycle ! any boundary conditions are applied to the rhs
         
-        dx  = gmesh%xc(:,i) - gmesh%xc(:,i_ngbr)
+        ! dx  = gmesh%xc(:,i) - gmesh%xc(:,i_ngbr)
+        
+        if (i_ngbr > 0) then
+          dx = gmesh%xc(:,i) - gmesh%xc(:,i_ngbr)
+        else
+          dx = gmesh%xc(:,i) - gmesh%fc(:,mesh%cface(f,i))
+        end if
         
         tmp = face_area_over_rho(f) / cell_vol * dot_product(gmesh%outnorm(:,f,i), dx) / sum(dx**2)
+        ! write(*,*) gmesh%outnorm(:,f,i)
+        ! write(*,*) dx
+        ! write(*,*) gmesh%xc(:,i)
+        ! write(*,*) gmesh%xc(:,i_ngbr)
+        ! write(*,*) face_area_over_rho(f), cell_vol, dot_product(gmesh%outnorm(:,f,i), dx),  sum(dx**2)
         
-        call lhs%increment (i,i_ngbr, -tmp)
+        if (i_ngbr > 0) call lhs%increment (i,i_ngbr, -tmp)
         call lhs%increment (i,i, tmp)
+        !write(*,*) i,i_ngbr,-tmp
       end do
+      !write(*,*) i,i,tmp*count(gmesh%cneighbor(:,i) > 0)
       
       ! void collapse term
       call lhs%increment (i,i, &
           cell_compressibility(vof, sound_speed, fluidRho, material_is_immobile) / dt**2)
+
+      !write(*,*) 'void',cell_compressibility(vof, sound_speed, fluidRho, material_is_immobile) / dt**2
 
     end subroutine cell_lhs
 
@@ -366,17 +411,19 @@ contains
 
   ! update the cell centered and fluxing velocities
   subroutine velocity_projection (velocity_cc, pressure_cc, fluxing_velocity, gradP_dynamic_cc, &
-      fluidRho, dP, rho_face, dt, solid_face, is_pure_immobile, mesh, gmesh)
+      fluidRho, dP, rho_face, dt, solid_face, is_pure_immobile, pressure_bc, mesh, gmesh)
     
     use unstr_mesh_type
     use mesh_geom_type
+    use bndry_func_class
     
-    real(r8),         intent(inout) :: velocity_cc(:,:), pressure_cc(:), fluxing_velocity(:,:), &
+    real(r8),          intent(inout) :: velocity_cc(:,:), pressure_cc(:), fluxing_velocity(:,:), &
         gradP_dynamic_cc(:,:)
-    real(r8),         intent(in)    :: fluidRho(:), dP(:), rho_face(:,:), dt
-    logical,          intent(in)    :: solid_face(:), is_pure_immobile(:)
-    type(unstr_mesh), intent(in)    :: mesh
-    type(mesh_geom),  intent(in)    :: gmesh
+    real(r8),          intent(in)    :: fluidRho(:), dP(:), rho_face(:,:), dt
+    logical,           intent(in)    :: solid_face(:), is_pure_immobile(:)
+    class(bndry_func), intent(in)    :: pressure_bc
+    type(unstr_mesh),  intent(in)    :: mesh
+    type(mesh_geom),   intent(in)    :: gmesh
 
     real(r8) :: grad_dP(ndim), gradP_dynamic_cc_n(ndim), gradP_face(ndim,nfc)
     integer  :: i,f,nid,nfid
@@ -393,7 +440,7 @@ contains
           if (fluidRho(nid) > 0.0_r8) fluxing_velocity(f,i) = -fluxing_velocity(nfid,nid)
         end if
 
-        ! correct the fluxing velocities with grad(dP)?n
+        ! correct the fluxing velocities with grad(dP)?
         if (solid_face(mesh%cface(f,i))) then
           fluxing_velocity(f,i) = 0.0_r8 ! TODO: can skip this? done already?
         else if (rho_face(f,i) > 0.0_r8 .and. nid > 0) then ! TODO: confirm only done on interior faces
@@ -404,17 +451,20 @@ contains
         
         ! calculate the pressure (not dynamic) gradient on the face
         if (nid > 0) then
-          gradP_face(:,f) = face_gradient (pressure_cc, gmesh%xc(:,[i, nid]))
+          gradP_face(:,f) = face_gradient (pressure_cc([i, nid]), gmesh%xc(:,[i, nid]))
         else
           gradP_face(:,f) = 0.0_r8
         end if
       end do
 
+      ! only update the below quantities after
+      if (any(gmesh%cneighbor(:,i)<1)) cycle
+
       ! calculate new pressure gradient
       gradP_dynamic_cc_n = gradP_dynamic_cc(:,i)
       gradP_dynamic_cc(:,i) = calc_gradP_dynamic_cc (gradP_face, rho_face(:,i), fluidRho(i), &
           mesh%area(mesh%cface(:,i)), gmesh%outnorm(:,:,i), &
-          solid_face(mesh%cface(:,i)), gmesh%cneighbor(:,i) > 0)
+          solid_face(mesh%cface(:,i)))
 
       ! correct cell centered velocities
       if (fluidRho(i) == 0.0_r8 .or. is_pure_immobile(i)) then
@@ -424,7 +474,54 @@ contains
       end if
     end do
 
+    call apply_pressure_bcs (velocity_cc, gradP_dynamic_cc, pressure_bc, fluidRho, dt, &
+        is_pure_immobile, gmesh)
+
   contains
+    
+    subroutine apply_pressure_bcs (velocity_cc, gradP_dynamic_cc, pressure_bc, fluidRho, dt, &
+        is_pure_immobile, gmesh)
+
+      real(r8),          intent(inout) :: velocity_cc(:,:), gradP_dynamic_cc(:,:)
+      class(bndry_func), intent(in)    :: pressure_bc
+      real(r8),          intent(in)    :: fluidRho(:), dt
+      logical,           intent(in)    :: is_pure_immobile(:)
+      type(mesh_geom),   intent(in)    :: gmesh
+
+      real(r8) :: pressure_bc_value, gradP_dynamic_cc_n(ndim)
+      integer  :: bndry_f, fid, i, f, if
+
+      do bndry_f = 1,size(pressure_bc%index)
+        fid = pressure_bc%index(bndry_f)
+        pressure_bc_value = pressure_bc%value(bndry_f)
+
+        i = gmesh%fcell(1,fid) ! id of cell attached to this face
+        f = gmesh%flid(1,fid)  ! local id of the face
+
+        ! calculate the dynamic pressure gradient for this cell
+        gradP_face(:,f) = face_gradient ([pressure_cc(i),pressure_bc_value], &
+            reshape([gmesh%xc(:,i),gmesh%fc(:,fid)], [ndim,2]))
+        
+        do if = 1,nfc
+          if (if /= f) then
+            nid  = gmesh%cneighbor(f,i) ! neighbor cell id
+            gradP_face(:,f) = face_gradient (pressure_cc([i, nid]), gmesh%xc(:,[i, nid]))
+          end if
+        end do
+
+        gradP_dynamic_cc_n = gradP_dynamic_cc(:,i)
+        gradP_dynamic_cc(:,i) = calc_gradP_dynamic_cc (gradP_face, rho_face(:,i), fluidRho(i), &
+            mesh%area(mesh%cface(:,i)), gmesh%outnorm(:,:,i), solid_face(mesh%cface(:,i)))
+
+        ! correct cell centered velocities
+        if (fluidRho(i) == 0.0_r8 .or. is_pure_immobile(i)) then
+          velocity_cc(:,i) = 0.0_r8
+        else
+          velocity_cc(:,i) = velocity_cc(:,i) - dt*(gradP_dynamic_cc(:,i) - gradP_dynamic_cc_n)
+        end if
+      end do
+
+    end subroutine apply_pressure_bcs
     
     ! the cell centered dynamic pressure gradient is calculated as
     ! the average of face centered dynamic pressure gradients,
@@ -434,11 +531,11 @@ contains
     !       Since those are already set to zero by the face gradient routine,
     !       there is no need to explicitly skip them again here. However,
     !       we still need to weight by only the cells which are allowed.
-    function calc_gradP_dynamic_cc (gradP_face, rho_face, fluidRho, face_area, outnorm, &
-        solid_face, neighbor_exists) result(gradP_d)
+    function calc_gradP_dynamic_cc (gradP_face, rho_face, fluidRho, face_area, outnorm, solid_face) &
+        result(gradP_d)
 
       real(r8), intent(in) :: gradP_face(:,:), rho_face(:), fluidRho, face_area(:), outnorm(:,:)
-      logical,  intent(in) :: solid_face(:), neighbor_exists(:)
+      logical,  intent(in) :: solid_face(:)
       real(r8) :: gradP_d(ndim)
 
       integer :: f
@@ -450,7 +547,7 @@ contains
               gradP_d = gradP_d + gradP_face(:,f)/rho_face(f) * abs(face_area(f)*outnorm(:,f))
         end do
         gradP_d = gradP_d / sum(abs(face_area)*sum(abs(outnorm), dim=1), &
-            mask=.not.solid_face .and. neighbor_exists)
+            mask=.not.solid_face)
       end if
 
     end function calc_gradP_dynamic_cc

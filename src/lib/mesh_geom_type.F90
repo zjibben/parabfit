@@ -15,7 +15,7 @@
 
 module mesh_geom_type
   use kinds,  only: r8
-  use consts, only: nfc,ndim,nvf
+  use consts, only: nfc,ndim,nvf,nvc
   use unstr_mesh_type
   implicit none
   private
@@ -58,8 +58,7 @@ contains
       ! calculate cell centroids
       ! note in truchas they do something far more complicated,
       ! probably taking the integral of x over the domain of the hex divided by the volume?
-      this%xc(:,i) = sum(mesh%x(:,mesh%cnode(:,i)),dim=2) / real(nfc,r8)
-
+      this%xc(:,i) = sum(mesh%x(:,mesh%cnode(:,i)),dim=2) / real(nvc,r8)
       
     end do
     !$omp end parallel do

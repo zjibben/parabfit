@@ -218,6 +218,9 @@ contains
     if (this%use_prescribed_velocity) then
       call this%update_prescribed_velocity ()
     else
+      call this%pressure_bc%compute (this%t)
+      call this%velocity_bc%compute (this%t)
+
       ! evaluate cell properties excluding immobile materials, and
       ! check that there are at least some flow equations to solve
       call this%fluid_properties (rho, fluidRho_n, fluidVof_n, velocity_cc_n, &
@@ -238,7 +241,8 @@ contains
         this%velocity_cc = 0.0_r8
       end if
     end if
-
+    
+    write(*,*) 'maxvel', maxval(sum(this%velocity_cc**2,dim=1))
     this%t = t+dt
     
   end subroutine step

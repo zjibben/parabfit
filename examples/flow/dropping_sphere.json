@@ -1,4 +1,4 @@
-// Deforming sphere in a prescribed reversing vortex.
+// sphere of fluid dropping in a box
 
 {
     "mesh": {
@@ -35,7 +35,8 @@
             "rel-tol": 1.0e-3,
             "max-ds-iter": 10,
             "max-amg-iter": 10,
-            "krylov-method": "gmres"
+            "krylov-method": "gmres",
+            "gmres-krylov-dim": 3
         }
     },
 

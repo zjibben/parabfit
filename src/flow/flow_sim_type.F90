@@ -220,7 +220,9 @@ contains
   end subroutine run
 
   subroutine step (this,dt,t)
+
     use velocity_to_faces_func
+    use array_utils, only: isZero
 
     class(flow_sim), intent(inout) :: this
     real(r8),        intent(in)    :: dt,t
@@ -242,6 +244,14 @@ contains
           CFL*minval(this%mesh%volume**(1.0_r8/3.0_r8))/maxval(this%ns_solver%fluxing_velocity), &
           dt-tlocal, &
           maxdt)
+
+      ! if the timestep is *almost* enough to finish this cycle, set it to that exact amount
+      ! this avoids timesteps like 1e-17
+      if (isZero(abs(tlocal + flow_dt - dt))) flow_dt = dt - tlocal
+      
+      ! write(*,*) 'dts',CFL*minval(this%mesh%volume**(1.0_r8/3.0_r8))/maxval(this%ns_solver%fluxing_velocity), &
+      !     dt-tlocal, &
+      !     maxdt
 
       ! advect material
       call this%vof_solver%advect_mass (flow_dt, this%dump_intrec .and. flow_dt==dt-tlocal )
