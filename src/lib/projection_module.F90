@@ -50,7 +50,8 @@ contains
         gradP_dynamic_cc, fluidRho, fluidRho_n, fluidVof, vof, sound_speed, body_force, min_face_fraction, min_fluid_rho, &
         solid_face, is_pure_immobile, material_is_immobile, dt, velocity_bc, pressure_bc, mesh, gmesh, params)
     call velocity_projection (velocity_cc, pressure_cc, fluxing_velocity, gradP_dynamic_cc, &
-        fluidRho, dP, rho_face, dt, solid_face, is_pure_immobile, pressure_bc, mesh, gmesh)
+        fluidRho, dP, rho_face, dt, solid_face, is_pure_immobile, velocity_bc, pressure_bc, &
+        mesh, gmesh)
 
   end subroutine projection
 
@@ -186,7 +187,7 @@ contains
       
       do bndry_f = 1,size(velocity_bc%index)
         fid = velocity_bc%index(bndry_f)
-
+        
         i = gmesh%fcell(1,fid) ! id of cell attached to this face
         f = gmesh%flid(1,fid)  ! local id of the face
         
@@ -411,7 +412,8 @@ contains
 
   ! update the cell centered and fluxing velocities
   subroutine velocity_projection (velocity_cc, pressure_cc, fluxing_velocity, gradP_dynamic_cc, &
-      fluidRho, dP, rho_face, dt, solid_face, is_pure_immobile, pressure_bc, mesh, gmesh)
+      fluidRho, dP, rho_face, dt, solid_face, is_pure_immobile, velocity_bc, pressure_bc, &
+      mesh, gmesh)
     
     use unstr_mesh_type
     use mesh_geom_type
@@ -421,7 +423,7 @@ contains
         gradP_dynamic_cc(:,:)
     real(r8),          intent(in)    :: fluidRho(:), dP(:), rho_face(:,:), dt
     logical,           intent(in)    :: solid_face(:), is_pure_immobile(:)
-    class(bndry_func), intent(in)    :: pressure_bc
+    class(bndry_func), intent(in)    :: velocity_bc, pressure_bc
     type(unstr_mesh),  intent(in)    :: mesh
     type(mesh_geom),   intent(in)    :: gmesh
 
@@ -474,9 +476,12 @@ contains
       end if
     end do
 
+    ! apply boundary conditions
+    call apply_velocity_bcs (velocity_cc, gradP_dynamic_cc, velocity_bc, fluidRho, dt, &
+        is_pure_immobile, gmesh)
     call apply_pressure_bcs (velocity_cc, gradP_dynamic_cc, pressure_bc, fluidRho, dt, &
         is_pure_immobile, gmesh)
-
+    
   contains
     
     subroutine apply_pressure_bcs (velocity_cc, gradP_dynamic_cc, pressure_bc, fluidRho, dt, &
@@ -522,6 +527,49 @@ contains
       end do
 
     end subroutine apply_pressure_bcs
+
+    subroutine apply_velocity_bcs (velocity_cc, gradP_dynamic_cc, velocity_bc, fluidRho, dt, &
+        is_pure_immobile, gmesh)
+
+      real(r8),          intent(inout) :: velocity_cc(:,:), gradP_dynamic_cc(:,:)
+      class(bndry_func), intent(in)    :: velocity_bc
+      real(r8),          intent(in)    :: fluidRho(:), dt
+      logical,           intent(in)    :: is_pure_immobile(:)
+      type(mesh_geom),   intent(in)    :: gmesh
+
+      real(r8) :: velocity_bc_value, gradP_dynamic_cc_n(ndim)
+      integer  :: bndry_f, fid, i, f, if
+
+      do bndry_f = 1,size(velocity_bc%index)
+        fid = velocity_bc%index(bndry_f)
+        velocity_bc_value = velocity_bc%value(bndry_f) ! TODO: remove this?
+
+        i = gmesh%fcell(1,fid) ! id of cell attached to this face
+        f = gmesh%flid(1,fid)  ! local id of the face
+
+        ! calculate the dynamic pressure gradient for this cell
+        ! pressure gradient on this face is forced to zero
+        gradP_face(:,f) = 0.0_r8
+        do if = 1,nfc
+          if (if /= f) then
+            nid  = gmesh%cneighbor(f,i) ! neighbor cell id
+            gradP_face(:,f) = face_gradient (pressure_cc([i, nid]), gmesh%xc(:,[i, nid]))
+          end if
+        end do
+
+        gradP_dynamic_cc_n = gradP_dynamic_cc(:,i)
+        gradP_dynamic_cc(:,i) = calc_gradP_dynamic_cc (gradP_face, rho_face(:,i), fluidRho(i), &
+            mesh%area(mesh%cface(:,i)), gmesh%outnorm(:,:,i), solid_face(mesh%cface(:,i)))
+        
+        ! correct cell centered velocities
+        if (fluidRho(i) == 0.0_r8 .or. is_pure_immobile(i)) then
+          velocity_cc(:,i) = 0.0_r8
+        else
+          velocity_cc(:,i) = velocity_cc(:,i) - dt*(gradP_dynamic_cc(:,i) - gradP_dynamic_cc_n)
+        end if
+      end do
+
+    end subroutine apply_velocity_bcs
     
     ! the cell centered dynamic pressure gradient is calculated as
     ! the average of face centered dynamic pressure gradients,
