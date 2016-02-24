@@ -155,6 +155,8 @@ contains
 
     class(NS_solver), intent(inout) :: this
 
+    integer :: i
+
     ! set initial time
     this%t = 0.0_r8
 
@@ -165,12 +167,19 @@ contains
       call this%update_prescribed_velocity ()
     else
       this%velocity_cc = 0.0_r8
+      this%fluxing_velocity = 0.0_r8
     end if
 
-    this%pressure_cc = 0.0_r8
-    this%gradP_dynamic_cc = 0.0_r8
-    this%fluidRho = 1.0_r8
-    this%fluidVof = 1.0_r8
+    write(*,*) 'WARNING: hard-coded initial condition for single-phase channel flow'
+    do i = 1,this%mesh%ncell
+      this%pressure_cc(i) = 1.0_r8 - this%gmesh%xc(2,i) / 4.0_r8
+      this%gradP_dynamic_cc(:,i) = [0.0_r8, -0.25_r8, 0.0_r8]
+      
+      ! this%pressure_cc(i) = 0.0_r8
+      ! this%gradP_dynamic_cc(:,i) = 0.0_r8
+      this%fluidRho(i) = 1.0_r8
+      this%fluidVof(i) = 1.0_r8
+    end do
     
   end subroutine set_initial_state
 
@@ -213,7 +222,9 @@ contains
     logical  :: solid_face(this%mesh%nface), is_pure_immobile(this%mesh%ncell)
 
     this%t = t
-    
+
+    !write(*,'(a,4es14.4)') 'maxvel1', maxval(sum(this%velocity_cc**2,dim=1)), this%velocity_cc(:,maxloc(sum(this%velocity_cc**2,dim=1)))
+
     ! check if we are using a prescribed velocity
     if (this%use_prescribed_velocity) then
       call this%update_prescribed_velocity ()
@@ -242,7 +253,8 @@ contains
       end if
     end if
     
-    write(*,*) 'maxvel', maxval(sum(this%velocity_cc**2,dim=1))
+    write(*,'(a,4es14.4)') 'maxvel', maxval(sum(this%velocity_cc**2,dim=1)), this%velocity_cc(:,maxloc(sum(this%velocity_cc**2,dim=1)))
+    write(*,*) 'maxfvel', maxval(this%fluxing_velocity)
     this%t = t+dt
     
   end subroutine step

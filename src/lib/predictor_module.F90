@@ -88,6 +88,8 @@ contains
       end if
     end do
 
+    !write(*,'(a,4es14.4)') 'maxvel predic', maxval(sum(velocity_cc**2,dim=1)), velocity_cc(:,maxloc(sum(velocity_cc**2,dim=1)))
+
     ! TODO: solve the implicit system for viscous flows
 
   end subroutine predictor

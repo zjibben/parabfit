@@ -78,7 +78,7 @@ contains
     type(mesh_geom),   intent(in)    :: gmesh
     type(parameter_list), pointer    :: params
 
-    real(r8) :: rhs(mesh%ncell), face_area_over_rho(nfc)
+    real(r8) :: rhs(mesh%ncell)
     integer :: i,f,i_ngbr, stat
     type(csr_matrix) :: lhs
     type(hypre_hybrid) :: solver
@@ -113,10 +113,6 @@ contains
             pressure_cc([i, i_ngbr]), gradP_dynamic_cc(:,[i, i_ngbr]), body_force, &
             solid_face(mesh%cface(f,i)), gmesh%outnorm(:,f,i), gmesh%xc(:,[i, i_ngbr]), &
             gmesh%fc(:,mesh%cface(f,i)),  i_ngbr > 0)
-
-        ! TODO: this seems to be local to cell_lhs, why not move it inside that subroutine?
-        face_area_over_rho(f) = merge(0.0_r8, mesh%area(mesh%cface(f,i)) / rho_face(f,i), &
-            rho_face(f,i) == 0.0_r8 .or. fluidRho(i) == 0.0_r8 .or. is_pure_immobile(i))
       end do
       
       ! calculate the base Poisson system left and right hand sides
@@ -124,7 +120,7 @@ contains
           fluidRho(i), pressure_cc(i), gmesh%outnorm(:,:,i), min_face_fraction, min_fluid_rho, &
           dt, solid_face(mesh%cface(:,i)), is_pure_immobile(i))
       
-      call cell_lhs (lhs, mesh%volume(i), dt, face_area_over_rho, fluidRho(i), vof(:,i), &
+      call cell_lhs (lhs, mesh%volume(i), dt, rho_face(:,i), fluidRho(i), vof(:,i), &
           sound_speed, gmesh%fc(:,mesh%cface(:,i)), mesh, gmesh, i, is_pure_immobile(i), &
           material_is_immobile)
       
@@ -212,7 +208,7 @@ contains
       type(unstr_mesh),  intent(in)    :: mesh
       type(mesh_geom),   intent(in)    :: gmesh
 
-      real(r8) :: pressure_bc_value, face_area_over_rho, gradP_dynamic_face(ndim)
+      real(r8) :: pressure_bc_value, gradP_dynamic_face(ndim) !, face_area_over_rho
       integer  :: bndry_f, fid, i, f
 
       ! update values on boundary faces
@@ -317,19 +313,19 @@ contains
     end function cell_rhs
 
     ! this calculates a row of the left hand matrix of the pressure poisson system
-    subroutine cell_lhs (lhs, cell_vol, dt, face_area_over_rho, fluidRho, vof, sound_speed, &
+    subroutine cell_lhs (lhs, cell_vol, dt, rho_face, fluidRho, vof, sound_speed, &
         xf, mesh, gmesh, i, is_pure_immobile, material_is_immobile)
 
       type(csr_matrix), intent(inout) :: lhs
       real(r8),         intent(in)    :: cell_vol, dt, fluidRho, vof(:), sound_speed(:), &
-          face_area_over_rho(:), xf(:,:)
+          rho_face(:), xf(:,:)
       type(unstr_mesh), intent(in)    :: mesh
       type(mesh_geom),  intent(in)    :: gmesh
       integer,          intent(in)    :: i ! local cell id (matrix row)
       logical,          intent(in)    :: is_pure_immobile, material_is_immobile(:)
 
       integer  :: f,i_ngbr
-      real(r8) :: dx(3), tmp
+      real(r8) :: dx(3), tmp, face_area_over_rho
 
       ! TODO: set row to zero here rather than outside the threaded loop prior to this subroutine
 
@@ -352,8 +348,10 @@ contains
         else
           dx = gmesh%xc(:,i) - gmesh%fc(:,mesh%cface(f,i))
         end if
-        
-        tmp = face_area_over_rho(f) / cell_vol * dot_product(gmesh%outnorm(:,f,i), dx) / sum(dx**2)
+
+        face_area_over_rho = merge(0.0_r8, mesh%area(mesh%cface(f,i)) / rho_face(f), &
+            rho_face(f) == 0.0_r8 .or. fluidRho == 0.0_r8 .or. is_pure_immobile)
+        tmp = face_area_over_rho / cell_vol * dot_product(gmesh%outnorm(:,f,i), dx) / sum(dx**2)
         ! write(*,*) gmesh%outnorm(:,f,i)
         ! write(*,*) dx
         ! write(*,*) gmesh%xc(:,i)
@@ -426,7 +424,7 @@ contains
       do f = 1,nfc
         nid  = gmesh%cneighbor(f,i) ! neighbor cell id
         if (nid < 1) cycle ! skip boundary faces
-
+        
         ! correct the fluxing velocities with grad(dP)
         if (rho_face(f,i) > 0.0_r8 .and. .not.solid_face(mesh%cface(f,i))) then
           grad_dP = face_gradient (dP([i, nid]), gmesh%xc(:,[i, nid]))
@@ -458,9 +456,7 @@ contains
     do i = 1,mesh%ncell
       do f = 1,nfc
         nid  = gmesh%cneighbor(f,i) ! neighbor cell id
-        if (nid < 1) cycle ! skip boundary faces
-
-        if (fluidRho(i)==0.0_r8) then
+        if (fluidRho(i)==0.0_r8 .and. nid > 0) then
           nfid = gmesh%fneighbor(f,i) ! neighbor's local id for face f
           if (fluidRho(nid) > 0.0_r8) fluxing_velocity(f,i) = -fluxing_velocity(nfid,nid)
         end if
@@ -547,11 +543,11 @@ contains
       gradP_d = 0.0_r8
       if (fluidRho /= 0.0_r8) then
         do f = 1,nfc
-          if (rho_face(f) > 0.0_r8) &
+          if (rho_face(f) > 0.0_r8 .and. .not.solid_face(f)) &
               gradP_d = gradP_d + gradP_face(:,f)/rho_face(f) * abs(face_area(f)*outnorm(:,f))
         end do
         gradP_d = gradP_d / sum(abs(face_area)*sum(abs(outnorm), dim=1), &
-            mask=.not.solid_face)
+            mask=rho_face > 0.0_r8 .and. .not.solid_face)
       end if
 
     end function calc_gradP_dynamic_cc

@@ -221,15 +221,15 @@ contains
 
   subroutine step (this,dt,t)
 
-    use velocity_to_faces_func
     use array_utils, only: isZero
 
     class(flow_sim), intent(inout) :: this
     real(r8),        intent(in)    :: dt,t
 
-    real(r8)           :: flow_dt,tlocal,CFL
+    real(r8)           :: flow_dt,tlocal
     integer, save      :: iter = 0
     real(r8), parameter :: maxdt = 1e-2_r8 ! maximum allowed timestep. TODO: make this user-specified from the input file
+    real(r8), parameter :: CFL = 0.25_r8   ! TODO: make this user-specified from the input file
     ! ! DEBUGGING/SCALING ##################
     ! integer, parameter :: nsteps = 1
     ! write(*,*) 'WARNING - number of timesteps forced'
@@ -239,7 +239,6 @@ contains
     do while (tlocal<dt) ! .and. iter<nsteps)
       ! update the timestep
       ! TODO: pick a smarter time step size--this will cause problems for particularly long cells
-      CFL = 0.25_r8
       flow_dt = min( &
           CFL*minval(this%mesh%volume**(1.0_r8/3.0_r8))/maxval(this%ns_solver%fluxing_velocity), &
           dt-tlocal, &
