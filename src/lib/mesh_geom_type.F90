@@ -23,7 +23,7 @@ module mesh_geom_type
   type, public :: mesh_geom
     private
     integer,  allocatable, public :: cneighbor(:,:), fneighbor(:,:), vcell(:,:), fcell(:,:), &
-        flid(:,:)
+        flid(:,:) !, nboundary_faces(:)
     real(r8), allocatable, public :: length(:), outnorm(:,:,:), xc(:,:), fc(:,:)
   contains
     procedure :: init
@@ -39,7 +39,8 @@ contains
     
     allocate(this%cneighbor(6,mesh%ncell), this%fneighbor(6,mesh%ncell), this%fcell(2,mesh%nface), &
         this%flid(2,mesh%nface), this%vcell(8,mesh%nnode), this%length(mesh%nedge), &
-        this%outnorm(3,6,mesh%ncell), this%xc(ndim,mesh%ncell), this%fc(ndim,mesh%nface))
+        this%outnorm(3,6,mesh%ncell), this%xc(ndim,mesh%ncell), this%fc(ndim,mesh%nface)) !, &
+        !this%nboundary_faces(mesh%ncell))
     
     call neighbor_ids (this%cneighbor, this%fneighbor, this%fcell, this%flid, mesh)
     this%vcell = cells_neighboring_vertices (mesh)
@@ -59,7 +60,12 @@ contains
       ! note in truchas they do something far more complicated,
       ! probably taking the integral of x over the domain of the hex divided by the volume?
       this%xc(:,i) = sum(mesh%x(:,mesh%cnode(:,i)),dim=2) / real(nvc,r8)
-      
+
+      ! ! calculate the number of boundary faces touching this cell
+      ! ! this is used to ensure values associated with the center of a cell touching a boundary
+      ! ! are not updated until after all the boundary faces are updated
+      ! this%nboundary_faces(i) = count(this%cneighbor(:,i) > 0)
+
     end do
     !$omp end parallel do
     

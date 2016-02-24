@@ -86,6 +86,15 @@ contains
     ! initialize the sparse left hand side matrix
     call init_disc (lhs, mesh%ncell, gmesh%cneighbor)
     call lhs%set_all (0.0_r8)
+
+    ! update boundary face values prior to the rest of the domain
+    call apply_velocity_bcs (fluxing_velocity, rho_face, rhs, velocity_bc, pressure_cc, fluidRho, &
+        min_face_fraction, min_fluid_rho, dt, solid_face, is_pure_immobile, mesh, gmesh)
+    call apply_pressure_bcs (fluxing_velocity, rho_face, rhs, pressure_bc, velocity_cc, &
+        pressure_cc, gradP_dynamic_cc, fluidRho, min_face_fraction, min_fluid_rho, dt, &
+        solid_face, is_pure_immobile, mesh, gmesh)
+
+    ! WARNING: what about boundaries without a boundary condition set?
     
     ! update the fluxing velocity, and set the values for the lhs and rhs of the Poisson system
     do i = 1,mesh%ncell
@@ -111,9 +120,7 @@ contains
       end do
       
       ! calculate the base Poisson system left and right hand sides
-      ! only calculate rhs non-boundary cells for now
-      if (.not.any(gmesh%cneighbor(:,i) < 1)) &
-          rhs(i) = cell_rhs (fluxing_velocity(:,i), mesh%area(mesh%cface(:,i)), mesh%volume(i), &
+      rhs(i) = cell_rhs (fluxing_velocity(:,i), mesh%area(mesh%cface(:,i)), mesh%volume(i), &
           fluidRho(i), pressure_cc(i), gmesh%outnorm(:,:,i), min_face_fraction, min_fluid_rho, &
           dt, solid_face(mesh%cface(:,i)), is_pure_immobile(i))
       
@@ -124,16 +131,6 @@ contains
       ! TODO: here add portions for different physics (e.g., surface tension)
     end do
     
-    ! apply boundary conditions
-    call apply_velocity_bcs (fluxing_velocity, rho_face, rhs, velocity_bc, pressure_cc, fluidRho, &
-        min_face_fraction, min_fluid_rho, dt, solid_face, is_pure_immobile, mesh, gmesh)
-    call apply_pressure_bcs (fluxing_velocity, rho_face, rhs, pressure_bc, velocity_cc, &
-        pressure_cc, gradP_dynamic_cc, fluidRho, min_face_fraction, min_fluid_rho, dt, &
-        solid_face, is_pure_immobile, mesh, gmesh)
-
-    ! WARNING: what about boundaries without a boundary condition set?
-    !          still need to set the rhs there.
-
     ! write(*,*) 'iter', dt
     ! write(*,'(4f14.4)') lhs%values(1:4)
     ! write(*,*) lhs%graph%adjncy(1:4)
@@ -184,7 +181,8 @@ contains
 
       real(r8) :: fluxing_velocity_bc
       integer  :: bndry_f, fid, i, f
-      
+
+      ! update values on boundary faces
       do bndry_f = 1,size(velocity_bc%index)
         fid = velocity_bc%index(bndry_f)
         
@@ -195,11 +193,6 @@ contains
         rho_face(f,i) = merge(max(min_face_fraction*min_fluid_rho, fluidRho(i)), 0.0_r8, &
             fluidRho(i) > 0.0_r8)
         fluxing_velocity(f,i) = merge(velocity_bc%value(bndry_f), 0.0_r8, .not.solid_face(fid))
-        
-        ! calculate the base Poisson system left and right hand sides
-        rhs(i) = cell_rhs (fluxing_velocity(:,i), mesh%area(mesh%cface(:,i)), mesh%volume(i), &
-            fluidRho(i), pressure_cc(i), gmesh%outnorm(:,:,i), min_face_fraction, min_fluid_rho, &
-            dt, solid_face(mesh%cface(:,i)), is_pure_immobile(i))
       end do
 
     end subroutine apply_velocity_bcs
@@ -221,7 +214,8 @@ contains
 
       real(r8) :: pressure_bc_value, face_area_over_rho, gradP_dynamic_face(ndim)
       integer  :: bndry_f, fid, i, f
-      
+
+      ! update values on boundary faces
       do bndry_f = 1,size(pressure_bc%index)
         fid = pressure_bc%index(bndry_f)
         pressure_bc_value = pressure_bc%value(bndry_f)
@@ -250,28 +244,19 @@ contains
                 - dt/rho_face(f,i) * dot_product(gradP_dynamic_face, gmesh%outnorm(:,f,i))
           end if
         end if
-
-        ! face area over density
-        ! since at Dirichlet BCs, Coeff = -Area_Face*(X*n)/(Rho_Face*L**2), where X is a vector
-        ! from the cell to face centroid, n is the unit normal, and L is the cell halfwidth.
-        face_area_over_rho = merge(0.0_r8, &
-            - mesh%area(fid) / rho_face(f,i) &
-            * dot_product(gmesh%fc(:,fid)-gmesh%xc(:,i), gmesh%outnorm(:,f,i)) &
-            / sum((gmesh%fc(:,fid)-gmesh%xc(:,i))**2), &
-            rho_face(f,i) == 0.0_r8 .or. fluidRho(i) == 0.0_r8 .or. is_pure_immobile(i))
-        
-        ! calculate the base Poisson system left and right hand sides
-        rhs(i) = cell_rhs (fluxing_velocity(:,i), mesh%area(mesh%cface(:,i)), mesh%volume(i), &
-            fluidRho(i), pressure_cc(i), gmesh%outnorm(:,:,i), min_face_fraction, min_fluid_rho, &
-            dt, solid_face(mesh%cface(:,i)), is_pure_immobile(i)) !&
-        !+ pressure_bc_value*face_area_over_rho / mesh%volume(i)
-        ! NOTE: looking closer at Truchas, it seems like this line is executed, but with
-        !       pressure_bc_value set to zero, because we need to enforce zero pressure
-        !       difference, not some the pressure value in this case. I'm not sure why they evaluate
-        !       this line at all. Also note that in general the pressure BC could change in time,
-        !       so it isn't necessarily zero, but I don't think Truchas accounts for this.
-        ! TODO: modify this for time-varying pressure boundary conditions.
       end do
+
+      ! ! calculate the base Poisson system left and right hand sides
+      !   rhs(i) = cell_rhs (fluxing_velocity(:,i), mesh%area(mesh%cface(:,i)), mesh%volume(i), &
+      !       fluidRho(i), pressure_cc(i), gmesh%outnorm(:,:,i), min_face_fraction, min_fluid_rho, &
+      !       dt, solid_face(mesh%cface(:,i)), is_pure_immobile(i)) !&
+      !   !+ pressure_bc_value*face_area_over_rho / mesh%volume(i)
+      !   ! NOTE: looking closer at Truchas, it seems like this line is executed, but with
+      !   !       pressure_bc_value set to zero, because we need to enforce zero pressure
+      !   !       difference, not some the pressure value in this case. I'm not sure why they evaluate
+      !   !       this line at all. Also note that in general the pressure BC could change in time,
+      !   !       so it isn't necessarily zero, but I don't think Truchas accounts for this.
+      !   ! TODO: modify this for time-varying pressure boundary conditions.
 
     end subroutine apply_pressure_bcs
 
@@ -427,46 +412,36 @@ contains
     type(unstr_mesh),  intent(in)    :: mesh
     type(mesh_geom),   intent(in)    :: gmesh
 
-    real(r8) :: grad_dP(ndim), gradP_dynamic_cc_n(ndim), gradP_face(ndim,nfc)
+    real(r8) :: grad_dP(ndim), gradP_dynamic_cc_n(ndim), gradP_face(ndim,nfc,mesh%ncell)
     integer  :: i,f,nid,nfid
 
+    ! apply boundary conditions
+    call apply_velocity_bcs (velocity_cc, gradP_dynamic_cc, gradP_face, velocity_bc, fluidRho, dt, &
+        is_pure_immobile, gmesh)
+    call apply_pressure_bcs (fluxing_velocity, gradP_face, pressure_bc, dP, rho_face, fluidRho, dt, &
+        is_pure_immobile, gmesh)
+
+    ! update interior face values and cell centered values
     do i = 1,mesh%ncell
       do f = 1,nfc
         nid  = gmesh%cneighbor(f,i) ! neighbor cell id
+        if (nid < 1) cycle ! skip boundary faces
 
-        ! Void cells don't have physical (nor solenoidal) Fluxing_Velocity's
-        ! Set Fluxing_Velocity on faces that adjoin 'real' fluid cells to the 
-        ! corresponding velocity on the other side of the face (corrected for direction)
-        if (fluidRho(i)==0.0_r8 .and. nid > 0) then
-          nfid = gmesh%fneighbor(f,i) ! neighbor's local id for face f
-          if (fluidRho(nid) > 0.0_r8) fluxing_velocity(f,i) = -fluxing_velocity(nfid,nid)
-        end if
-
-        ! correct the fluxing velocities with grad(dP)?
-        if (solid_face(mesh%cface(f,i))) then
-          fluxing_velocity(f,i) = 0.0_r8 ! TODO: can skip this? done already?
-        else if (rho_face(f,i) > 0.0_r8 .and. nid > 0) then ! TODO: confirm only done on interior faces
+        ! correct the fluxing velocities with grad(dP)
+        if (rho_face(f,i) > 0.0_r8 .and. .not.solid_face(mesh%cface(f,i))) then
           grad_dP = face_gradient (dP([i, nid]), gmesh%xc(:,[i, nid]))
           fluxing_velocity(f,i) = fluxing_velocity(f,i) &
               - dt/rho_face(f,i) * dot_product(grad_dP, gmesh%outnorm(:,f,i))
         end if
-        
-        ! calculate the pressure (not dynamic) gradient on the face
-        if (nid > 0) then
-          gradP_face(:,f) = face_gradient (pressure_cc([i, nid]), gmesh%xc(:,[i, nid]))
-        else
-          gradP_face(:,f) = 0.0_r8
-        end if
-      end do
 
-      ! only update the below quantities after
-      if (any(gmesh%cneighbor(:,i)<1)) cycle
+        ! calculate the pressure (not dynamic) gradient on the face
+        gradP_face(:,f,i) = face_gradient (pressure_cc([i, nid]), gmesh%xc(:,[i, nid]))
+      end do
 
       ! calculate new pressure gradient
       gradP_dynamic_cc_n = gradP_dynamic_cc(:,i)
-      gradP_dynamic_cc(:,i) = calc_gradP_dynamic_cc (gradP_face, rho_face(:,i), fluidRho(i), &
-          mesh%area(mesh%cface(:,i)), gmesh%outnorm(:,:,i), &
-          solid_face(mesh%cface(:,i)))
+      gradP_dynamic_cc(:,i) = calc_gradP_dynamic_cc (gradP_face(:,:,i), rho_face(:,i), fluidRho(i), &
+          mesh%area(mesh%cface(:,i)), gmesh%outnorm(:,:,i), solid_face(mesh%cface(:,i)))
 
       ! correct cell centered velocities
       if (fluidRho(i) == 0.0_r8 .or. is_pure_immobile(i)) then
@@ -476,26 +451,37 @@ contains
       end if
     end do
 
-    ! apply boundary conditions
-    call apply_velocity_bcs (velocity_cc, gradP_dynamic_cc, velocity_bc, fluidRho, dt, &
-        is_pure_immobile, gmesh)
-    call apply_pressure_bcs (velocity_cc, gradP_dynamic_cc, pressure_bc, fluidRho, dt, &
-        is_pure_immobile, gmesh)
     
+    ! Void cells don't have physical (nor solenoidal) Fluxing_Velocity's
+    ! Set Fluxing_Velocity on faces that adjoin 'real' fluid cells to the 
+    ! corresponding velocity on the other side of the face (corrected for direction)
+    do i = 1,mesh%ncell
+      do f = 1,nfc
+        nid  = gmesh%cneighbor(f,i) ! neighbor cell id
+        if (nid < 1) cycle ! skip boundary faces
+
+        if (fluidRho(i)==0.0_r8) then
+          nfid = gmesh%fneighbor(f,i) ! neighbor's local id for face f
+          if (fluidRho(nid) > 0.0_r8) fluxing_velocity(f,i) = -fluxing_velocity(nfid,nid)
+        end if
+      end do
+    end do
+
   contains
     
-    subroutine apply_pressure_bcs (velocity_cc, gradP_dynamic_cc, pressure_bc, fluidRho, dt, &
-        is_pure_immobile, gmesh)
+    subroutine apply_pressure_bcs (fluxing_velocity, gradP_face, pressure_bc, dP, rho_face, &
+        fluidRho, dt, is_pure_immobile, gmesh)
 
-      real(r8),          intent(inout) :: velocity_cc(:,:), gradP_dynamic_cc(:,:)
+      real(r8),          intent(inout) :: fluxing_velocity(:,:), gradP_face(:,:,:)
       class(bndry_func), intent(in)    :: pressure_bc
-      real(r8),          intent(in)    :: fluidRho(:), dt
+      real(r8),          intent(in)    :: dP(:), rho_face(:,:), fluidRho(:), dt
       logical,           intent(in)    :: is_pure_immobile(:)
       type(mesh_geom),   intent(in)    :: gmesh
 
-      real(r8) :: pressure_bc_value, gradP_dynamic_cc_n(ndim)
+      real(r8) :: pressure_bc_value
       integer  :: bndry_f, fid, i, f, if
 
+      ! update values on boundary faces
       do bndry_f = 1,size(pressure_bc%index)
         fid = pressure_bc%index(bndry_f)
         pressure_bc_value = pressure_bc%value(bndry_f)
@@ -504,34 +490,22 @@ contains
         f = gmesh%flid(1,fid)  ! local id of the face
 
         ! calculate the dynamic pressure gradient for this cell
-        gradP_face(:,f) = face_gradient ([pressure_cc(i),pressure_bc_value], &
+        gradP_face(:,f,i) = face_gradient ([pressure_cc(i),pressure_bc_value], &
             reshape([gmesh%xc(:,i),gmesh%fc(:,fid)], [ndim,2]))
-        
-        do if = 1,nfc
-          if (if /= f) then
-            nid  = gmesh%cneighbor(f,i) ! neighbor cell id
-            gradP_face(:,f) = face_gradient (pressure_cc([i, nid]), gmesh%xc(:,[i, nid]))
-          end if
-        end do
 
-        gradP_dynamic_cc_n = gradP_dynamic_cc(:,i)
-        gradP_dynamic_cc(:,i) = calc_gradP_dynamic_cc (gradP_face, rho_face(:,i), fluidRho(i), &
-            mesh%area(mesh%cface(:,i)), gmesh%outnorm(:,:,i), solid_face(mesh%cface(:,i)))
-
-        ! correct cell centered velocities
-        if (fluidRho(i) == 0.0_r8 .or. is_pure_immobile(i)) then
-          velocity_cc(:,i) = 0.0_r8
-        else
-          velocity_cc(:,i) = velocity_cc(:,i) - dt*(gradP_dynamic_cc(:,i) - gradP_dynamic_cc_n)
-        end if
+        ! update the fluxing velocity
+        if (rho_face(f,i) > 0.0_r8 .and. .not.solid_face(fid)) &
+            fluxing_velocity(f,i) = fluxing_velocity(f,i) - dt/rho_face(f,i) * dot_product(&
+            face_gradient ([dP(i), 0.0_r8], reshape([gmesh%xc(:,i),gmesh%fc(:,fid)], [ndim,2])), &
+            gmesh%outnorm(:,f,i))
       end do
 
     end subroutine apply_pressure_bcs
 
-    subroutine apply_velocity_bcs (velocity_cc, gradP_dynamic_cc, velocity_bc, fluidRho, dt, &
-        is_pure_immobile, gmesh)
+    subroutine apply_velocity_bcs (velocity_cc, gradP_dynamic_cc, gradP_face, velocity_bc, &
+        fluidRho, dt, is_pure_immobile, gmesh)
 
-      real(r8),          intent(inout) :: velocity_cc(:,:), gradP_dynamic_cc(:,:)
+      real(r8),          intent(inout) :: velocity_cc(:,:), gradP_dynamic_cc(:,:), gradP_face(:,:,:)
       class(bndry_func), intent(in)    :: velocity_bc
       real(r8),          intent(in)    :: fluidRho(:), dt
       logical,           intent(in)    :: is_pure_immobile(:)
@@ -547,26 +521,8 @@ contains
         i = gmesh%fcell(1,fid) ! id of cell attached to this face
         f = gmesh%flid(1,fid)  ! local id of the face
 
-        ! calculate the dynamic pressure gradient for this cell
         ! pressure gradient on this face is forced to zero
-        gradP_face(:,f) = 0.0_r8
-        do if = 1,nfc
-          if (if /= f) then
-            nid  = gmesh%cneighbor(f,i) ! neighbor cell id
-            gradP_face(:,f) = face_gradient (pressure_cc([i, nid]), gmesh%xc(:,[i, nid]))
-          end if
-        end do
-
-        gradP_dynamic_cc_n = gradP_dynamic_cc(:,i)
-        gradP_dynamic_cc(:,i) = calc_gradP_dynamic_cc (gradP_face, rho_face(:,i), fluidRho(i), &
-            mesh%area(mesh%cface(:,i)), gmesh%outnorm(:,:,i), solid_face(mesh%cface(:,i)))
-        
-        ! correct cell centered velocities
-        if (fluidRho(i) == 0.0_r8 .or. is_pure_immobile(i)) then
-          velocity_cc(:,i) = 0.0_r8
-        else
-          velocity_cc(:,i) = velocity_cc(:,i) - dt*(gradP_dynamic_cc(:,i) - gradP_dynamic_cc_n)
-        end if
+        gradP_face(:,f,i) = 0.0_r8
       end do
 
     end subroutine apply_velocity_bcs
