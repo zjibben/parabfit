@@ -252,7 +252,8 @@ contains
         this%velocity_cc = 0.0_r8
       end if
     end if
-    
+
+    write(*,*) 'timestep',dt
     write(*,'(a,4es14.4)') 'maxvel', maxval(sum(this%velocity_cc**2,dim=1)), this%velocity_cc(:,maxloc(sum(this%velocity_cc**2,dim=1)))
     write(*,*) 'maxfvel', maxval(this%fluxing_velocity)
     this%t = t+dt
@@ -313,8 +314,9 @@ contains
     
     ! a solid face is one where either connected cell is pure immobile
     do f = 1,this%mesh%nface
-      ! TODO: modify behavior at boundaries, where there is no neighboring cell
-      solid_face(f) = any(is_pure_immobile(this%gmesh%fcell(:,f)))
+      solid_face(f) = is_pure_immobile(this%gmesh%fcell(1,f))
+      if (this%gmesh%fcell(2,f) > 0) &
+          solid_face(f) = solid_face(f) .or. is_pure_immobile(this%gmesh%fcell(2,f))
     end do
     
     ! with some way to grab the local face id of a face given its global id,

@@ -122,7 +122,7 @@ contains
       
       call cell_lhs (lhs, mesh%volume(i), dt, rho_face(:,i), fluidRho(i), vof(:,i), &
           sound_speed, gmesh%fc(:,mesh%cface(:,i)), mesh, gmesh, i, is_pure_immobile(i), &
-          material_is_immobile)
+          material_is_immobile, solid_face(mesh%cface(:,i)))
       
       ! TODO: here add portions for different physics (e.g., surface tension)
     end do
@@ -157,7 +157,7 @@ contains
     !       gradp_dynamic_cc(:,i)
     !   !write(*,'(a,6f14.5)') 'fv', fluxing_velocity(:,i)
     ! end do
-    ! write(*,*) 'maxp', maxval(pressure_cc)
+    ! write(*,*) 'maxp', maxval(pressure_cc), maxval(dp), maxval(fluxing_velocity), maxval(rhs), any(solid_face)
     
   contains
 
@@ -302,11 +302,13 @@ contains
         cell_rhs = sum(fluxing_velocity*face_area, mask=.not.solid_face) / (dt*cell_vol)
       end if
 
-      ! if (cell_rhs>1.0_r8) then
+      ! if (cell_rhs>1e-4_r8) then
       !   write(*,'(a,2es14.5,L)') 'bigrhs', cell_rhs, fluidrho, is_pure_immobile
-      !   write(*,'(a,6f14.5)') 'rhsfv', fluxing_velocity
+      !   write(*,'(a,6es14.5)') 'rhsfv', fluxing_velocity
       !   write(*,'(a,6f14.5)') 'rhsfa', face_area
       !   write(*,'(a,2es14.5)') 'rhsdtvol', dt, cell_vol
+      !   write(*,*) solid_face
+      !   write(*,*) sum(fluxing_velocity*face_area, mask=.not.solid_face)
       !   write(*,*)
       ! end if
 
@@ -314,7 +316,7 @@ contains
 
     ! this calculates a row of the left hand matrix of the pressure poisson system
     subroutine cell_lhs (lhs, cell_vol, dt, rho_face, fluidRho, vof, sound_speed, &
-        xf, mesh, gmesh, i, is_pure_immobile, material_is_immobile)
+        xf, mesh, gmesh, i, is_pure_immobile, material_is_immobile, solid_face)
 
       type(csr_matrix), intent(inout) :: lhs
       real(r8),         intent(in)    :: cell_vol, dt, fluidRho, vof(:), sound_speed(:), &
@@ -322,7 +324,7 @@ contains
       type(unstr_mesh), intent(in)    :: mesh
       type(mesh_geom),  intent(in)    :: gmesh
       integer,          intent(in)    :: i ! local cell id (matrix row)
-      logical,          intent(in)    :: is_pure_immobile, material_is_immobile(:)
+      logical,          intent(in)    :: is_pure_immobile, material_is_immobile(:), solid_face(:)
 
       integer  :: f,i_ngbr
       real(r8) :: dx(3), tmp, face_area_over_rho
@@ -339,6 +341,7 @@ contains
       ! TODO: modify for nonorthogonal meshes
       do f = 1,nfc
         i_ngbr = gmesh%cneighbor(f,i)
+        if (solid_face(f)) cycle
         ! if (i_ngbr < 1) cycle ! any boundary conditions are applied to the rhs
         
         ! dx  = gmesh%xc(:,i) - gmesh%xc(:,i_ngbr)
@@ -527,10 +530,11 @@ contains
     ! the average of face centered dynamic pressure gradients,
     ! weighted by the face area and orientation
     ! 
-    ! Note: Truchas's original implementation skips solid and boundary faces.
-    !       Since those are already set to zero by the face gradient routine,
-    !       there is no need to explicitly skip them again here. However,
-    !       we still need to weight by only the cells which are allowed.
+    ! Note: * This actually calculates grad_P^d / rho
+    !       * Truchas's original implementation skips solid and boundary faces.
+    !         Since those are already set to zero by the face gradient routine,
+    !         there is no need to explicitly skip them again here. However,
+    !         we still need to weight by only the cells which are allowed.
     function calc_gradP_dynamic_cc (gradP_face, rho_face, fluidRho, face_area, outnorm, solid_face) &
         result(gradP_d)
 
@@ -538,7 +542,7 @@ contains
       logical,  intent(in) :: solid_face(:)
       real(r8) :: gradP_d(ndim)
 
-      integer :: f
+      integer :: f,n
 
       gradP_d = 0.0_r8
       if (fluidRho /= 0.0_r8) then
@@ -546,8 +550,10 @@ contains
           if (rho_face(f) > 0.0_r8 .and. .not.solid_face(f)) &
               gradP_d = gradP_d + gradP_face(:,f)/rho_face(f) * abs(face_area(f)*outnorm(:,f))
         end do
-        gradP_d = gradP_d / sum(abs(face_area)*sum(abs(outnorm), dim=1), &
-            mask=rho_face > 0.0_r8 .and. .not.solid_face)
+        do n = 1,ndim
+          gradP_d(n) = gradP_d(n) &
+              / sum(abs(face_area*outnorm(n,:)), mask=rho_face > 0.0_r8 .and. .not.solid_face)
+        end do
       end if
 
     end function calc_gradP_dynamic_cc
