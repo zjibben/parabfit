@@ -217,13 +217,11 @@ contains
     class(NS_solver), intent(inout) :: this
     real(r8),         intent(in)    :: dt, t
 
-    real(r8) :: fluidRho_n(this%mesh%ncell), fluidVof_n(this%mesh%ncell), rho(this%mesh%ncell), & !, Face_Density(nfc,this%mesh%ncell)
+    real(r8) :: fluidRho_n(this%mesh%ncell), fluidVof_n(this%mesh%ncell), rho(this%mesh%ncell), &
         velocity_cc_n(ndim,this%mesh%ncell), min_fluidRho
     logical  :: solid_face(this%mesh%nface), is_pure_immobile(this%mesh%ncell)
 
     this%t = t
-
-    !write(*,'(a,4es14.4)') 'maxvel1', maxval(sum(this%velocity_cc**2,dim=1)), this%velocity_cc(:,maxloc(sum(this%velocity_cc**2,dim=1)))
 
     ! check if we are using a prescribed velocity
     if (this%use_prescribed_velocity) then
@@ -242,7 +240,7 @@ contains
         ! WARNING: hardcoding inviscid flow for now
         call predictor (this%velocity_cc, this%gradP_dynamic_cc, dt, this%mprop%density, &
             this%volume_flux, this%fluidRho, fluidRho_n, this%fluidVof, fluidVof_n, velocity_cc_n, &
-            .true., this%mesh, this%gmesh)
+            this%fluxing_velocity, .true., this%mesh, this%gmesh)
         call projection (this%velocity_cc, this%fluxing_velocity, this%pressure_cc, this%gradP_dynamic_cc, &
             dt, this%fluidRho, fluidRho_n, this%fluidVof, this%vof, this%mprop%sound_speed, this%body_force, &
             solid_face, is_pure_immobile, this%mprop%is_immobile, min_fluidRho, &
@@ -253,9 +251,6 @@ contains
       end if
     end if
 
-    write(*,*) 'timestep',dt
-    write(*,'(a,4es14.4)') 'maxvel', maxval(sum(this%velocity_cc**2,dim=1)), this%velocity_cc(:,maxloc(sum(this%velocity_cc**2,dim=1)))
-    write(*,*) 'maxfvel', maxval(this%fluxing_velocity)
     this%t = t+dt
     
   end subroutine step

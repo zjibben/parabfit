@@ -245,7 +245,7 @@ contains
           maxdt)
 
       ! if the timestep is *almost* enough to finish this cycle, set it to that exact amount
-      ! this avoids timesteps like 1e-17
+      ! this avoids extremely small (near machine zero) timesteps
       if (isZero(abs(tlocal + flow_dt - dt))) flow_dt = dt - tlocal
       
       ! write(*,*) 'dts',CFL*minval(this%mesh%volume**(1.0_r8/3.0_r8))/maxval(this%ns_solver%fluxing_velocity), &
