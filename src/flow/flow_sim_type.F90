@@ -243,6 +243,7 @@ contains
           CFL*minval(this%mesh%volume**(1.0_r8/3.0_r8))/maxval(this%ns_solver%fluxing_velocity), &
           dt-tlocal, &
           maxdt)
+      !flow_dt = flow_dt**2 ! for viscosity
 
       ! if the timestep is *almost* enough to finish this cycle, set it to that exact amount
       ! this avoids extremely small (near machine zero) timesteps

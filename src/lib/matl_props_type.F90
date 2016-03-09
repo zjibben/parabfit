@@ -23,7 +23,7 @@ module matl_props_type
 
   type, public :: matl_props
     integer,  public :: nmat
-    real(r8), public, allocatable :: density(:), sound_speed(:)
+    real(r8), public, allocatable :: density(:), viscosity(:), sound_speed(:)
     logical,  public, allocatable :: is_immobile(:), is_void(:)
   contains
     procedure :: init
@@ -47,6 +47,9 @@ contains
 
     !! get material densities
     call params%get ('densities', this%density, stat=stat, errmsg=errmsg)
+    if (stat /= 0) call LS_fatal (context//errmsg)
+
+    call params%get ('viscosities', this%viscosity, stat=stat, errmsg=errmsg)
     if (stat /= 0) call LS_fatal (context//errmsg)
 
     this%nmat = size(this%density)

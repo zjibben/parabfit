@@ -47,13 +47,15 @@ module NS_solver_type
 
     !! Pending/current state
     real(r8) :: t, dt
-    type(parameter_list), pointer :: projection_solver_params => null()
+    type(parameter_list), pointer :: projection_solver_params => null(), &
+        prediction_solver_params => null()
     
     real(r8), public, allocatable :: velocity_cc(:,:), pressure_cc(:), fluxing_velocity(:,:), &
         fluidRho(:)
-    real(r8), allocatable :: gradP_dynamic_cc(:,:), fluidVof(:), body_force(:)
+    real(r8), allocatable :: gradP_dynamic_over_rho_cc(:,:), fluidVof(:), body_force(:)
+    real(r8) :: viscous_implicitness
     class(bndry_func), allocatable :: pressure_bc, velocity_bc
-    logical         :: boussinesq_approximation
+    logical         :: boussinesq_approximation, inviscid
     logical, public :: use_prescribed_velocity
     integer, public :: prescribed_velocity_case
   contains
@@ -88,7 +90,7 @@ contains
     this%gmesh => gmesh
     allocate(this%velocity_cc(ndim,this%mesh%ncell), this%pressure_cc(this%mesh%ncell), &
         this%fluidRho(this%mesh%ncell), this%fluidVof(this%mesh%ncell), &
-        this%gradP_dynamic_cc(ndim,this%mesh%ncell), this%fluxing_velocity(nfc,this%mesh%ncell))
+        this%gradP_dynamic_over_rho_cc(ndim,this%mesh%ncell), this%fluxing_velocity(nfc,this%mesh%ncell))
 
     context = 'processing ' // params%name() // ': '
 
@@ -104,7 +106,7 @@ contains
     this%boussinesq_approximation = .false.
 
     !! check for a body force
-    if (params%is_scalar('body-force')) then
+    if (params%is_vector('body-force')) then
       call params%get ('body-force', this%body_force, stat=stat, errmsg=errmsg)
       if (stat /= 0) call LS_fatal (context//errmsg)
     else
@@ -115,6 +117,19 @@ contains
     !! store the projection solver's hypre parameters
     if (params%is_sublist('projection-solver')) then
       this%projection_solver_params => params%sublist('projection-solver')
+    else
+      call LS_fatal (context//'missing "projection-solver" sublist parameter')
+    end if
+
+    if (params%is_sublist('prediction-solver')) then
+      this%prediction_solver_params => params%sublist('prediction-solver')
+      if (this%prediction_solver_params%is_scalar('viscous-implicitness')) then
+        call this%prediction_solver_params%get ('viscous-implicitness', this%viscous_implicitness, &
+            stat=stat, errmsg=errmsg)
+        if (stat /= 0) call LS_fatal (context//errmsg)
+      else
+        this%viscous_implicitness = 0.0_r8
+      end if
     else
       call LS_fatal (context//'missing "projection-solver" sublist parameter')
     end if
@@ -147,6 +162,7 @@ contains
     type(matl_props), target        :: mprop
 
     this%mprop => mprop
+    this%inviscid = all(mprop%viscosity == 0.0_r8)
 
   end subroutine init_mprop
 
@@ -173,10 +189,10 @@ contains
     write(*,*) 'WARNING: hard-coded initial condition for single-phase channel flow'
     do i = 1,this%mesh%ncell
       this%pressure_cc(i) = 1.0_r8 - this%gmesh%xc(2,i) / 4.0_r8
-      this%gradP_dynamic_cc(:,i) = [0.0_r8, -0.25_r8, 0.0_r8]
+      this%gradP_dynamic_over_rho_cc(:,i) = [0.0_r8, -0.25_r8, 0.0_r8] / 1000.0_r8
       
       ! this%pressure_cc(i) = 0.0_r8
-      ! this%gradP_dynamic_cc(:,i) = 0.0_r8
+      ! this%gradP_dynamic_over_rho_cc(:,i) = 0.0_r8
       this%fluidRho(i) = 1.0_r8
       this%fluidVof(i) = 1.0_r8
     end do
@@ -238,10 +254,12 @@ contains
       ! step the incompressible Navier-Stokes equations
       if (this%fluid_to_move(is_pure_immobile, solid_face)) then
         ! WARNING: hardcoding inviscid flow for now
-        call predictor (this%velocity_cc, this%gradP_dynamic_cc, dt, this%mprop%density, &
-            this%volume_flux, this%fluidRho, fluidRho_n, this%fluidVof, fluidVof_n, velocity_cc_n, &
-            this%fluxing_velocity, .true., this%mesh, this%gmesh)
-        call projection (this%velocity_cc, this%fluxing_velocity, this%pressure_cc, this%gradP_dynamic_cc, &
+        call predictor (this%velocity_cc, this%gradP_dynamic_over_rho_cc, dt, &
+            this%volume_flux, this%fluidRho, fluidRho_n, this%vof, this%fluidVof, fluidVof_n, velocity_cc_n, &
+            this%fluxing_velocity, this%viscous_implicitness, this%mprop, this%inviscid, solid_face, &
+            is_pure_immobile, this%velocity_bc, this%pressure_bc, this%mesh, this%gmesh, &
+            this%prediction_solver_params)
+        call projection (this%velocity_cc, this%fluxing_velocity, this%pressure_cc, this%gradP_dynamic_over_rho_cc, &
             dt, this%fluidRho, fluidRho_n, this%fluidVof, this%vof, this%mprop%sound_speed, this%body_force, &
             solid_face, is_pure_immobile, this%mprop%is_immobile, min_fluidRho, &
             this%velocity_bc, this%pressure_bc, this%mesh, this%gmesh, this%projection_solver_params)
@@ -253,6 +271,9 @@ contains
 
     this%t = t+dt
     
+    !write(*,*) 'maxfvel', maxval(this%fluxing_velocity)
+    write(*,*) 'minmaxvel', minval(this%velocity_cc(2,:)), maxval(this%velocity_cc(2,:))
+
   end subroutine step
 
   ! calculate fluid properties such as various density quantities,

@@ -141,11 +141,19 @@ contains
     class(vof_solver),    intent(inout) :: this
     type(parameter_list), intent(in)    :: plist
 
+    ! DEBUGGING ############
+    integer :: m
+    ! ######################
+
     !! Initialize the Vof
     call vof_initialize (this%mesh, plist, this%vof, this%matl_id, this%nmat)
 
-    write(*,*) sum(this%vof(1,:)*this%mesh%volume(:))
-    write(*,*) sum(this%vof(2,:)*this%mesh%volume(:))
+    
+    ! DEBUGGING ############
+    do m = 1,size(this%vof, dim=1)
+      write(*,*) sum(this%vof(m,:)*this%mesh%volume(:))
+    end do
+    ! ######################
 
     this%vof0 = this%vof
 

@@ -31,7 +31,8 @@ contains
     use parameter_list_type
     use bndry_func_class
 
-    real(r8),          intent(inout) :: velocity_cc(:,:), pressure_cc(:), gradP_dynamic_over_rho_cc(:,:)
+    real(r8),          intent(inout) :: velocity_cc(:,:), pressure_cc(:), &
+        gradP_dynamic_over_rho_cc(:,:)
     real(r8),          intent(out)   :: fluxing_velocity(:,:)
     real(r8),          intent(in)    :: dt, fluidRho(:), fluidRho_n(:), fluidVof(:), vof(:,:), &
         sound_speed(:), body_force(:), min_fluid_rho
@@ -47,9 +48,9 @@ contains
         gradP_dynamic_over_rho_cc, fluidRho, fluidRho_n, fluidVof, vof, sound_speed, body_force, &
         min_face_fraction, min_fluid_rho, solid_face, is_pure_immobile, material_is_immobile, dt, &
         velocity_bc, pressure_bc, mesh, gmesh, params)
-    call velocity_projection (velocity_cc, pressure_cc, fluxing_velocity, gradP_dynamic_over_rho_cc, &
-        fluidRho, dP, rho_face, dt, solid_face, is_pure_immobile, velocity_bc, pressure_bc, &
-        mesh, gmesh)
+    call velocity_projection (velocity_cc, pressure_cc, fluxing_velocity, &
+        gradP_dynamic_over_rho_cc, fluidRho, dP, rho_face, dt, solid_face, is_pure_immobile, &
+        velocity_bc, pressure_bc, mesh, gmesh)
 
   end subroutine projection
 
@@ -68,9 +69,9 @@ contains
 
     real(r8),          intent(inout) :: pressure_cc(:)
     real(r8),          intent(out)   :: fluxing_velocity(:,:), dP(:), rho_face(:,:)
-    real(r8),          intent(in)    :: dt, velocity_cc(:,:), gradP_dynamic_over_rho_cc(:,:), fluidRho(:), &
-        fluidRho_n(:), fluidVof(:), vof(:,:), sound_speed(:), body_force(:), min_face_fraction, &
-        min_fluid_rho
+    real(r8),          intent(in)    :: dt, velocity_cc(:,:), gradP_dynamic_over_rho_cc(:,:), &
+        fluidRho(:), fluidRho_n(:), fluidVof(:), vof(:,:), sound_speed(:), body_force(:), &
+        min_face_fraction, min_fluid_rho
     logical,           intent(in)    :: solid_face(:), is_pure_immobile(:), material_is_immobile(:)
     class(bndry_func), intent(in)    :: velocity_bc, pressure_bc
     type(unstr_mesh),  intent(in)    :: mesh
@@ -151,13 +152,13 @@ contains
 
       use bndry_func_class
 
-      real(r8),         intent(inout) :: fluxing_velocity(:,:), rho_face(:,:), rhs(:)
+      real(r8),          intent(inout) :: fluxing_velocity(:,:), rho_face(:,:), rhs(:)
       class(bndry_func), intent(in)    :: velocity_bc
-      real(r8),         intent(in)    :: pressure_cc(:), fluidRho(:), min_face_fraction, &
+      real(r8),          intent(in)    :: pressure_cc(:), fluidRho(:), min_face_fraction, &
           min_fluid_rho, dt
-      logical,          intent(in)    :: solid_face(:), is_pure_immobile(:)
-      type(unstr_mesh), intent(in)    :: mesh
-      type(mesh_geom),  intent(in)    :: gmesh
+      logical,           intent(in)    :: solid_face(:), is_pure_immobile(:)
+      type(unstr_mesh),  intent(in)    :: mesh
+      type(mesh_geom),   intent(in)    :: gmesh
 
       real(r8) :: fluxing_velocity_bc
       integer  :: bndry_f, fid, i, f
@@ -178,16 +179,17 @@ contains
     end subroutine apply_velocity_bcs
 
     subroutine apply_pressure_bcs (fluxing_velocity, rho_face, rhs, pressure_bc, &
-        velocity_cc, pressure_cc, gradP_dynamic_over_rho_cc, fluidRho, min_face_fraction, min_fluid_rho, &
-        dt, solid_face, is_pure_immobile, mesh, gmesh)
+        velocity_cc, pressure_cc, gradP_dynamic_over_rho_cc, fluidRho, min_face_fraction, &
+        min_fluid_rho, dt, solid_face, is_pure_immobile, mesh, gmesh)
 
       use body_force_module, only: calc_gravityhead_bndry
       use bndry_func_class
+      use differential_operators, only: faceGradient
 
       real(r8),          intent(inout) :: fluxing_velocity(:,:), rho_face(:,:), rhs(:)
       class(bndry_func), intent(in)    :: pressure_bc
-      real(r8),          intent(in)    :: velocity_cc(:,:), pressure_cc(:), gradP_dynamic_over_rho_cc(:,:), &
-          fluidRho(:), min_face_fraction, min_fluid_rho, dt
+      real(r8),          intent(in)    :: velocity_cc(:,:), pressure_cc(:), &
+          gradP_dynamic_over_rho_cc(:,:), fluidRho(:), min_face_fraction, min_fluid_rho, dt
       logical,           intent(in)    :: solid_face(:), is_pure_immobile(:)
       type(unstr_mesh),  intent(in)    :: mesh
       type(mesh_geom),   intent(in)    :: gmesh
@@ -215,10 +217,11 @@ contains
           fluxing_velocity(f,i) = dot_product(gmesh%outnorm(:,f,i), &
               velocity_cc(:,i) + dt*gradP_dynamic_over_rho_cc(:,i))
           if (rho_face(f,i) /= 0.0_r8) then
-            gradP_dynamic_face = face_gradient (&
+            gradP_dynamic_face = faceGradient (&
                 [pressure_cc(i), pressure_bc_value] + calc_gravityhead_bndry (fluidRho(i), &
                 velocity_cc(:,i), gmesh%xc(:,i), gmesh%fc(:,fid), body_force), &
-                reshape([gmesh%xc(:,i), gmesh%fc(:,fid)], [ndim,2])) ! TODO: confirm this is correct/make it prettier
+                ! TODO: confirm this is correct/make it prettier
+                reshape([gmesh%xc(:,i), gmesh%fc(:,fid)], [ndim,2])) 
 
             fluxing_velocity(f,i) = fluxing_velocity(f,i) &
                 - dt/rho_face(f,i) * dot_product(gradP_dynamic_face, gmesh%outnorm(:,f,i))
@@ -288,9 +291,7 @@ contains
 
         ! note that the fluxing velocity should be already set to zero on solid faces,
         ! so we should be fine not masking by the solid_face
-        cell_rhs = sum(fluxing_velocity*face_area, mask=.not.solid_face)
-        !cell_rhs = merge(0.0_r8, cell_rhs, isZero(cell_rhs))
-        cell_rhs = cell_rhs / (dt*cell_vol)
+        cell_rhs = sum(fluxing_velocity*face_area, mask=.not.solid_face) / (dt*cell_vol)
       end if
 
     end function cell_rhs
@@ -314,7 +315,7 @@ contains
 
       ! void and solid cells
       if (fluidRho == 0.0_r8 .or. is_pure_immobile) then
-        call lhs%increment(i,i, 1.0_r8/(min_face_fraction*min_fluid_rho*cell_vol**(2.0_r8/3.0_r8)))
+        call lhs%increment (i,i, 1.0_r8/(min_face_fraction*min_fluid_rho*cell_vol**(2.0_r8/3.0_r8)))
         return
       end if
       
@@ -369,13 +370,14 @@ contains
   end subroutine pressure_poisson
 
   ! update the cell centered and fluxing velocities
-  subroutine velocity_projection (velocity_cc, pressure_cc, fluxing_velocity, gradP_dynamic_over_rho_cc, &
-      fluidRho, dP, rho_face, dt, solid_face, is_pure_immobile, velocity_bc, pressure_bc, &
-      mesh, gmesh)
+  subroutine velocity_projection (velocity_cc, pressure_cc, fluxing_velocity, &
+      gradP_dynamic_over_rho_cc, fluidRho, dP, rho_face, dt, solid_face, is_pure_immobile, &
+      velocity_bc, pressure_bc, mesh, gmesh)
     
     use unstr_mesh_type
     use mesh_geom_type
     use bndry_func_class
+    use differential_operators, only: faceGradient
     
     real(r8),          intent(inout) :: velocity_cc(:,:), pressure_cc(:), fluxing_velocity(:,:), &
         gradP_dynamic_over_rho_cc(:,:)
@@ -402,25 +404,27 @@ contains
         
         ! correct the fluxing velocities with grad(dP)
         if (rho_face(f,i) > 0.0_r8 .and. .not.solid_face(mesh%cface(f,i))) then
-          grad_dP = face_gradient (dP([i, nid]), gmesh%xc(:,[i, nid]))
+          grad_dP = faceGradient (dP([i, nid]), gmesh%xc(:,[i, nid]))
           fluxing_velocity(f,i) = fluxing_velocity(f,i) &
               - dt/rho_face(f,i) * dot_product(grad_dP, gmesh%outnorm(:,f,i))
         end if
 
         ! calculate the pressure (not dynamic) gradient on the face
-        gradP_face(:,f,i) = face_gradient (pressure_cc([i, nid]), gmesh%xc(:,[i, nid]))
+        gradP_face(:,f,i) = faceGradient (pressure_cc([i, nid]), gmesh%xc(:,[i, nid]))
       end do
 
       ! calculate new pressure gradient
       gradP_dynamic_over_rho_cc_n = gradP_dynamic_over_rho_cc(:,i)
-      gradP_dynamic_over_rho_cc(:,i) = calc_gradP_dynamic_over_rho_cc (gradP_face(:,:,i), rho_face(:,i), fluidRho(i), &
-          mesh%area(mesh%cface(:,i)), gmesh%outnorm(:,:,i), solid_face(mesh%cface(:,i)))
+      gradP_dynamic_over_rho_cc(:,i) = calc_gradP_dynamic_over_rho_cc (gradP_face(:,:,i), &
+          rho_face(:,i), fluidRho(i), mesh%area(mesh%cface(:,i)), gmesh%outnorm(:,:,i), &
+          solid_face(mesh%cface(:,i)))
 
       ! correct cell centered velocities
       if (fluidRho(i) == 0.0_r8 .or. is_pure_immobile(i)) then
         velocity_cc(:,i) = 0.0_r8
       else
-        velocity_cc(:,i) = velocity_cc(:,i) - dt*(gradP_dynamic_over_rho_cc(:,i) - gradP_dynamic_over_rho_cc_n)
+        velocity_cc(:,i) = velocity_cc(:,i) &
+            - dt*(gradP_dynamic_over_rho_cc(:,i) - gradP_dynamic_over_rho_cc_n)
       end if
     end do
 
@@ -443,6 +447,8 @@ contains
     subroutine apply_pressure_bcs (fluxing_velocity, gradP_face, pressure_bc, dP, rho_face, &
         fluidRho, dt, is_pure_immobile, gmesh)
 
+      use differential_operators, only: faceGradient
+
       real(r8),          intent(inout) :: fluxing_velocity(:,:), gradP_face(:,:,:)
       class(bndry_func), intent(in)    :: pressure_bc
       real(r8),          intent(in)    :: dP(:), rho_face(:,:), fluidRho(:), dt
@@ -461,20 +467,20 @@ contains
         f = gmesh%flid(1,fid)  ! local id of the face
 
         ! calculate the dynamic pressure gradient for this cell
-        gradP_face(:,f,i) = face_gradient ([pressure_cc(i),pressure_bc_value], &
+        gradP_face(:,f,i) = faceGradient ([pressure_cc(i),pressure_bc_value], &
             reshape([gmesh%xc(:,i),gmesh%fc(:,fid)], [ndim,2]))
 
         ! update the fluxing velocity
         if (rho_face(f,i) > 0.0_r8 .and. .not.solid_face(fid)) &
             fluxing_velocity(f,i) = fluxing_velocity(f,i) - dt/rho_face(f,i) * dot_product(&
-            face_gradient ([dP(i), 0.0_r8], reshape([gmesh%xc(:,i),gmesh%fc(:,fid)], [ndim,2])), &
+            faceGradient ([dP(i), 0.0_r8], reshape([gmesh%xc(:,i),gmesh%fc(:,fid)], [ndim,2])), &
             gmesh%outnorm(:,f,i))
       end do
 
     end subroutine apply_pressure_bcs
 
-    subroutine apply_velocity_bcs (gradP_dynamic_over_rho_cc, gradP_face, velocity_bc, fluidRho, dt, &
-        is_pure_immobile, gmesh)
+    subroutine apply_velocity_bcs (gradP_dynamic_over_rho_cc, gradP_face, velocity_bc, fluidRho, &
+        dt, is_pure_immobile, gmesh)
 
       real(r8),          intent(inout) :: gradP_dynamic_over_rho_cc(:,:), gradP_face(:,:,:)
       class(bndry_func), intent(in)    :: velocity_bc
@@ -537,6 +543,8 @@ contains
   function fluidDensityFace (cell_vol, fluidVof, fluidRho, min_face_fraction, min_fluid_rho, &
       degenerate_face, solid_face, neighbor_exists) result(rho_face)
 
+    use differential_operators, only: faceGradient
+    
     real(r8), intent(in) :: cell_vol(:), fluidVof(:), fluidRho(:), min_face_fraction, min_fluid_rho
     logical,  intent(in) :: degenerate_face, solid_face, neighbor_exists
     real(r8)             :: rho_face
@@ -557,28 +565,16 @@ contains
 
   end function fluidDensityFace
 
-  ! currently, this calculates the gradient of a cell-centered quantity
-  ! on the face for orthogonal meshes
-  ! example: dynamic pressure face gradients
-  function face_gradient (y, xc)
-
-    real(r8), intent(in) :: y(:), xc(:,:)
-    real(r8)             :: face_gradient(ndim)
-
-    real(r8)             :: dx(ndim)
-
-    dx = xc(:,1) - xc(:,2)
-    face_gradient = (y(1) - y(2)) * dx / sum(dx**2)
-
-  end function face_gradient
-
   real(r8) function calc_fluxing_velocity (dt, rho_face, fluidRho, fluidRho_n, velocity_cc, &
-      pressure_cc, gradP_dynamic_over_rho_cc, body_force, solid_face, outnorm, xc, xf, neighbor_exists)
+      pressure_cc, gradP_dynamic_over_rho_cc, body_force, solid_face, &
+      outnorm, xc, xf, neighbor_exists)
 
-    use body_force_module, only: calc_gravityhead
+    use body_force_module,      only: calc_gravityhead
+    use differential_operators, only: faceGradient
 
     real(r8), intent(in) :: dt, rho_face, velocity_cc(:,:), pressure_cc(:), &
-        fluidRho(:), fluidRho_n(:), gradP_dynamic_over_rho_cc(:,:), outnorm(:), xc(:,:), xf(:), body_force(:)
+        fluidRho(:), fluidRho_n(:), gradP_dynamic_over_rho_cc(:,:), outnorm(:), xc(:,:), xf(:), &
+        body_force(:)
     logical,  intent(in) :: solid_face, neighbor_exists
 
     real(r8) :: gradP_dynamic_face(ndim), gh(2)
@@ -594,7 +590,8 @@ contains
       if (.not.solid_face .and. rho_face /= 0.0_r8) then
         gh = calc_gravityhead (fluidRho, velocity_cc, xc, xf, body_force, neighbor_exists)
 
-        gradP_dynamic_face = face_gradient (pressure_cc + gh, xc) ! TODO: make sure this function is only called for interior cells (look at xf)
+        ! TODO: make sure this function is only called for interior cells (look at xf)
+        gradP_dynamic_face = faceGradient (pressure_cc + gh, xc)
         calc_fluxing_velocity = calc_fluxing_velocity &
             - dt/rho_face * dot_product(gradP_dynamic_face, outnorm)
       end if

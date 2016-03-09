@@ -69,7 +69,8 @@ set(Pececillo_SOURCE_FILES
     idaesol_type.F90
     nka_type.F90
 
-# Flow Modules
+ # Flow Modules
+    differential_operators_module.F90
     matl_props_type.F90
     prescribed_velocity_fields.F90
     velocity_to_faces_func.F90
