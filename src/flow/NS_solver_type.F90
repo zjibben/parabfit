@@ -243,8 +243,8 @@ contains
     if (this%use_prescribed_velocity) then
       call this%update_prescribed_velocity ()
     else
-      call this%pressure_bc%compute (this%t)
       call this%velocity_bc%compute (this%t)
+      call this%pressure_bc%compute (this%t)
 
       ! evaluate cell properties excluding immobile materials, and
       ! check that there are at least some flow equations to solve
@@ -272,7 +272,7 @@ contains
     this%t = t+dt
     
     !write(*,*) 'maxfvel', maxval(this%fluxing_velocity)
-    write(*,*) 'minmaxvel', minval(this%velocity_cc(2,:)), maxval(this%velocity_cc(2,:))
+    !write(*,*) 'minmaxvel', minval(this%velocity_cc(2,:)), maxval(this%velocity_cc(2,:))
 
   end subroutine step
 

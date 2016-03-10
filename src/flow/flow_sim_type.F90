@@ -241,6 +241,7 @@ contains
       ! TODO: pick a smarter time step size--this will cause problems for particularly long cells
       flow_dt = min( &
           CFL*minval(this%mesh%volume**(1.0_r8/3.0_r8))/maxval(this%ns_solver%fluxing_velocity), &
+          CFL*minval(this%mesh%volume**(1.0_r8/3.0_r8))**2 / maxval(this%mprop%viscosity), &
           dt-tlocal, &
           maxdt)
       !flow_dt = flow_dt**2 ! for viscosity
@@ -249,7 +250,8 @@ contains
       ! this avoids extremely small (near machine zero) timesteps
       if (isZero(abs(tlocal + flow_dt - dt))) flow_dt = dt - tlocal
       
-      ! write(*,*) 'dts',CFL*minval(this%mesh%volume**(1.0_r8/3.0_r8))/maxval(this%ns_solver%fluxing_velocity), &
+      ! write(*,'(a,4es14.4)') 'dts',flow_dt, &
+      !     CFL*minval(this%mesh%volume**(1.0_r8/3.0_r8))/maxval(this%ns_solver%fluxing_velocity), &
       !     dt-tlocal, &
       !     maxdt
 
@@ -264,6 +266,8 @@ contains
       iter = iter+1
     end do
     write(*,*) 'cumulative iterations: ',iter
+    write(*,*) 'dt', flow_dt
+    write(*,*) 'minmaxvel', minval(this%ns_solver%velocity_cc(2,:)), maxval(this%ns_solver%velocity_cc(2,:))
     
   end subroutine step
 
