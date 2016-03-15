@@ -21,8 +21,8 @@ contains
   !         is already accounting for the solid material.
   subroutine predictor (velocity_cc, gradP_dynamic_over_rho_cc, dt, volume_flux, &
       fluidRho, fluidRho_n, vof, fluidVof, fluidVof_n, velocity_cc_n, fluxing_velocity, &
-      viscous_implicitness, mprop, inviscid, solid_face, is_pure_immobile, velocity_bc, pressure_bc, mesh, gmesh, &
-      params)
+      viscous_implicitness, mprop, inviscid, solid_face, is_pure_immobile, velocity_bc, &
+      pressure_bc, mesh, gmesh, params)
 
     use unstr_mesh_type
     use mesh_geom_type
@@ -48,10 +48,6 @@ contains
     integer :: i, i_ngbr, f, stat
     type(csr_matrix) :: lhs
     type(hypre_hybrid) :: solver
-
-    ! DEBUGGING #################
-    real(r8) :: tmp(ndim)
-    ! ###########################
 
     grad_vel_face_bndry = 0.0_r8
     viscosity_face_bndry = 0.0_r8
@@ -115,37 +111,6 @@ contains
       ! final rhs part (here it is no longer dmomentum, but the new momentum value)
       cell_rhs = cell_rhs + fluidRho_n(i)*fluidVof_n(i)*velocity_cc_n(:,i)
 
-      ! if (cell_rhs(2) < 0.0_r8) then
-      !   tmp = 0.0_r8
-      !   do f = 1,nfc
-      !     mass_flux = sum(mprop%density*volume_flux(:,f,i))
-      !     ! upwind to determine which velocity to grab
-      !     if (mass_flux > 0.0_r8) then ! outflow
-      !       tmp = tmp - mass_flux*velocity_cc_n(:,i) / mesh%volume(i)
-      !     else ! inflow
-      !       i_ngbr = gmesh%cneighbor(f,i)
-      !       if (i_ngbr > 0) then ! not a boundary
-      !         tmp = tmp - mass_flux*velocity_cc_n(:,i_ngbr) / mesh%volume(i)
-      !       else
-      !         tmp = tmp &
-      !             - mass_flux*fluxing_velocity(f,i)*gmesh%outnorm(:,f,i) / mesh%volume(i)
-      !       end if
-      !     end if
-      !   end do
-
-
-      !   write(*,*) 'negative predictor'
-      !   write(*,*) i, cell_rhs(2)
-      !   write(*,*) 'convc', tmp
-      !   write(*,*) 'mom_n', fluidRho_n(i)*fluidVof_n(i)*velocity_cc_n(:,i)
-      !   write(*,*) 'press', -dt*fluidRho(i)*gradP_dynamic_over_rho_cc(:,i)
-      !   tmp = viscousExplicit (dt, viscous_implicitness, velocity_cc_n, grad_vel_face_bndry(:,:,mesh%cface(:,i)), &
-      !       viscosityFaces (mprop, vof, fluidVof, viscosity_face_bndry(mesh%cface(:,i)), solid_face(mesh%cface(:,i)), i, gmesh%cneighbor(:,i)), &
-      !       mesh%area(mesh%cface(:,i)), mesh%volume(i), i, gmesh)
-      !   write(*,*) 'visco', tmp
-      !   stop
-      ! end if
-      
       ! update the velocity explicitly if there is no need for the implicit solve
       ! note that updating velocity_cc inside this loop necessitates the use of
       ! the copy velocity_cc_n above when accessing neighbors
@@ -315,7 +280,8 @@ contains
     type(csr_matrix), intent(inout) :: lhs
     type(matl_props), intent(in)    :: mprop
     real(r8),         intent(in)    :: dt, viscous_implicitness, velocity_cc(:,:), vof(:,:), &
-        fluidVof(:), fluidRho, grad_vel_face_bndry(:,:,:), viscosity_face_bndry(:), face_area(:), cell_vol
+        fluidVof(:), fluidRho, grad_vel_face_bndry(:,:,:), viscosity_face_bndry(:), face_area(:), &
+        cell_vol
     logical,          intent(in)    :: solid_face(:), is_pure_immobile
     integer,          intent(in)    :: i, cface(:)
     type(mesh_geom),  intent(in)    :: gmesh
@@ -381,7 +347,8 @@ contains
 
   end function viscousExplicit
 
-  function divStress (velocity_cc, grad_vel_face_bndry, viscosity_face, face_area, cell_vol, i, gmesh)
+  function divStress (velocity_cc, grad_vel_face_bndry, viscosity_face, face_area, cell_vol, i, &
+      gmesh)
 
     use mesh_geom_type
     use differential_operators, only: faceGradient, divergence
@@ -410,27 +377,6 @@ contains
 
       ! calculate the divergence of the viscosity * the gradient of the nth velocity component
       divStress(n) = divergence (viscosity_face * grad_vel_face_out, face_area, cell_vol)
-
-      ! if (n==2 .and. i==1) then ! .and. divStress(2) > 1e-12_r8) then
-      !   write(*,*) 'divstress cell', i
-      !   write(*,*) divstress(2)
-      !   write(*,*) gmesh%cneighbor(:,i) < 1
-      !   write(*,'(6es14.4)') grad_vel_face_out
-      !   write(*,'(a,6es14.4)') 'mu', viscosity_face
-
-      !   write(*,*) "myvel      ",velocity_cc(2,i)
-      !   do f = 1,nfc
-      !     i_ngbr = gmesh%cneighbor(f,i)
-      !     if (i_ngbr > 0) then
-      !       write(*,'(i,2es14.4,a,3es14.4)') f, velocity_cc(2,i_ngbr), grad_vel_face_out(f), "              ",gmesh%outnorm(:,f,i)
-      !     else
-      !       write(*,'(i,6es14.4)') f,grad_vel_face_bndry(:,n,f), gmesh%outnorm(:,f,i)
-      !     end if
-      !   end do
-
-      !   write(*,*)
-      !   !stop
-      ! end if
     end do
 
   end function divStress

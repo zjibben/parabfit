@@ -143,7 +143,8 @@ contains
       if (this%dt_init <= 0.0_r8) call LS_fatal (context//'"initial-time-step" must be > 0.0')
       call plist%get ('min-time-step', this%dt_min, stat=stat, errmsg=errmsg)
       if (stat /= 0) call LS_fatal (context//errmsg)
-      if (this%dt_min > this%dt_init) call LS_fatal (context//'require "min-time-step" <= "initial-time-step"')
+      if (this%dt_min > this%dt_init) &
+          call LS_fatal (context//'require "min-time-step" <= "initial-time-step"')
       call plist%get ('output-times', this%tout, stat=stat, errmsg=errmsg)
       if (stat /= 0) call LS_fatal (context//errmsg)
       !TODO: check for strictly increasing values in TOUT, TOUT > t_init, or sort
@@ -228,8 +229,11 @@ contains
 
     real(r8)           :: flow_dt,tlocal
     integer, save      :: iter = 0
-    real(r8), parameter :: maxdt = 1e-2_r8 ! maximum allowed timestep. TODO: make this user-specified from the input file
-    real(r8), parameter :: CFL = 0.25_r8   ! TODO: make this user-specified from the input file
+
+    ! TODO: make these parameters user-specified from the input file
+    real(r8), parameter :: maxdt = 1e-2_r8 ! maximum allowed timestep. 
+    real(r8), parameter :: CFL = 0.25_r8
+
     ! ! DEBUGGING/SCALING ##################
     ! integer, parameter :: nsteps = 1
     ! write(*,*) 'WARNING - number of timesteps forced'
@@ -244,11 +248,6 @@ contains
       ! this avoids extremely small (near machine zero) timesteps
       if (isZero(abs(tlocal + flow_dt - dt))) flow_dt = dt - tlocal
       
-      ! write(*,'(a,4es14.4)') 'dts',flow_dt, &
-      !     CFL*minval(this%mesh%volume**(1.0_r8/3.0_r8))/maxval(this%ns_solver%fluxing_velocity), &
-      !     dt-tlocal, &
-      !     maxdt
-
       ! advect material
       call this%vof_solver%advect_mass (flow_dt, this%dump_intrec .and. flow_dt==dt-tlocal )
 
@@ -259,9 +258,9 @@ contains
       tlocal = tlocal + flow_dt
       iter = iter+1
     end do
-    write(*,*) 'cumulative iterations: ',iter
-    write(*,*) 'dt', flow_dt
-    write(*,*) 'minmaxvel', minval(this%ns_solver%velocity_cc(2,:)), maxval(this%ns_solver%velocity_cc(2,:))
+    write(*,*) 'cumulative iterations, dt: ', iter, flow_dt
+    write(*,*) 'minmaxvel', &
+        minval(this%ns_solver%velocity_cc(2,:)), maxval(this%ns_solver%velocity_cc(2,:))
     
   end subroutine step
 

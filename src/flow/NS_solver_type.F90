@@ -4,7 +4,7 @@
 !! This module defines a class that encapsulates a (time) solver for the
 !! Navier-Stokes equations.
 !!
-!! TODO: * Figure out what the prepass is and how to do it. Basically,
+!! TODO: * Figure out what the prepass is and how to do it. Basically, on the first cycle
 !!         Truchas executes
 !!           use projection_data_module, only: mac_projection_iterations, prelim_projection_iterations
 !!           use viscous_data_module,    only: prelim_viscous_iterations, viscous_iterations
@@ -14,7 +14,6 @@
 !!             prelim_viscous_iterations = viscous_iterations           !or 0 if all solid
 !!             velocity_cc = velocity_cc_n
 !!           end if
-!!         on the first cycle.
 !!
 !! Zechariah J. Jibben <zjibben@lanl.gov>
 !! June 2015
@@ -91,14 +90,16 @@ contains
     this%gmesh => gmesh
     allocate(this%velocity_cc(ndim,this%mesh%ncell), this%pressure_cc(this%mesh%ncell), &
         this%fluidRho(this%mesh%ncell), this%fluidVof(this%mesh%ncell), &
-        this%gradP_dynamic_over_rho_cc(ndim,this%mesh%ncell), this%fluxing_velocity(nfc,this%mesh%ncell))
+        this%gradP_dynamic_over_rho_cc(ndim,this%mesh%ncell), &
+        this%fluxing_velocity(nfc,this%mesh%ncell))
 
     context = 'processing ' // params%name() // ': '
 
     !! check for prescribed velocity case
     this%use_prescribed_velocity = params%is_scalar('prescribed-velocity')
     if (this%use_prescribed_velocity) then
-      call params%get ('prescribed-velocity', this%prescribed_velocity_case, stat=stat, errmsg=errmsg)
+      call params%get ('prescribed-velocity', this%prescribed_velocity_case, stat=stat, &
+          errmsg=errmsg)
       if (stat /= 0) call LS_fatal (context//errmsg)
       return
     end if
@@ -216,7 +217,8 @@ contains
 
       do f = 1,nfc
         this%fluxing_velocity(f,i) = dot_product( &
-            prescribed_velocity (this%gmesh%fc(:,this%mesh%cface(f,i)), this%t, this%prescribed_velocity_case), &
+            prescribed_velocity (this%gmesh%fc(:,this%mesh%cface(f,i)), this%t, &
+            this%prescribed_velocity_case), &
             this%gmesh%outnorm(:,f,i))
       end do
     end do
@@ -256,14 +258,15 @@ contains
       if (this%fluid_to_move(is_pure_immobile, solid_face)) then
         ! WARNING: hardcoding inviscid flow for now
         call predictor (this%velocity_cc, this%gradP_dynamic_over_rho_cc, dt, &
-            this%volume_flux, this%fluidRho, fluidRho_n, this%vof, this%fluidVof, fluidVof_n, velocity_cc_n, &
-            this%fluxing_velocity, this%viscous_implicitness, this%mprop, this%inviscid, solid_face, &
-            is_pure_immobile, this%velocity_bc, this%pressure_bc, this%mesh, this%gmesh, &
-            this%prediction_solver_params)
-        call projection (this%velocity_cc, this%fluxing_velocity, this%pressure_cc, this%gradP_dynamic_over_rho_cc, &
-            dt, this%fluidRho, fluidRho_n, this%fluidVof, this%vof, this%mprop%sound_speed, this%body_force, &
-            solid_face, is_pure_immobile, this%mprop%is_immobile, min_fluidRho, &
-            this%velocity_bc, this%pressure_bc, this%mesh, this%gmesh, this%projection_solver_params)
+            this%volume_flux, this%fluidRho, fluidRho_n, this%vof, this%fluidVof, fluidVof_n, &
+            velocity_cc_n, this%fluxing_velocity, this%viscous_implicitness, this%mprop, &
+            this%inviscid, solid_face, is_pure_immobile, this%velocity_bc, this%pressure_bc, &
+            this%mesh, this%gmesh, this%prediction_solver_params)
+        call projection (this%velocity_cc, this%fluxing_velocity, this%pressure_cc, &
+            this%gradP_dynamic_over_rho_cc, dt, this%fluidRho, fluidRho_n, this%fluidVof, this%vof, &
+            this%mprop%sound_speed, this%body_force, solid_face, is_pure_immobile, &
+            this%mprop%is_immobile, min_fluidRho, this%velocity_bc, this%pressure_bc, this%mesh, &
+            this%gmesh, this%projection_solver_params)
       else ! Everything solid; set velocities to zero and check again in the next timestep.
         this%fluxing_velocity = 0.0_r8
         this%velocity_cc = 0.0_r8
@@ -315,8 +318,8 @@ contains
       !     mask=.not.this%mprop%is_immobile .and. .not.this%mprop%is_void .and. this%vof(:,i)>0.0_r8)
       
       is_pure_immobile(i) = this%fluidVof(i) < fluid_cutoff !&
-          ! ! subroutine turn_off_flow
-          ! .or. .not.any(this%gmesh%xc(:,i) < region(:)%x1(:) .or. this%gmesh%xc(:,i) > region(:)%x2(:))
+      ! ! subroutine turn_off_flow
+      ! .or. .not.any(this%gmesh%xc(:,i) < region(:)%x1(:) .or. this%gmesh%xc(:,i) > region(:)%x2(:))
 
       ! zero out velocities in cells which have completely
       ! solidified between the last flow call and this one
