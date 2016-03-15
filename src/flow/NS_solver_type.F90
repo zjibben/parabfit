@@ -63,6 +63,7 @@ module NS_solver_type
     procedure :: init_matls
     procedure :: init_mprop
     procedure :: set_initial_state
+    procedure :: timestep_size
     procedure :: step
     procedure, private :: update_prescribed_velocity
     procedure, private :: fluid_to_move
@@ -388,5 +389,23 @@ contains
     ! end if
 
   end function fluid_to_move
+
+  real(r8) function timestep_size (this, CFL, maxdt, remaining_dt)
+
+    class(NS_solver), intent(in) :: this
+    real(r8),         intent(in) :: CFL, maxdt, remaining_dt
+
+    ! TODO: pick a smarter time step size--this will cause problems for particularly long cells
+    timestep_size = min( &
+        CFL*minval(this%mesh%volume**(1.0_r8/3.0_r8))/maxval(this%fluxing_velocity), &
+        remaining_dt, &
+        maxdt)
+
+    ! if we are doing purely explicit viscous flow, calculate the necessary timestep
+    if (.not.this%inviscid .and. this%viscous_implicitness == 0.0_r8) &
+        timestep_size = min(timestep_size, &
+        CFL*minval(this%mesh%volume**(1.0_r8/3.0_r8))**2 / maxval(this%mprop%viscosity))
+    
+  end function timestep_size
 
 end module NS_solver_type

@@ -238,13 +238,7 @@ contains
     tlocal = 0.0_r8
     do while (tlocal<dt) ! .and. iter<nsteps)
       ! update the timestep
-      ! TODO: pick a smarter time step size--this will cause problems for particularly long cells
-      flow_dt = min( &
-          CFL*minval(this%mesh%volume**(1.0_r8/3.0_r8))/maxval(this%ns_solver%fluxing_velocity), &
-          CFL*minval(this%mesh%volume**(1.0_r8/3.0_r8))**2 / maxval(this%mprop%viscosity), &
-          dt-tlocal, &
-          maxdt)
-      !flow_dt = flow_dt**2 ! for viscosity
+      flow_dt = this%ns_solver%timestep_size (CFL, maxdt, dt-tlocal)
 
       ! if the timestep is *almost* enough to finish this cycle, set it to that exact amount
       ! this avoids extremely small (near machine zero) timesteps

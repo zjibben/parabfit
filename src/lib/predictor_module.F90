@@ -65,9 +65,9 @@ contains
     
     ! update boundary face values prior to the rest of the domain
     call apply_velocity_bcs (grad_vel_face_bndry, viscosity_face_bndry, rhs, velocity_bc, &
-        velocity_cc, dt, viscous_implicitness, inviscid, gmesh)
+        velocity_cc, dt, viscous_implicitness, inviscid, mesh, gmesh)
     call apply_pressure_bcs (viscosity_face_bndry, rhs, pressure_bc, &
-        velocity_cc, dt, viscous_implicitness, inviscid, gmesh)
+        velocity_cc, dt, viscous_implicitness, inviscid, mesh, gmesh)
     
     do i = 1,mesh%ncell
       cell_rhs = 0.0_r8
@@ -187,7 +187,7 @@ contains
       integer :: i,n,m, index
 
       allocate(g)
-      call g%init (ncell)
+      call g%init (ncell*ndim)
       do i = 1,ncell
         do n = 1,ndim
           index = (i-1)*ndim+n
@@ -204,7 +204,7 @@ contains
     end subroutine init_disc
 
     subroutine apply_velocity_bcs (grad_vel_face_bndry, viscosity_face_bndry, rhs, velocity_bc, &
-        velocity_cc, dt, viscous_implicitness, inviscid, gmesh)
+        velocity_cc, dt, viscous_implicitness, inviscid, mesh, gmesh)
 
       use bndry_func_class
       use mesh_geom_type
@@ -214,6 +214,7 @@ contains
       class(bndry_func), intent(in)    :: velocity_bc
       real(r8),          intent(in)    :: velocity_cc(:,:), dt, viscous_implicitness
       logical,           intent(in)    :: inviscid
+      type(unstr_mesh),  intent(in)    :: mesh
       type(mesh_geom),   intent(in)    :: gmesh
 
       real(r8) :: velocity_bc_value, dx(ndim)
@@ -242,11 +243,13 @@ contains
           end if
 
           ! implicit
+          ! TODO: allow tangential components to dirichlet BCs
           if (viscous_implicitness > 0.0_r8) then
             dx = gmesh%xc(:,i) - gmesh%fc(:,fid)
-            rhs((i-1)*ndim+1:(i-1)*ndim+ndim) = rhs((i-1)*ndim+1:(i-1)*ndim+ndim) - &
-                dt*viscous_implicitness*velocity_cc(:,i) &
-                *dot_product(gmesh%outnorm(:,f,i), dx) / sum(dx**2)
+            rhs((i-1)*ndim+1:(i-1)*ndim+ndim) = rhs((i-1)*ndim+1:(i-1)*ndim+ndim) &
+                + dt*viscous_implicitness &
+                *viscosity_face_bndry(fid)*velocity_bc_value*gmesh%outnorm(:,f,i) &
+                *dot_product(gmesh%outnorm(:,f,i), dx) / sum(dx**2) / mesh%volume(i)
           end if
         end if
       end do
@@ -254,7 +257,7 @@ contains
     end subroutine apply_velocity_bcs
 
     subroutine apply_pressure_bcs (viscosity_face_bndry, rhs, pressure_bc, &
-        velocity_cc, dt, viscous_implicitness, inviscid, gmesh)
+        velocity_cc, dt, viscous_implicitness, inviscid, mesh, gmesh)
 
       use bndry_func_class
       use mesh_geom_type
@@ -263,6 +266,7 @@ contains
       class(bndry_func), intent(in)    :: pressure_bc
       real(r8),          intent(in)    :: velocity_cc(:,:), dt, viscous_implicitness
       logical,           intent(in)    :: inviscid
+      type(unstr_mesh),  intent(in)    :: mesh
       type(mesh_geom),   intent(in)    :: gmesh
 
       real(r8) :: pressure_bc_value, dx(ndim)
@@ -279,16 +283,18 @@ contains
         if (.not.inviscid) then
           viscosity_face_bndry(fid) = viscosityCell(mprop, vof(:,i), fluidVof(i))
 
-          ! explicit
           ! zero velocity gradient at Dirichlet pressure boundaries
+                    
+          ! explicit
+          ! no additional component to the rhs
           !face_gradient ( reshape([gmesh%xc(:,i), gmesh%fc(:,fid)], [ndim,2]))
 
           ! implicit
           if (viscous_implicitness > 0.0_r8) then
             dx = gmesh%xc(:,i) - gmesh%fc(:,fid)
             rhs((i-1)*ndim+1:(i-1)*ndim+ndim) = rhs((i-1)*ndim+1:(i-1)*ndim+ndim) - &
-                dt*viscous_implicitness*velocity_cc(:,i) &
-                *dot_product(gmesh%outnorm(:,f,i), dx) / sum(dx**2)
+                dt*viscous_implicitness*viscosity_face_bndry(fid)*velocity_cc(:,i) &
+                *mesh%area(fid)*dot_product(gmesh%outnorm(:,f,i), dx) / sum(dx**2) / mesh%volume(i)
           end if
         end if
       end do
