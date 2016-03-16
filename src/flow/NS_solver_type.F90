@@ -411,24 +411,28 @@ contains
 
   real(r8) function timestep_size (this, remaining_dt)
 
+    use array_utils, only: isZero
+    
     class(NS_solver), intent(in) :: this
-    real(r8),         intent(in) :: remaining_dt
+    real(r8),         intent(in) :: remaining_dt ! the remaining time left for this flow_sim step
 
     ! TODO: pick a smarter time step size--this will cause problems for particularly long cells
     timestep_size = &
         this%CFL_multiplier/maxval(this%fluxing_velocity) * minval(this%mesh%volume**(1.0_r8/3.0_r8))
 
-    ! if we are doing purely explicit viscous flow, calculate the necessary timestep
+    ! if we are doing purely explicit viscous flow, reduce the step size as necessary
     if (.not.this%inviscid .and. this%viscous_implicitness == 0.0_r8) &
         timestep_size = min(timestep_size, &
         this%CFL_multiplier / maxval(this%mprop%viscosity)) &
         * minval(this%mesh%volume**(1.0_r8/3.0_r8))**2
 
-    ! make sure the timestep is not bigger than the remaining time in this cycle,
-    ! or bigger than the requested maximum timestep size
-    timestep_size = min(timestep_size, &
-        remaining_dt, &
-        this%max_dt)
+    ! ensure the timestep size is not larger than the remaining time in this cycle
+    ! or the requested maximum timestep size
+    timestep_size = min(timestep_size, remaining_dt, this%max_dt)
+
+    ! if the timestep is *almost* enough to finish this cycle, set it to the remaining time
+    ! this avoids extremely small (near machine zero) timesteps in the next iteration
+    if (isZero(abs(timestep_size - remaining_dt))) timestep_size = remaining_dt
     
   end function timestep_size
 

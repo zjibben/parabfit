@@ -129,7 +129,7 @@ contains
     
     ! TODO: put a better initial guess here later, and thread it
     dP = 0.0_r8
-    
+
     ! solve the system
     call solver%init (lhs, params)
     call solver%setup ()
@@ -266,7 +266,7 @@ contains
     real(r8) function cell_rhs (fluxing_velocity, face_area, cell_vol, fluidRho, pressure, &
         outnorm, min_face_fraction, min_fluid_rho, dt, solid_face, is_pure_immobile)
 
-      use array_utils, only: isZero
+      use differential_operators, only: divergence
 
       real(r8), intent(in) :: fluxing_velocity(:), face_area(:), cell_vol, fluidRho, pressure, &
           outnorm(:,:), min_face_fraction, min_fluid_rho, dt
@@ -289,14 +289,21 @@ contains
         ! and not pressure*dt. Scaling of the RHS here by dt and the cell volume is in
         ! conjunction with the scaled convergence criteria below.
 
-        ! note that the fluxing velocity should be already set to zero on solid faces,
-        ! so we should be fine not masking by the solid_face
-        cell_rhs = sum(fluxing_velocity*face_area, mask=.not.solid_face) / (dt*cell_vol)
+        ! note the fluxing velocity is set to zero on solid faces, so no need to mask by solid_face
+        cell_rhs = divergence (fluxing_velocity, face_area, cell_vol) / dt
       end if
+
+      ! we are multiplying the entire Poisson equation by -1,
+      ! since the -laplacian operator is positive definite,
+      ! allowing the use of CG
+      cell_rhs = -cell_rhs
 
     end function cell_rhs
 
     ! this calculates a row of the left hand matrix of the pressure poisson system
+    ! note: * we are multiplying the entire Poisson equation by -1,
+    !         since the -laplacian operator is positive definite,
+    !         allowing the use of CG
     subroutine cell_lhs (lhs, cell_vol, dt, rho_face, fluidRho, vof, sound_speed, &
         xf, mesh, gmesh, i, is_pure_immobile, material_is_immobile, solid_face)
 
@@ -315,7 +322,7 @@ contains
 
       ! void and solid cells
       if (fluidRho == 0.0_r8 .or. is_pure_immobile) then
-        call lhs%increment (i,i, 1.0_r8/(min_face_fraction*min_fluid_rho*cell_vol**(2.0_r8/3.0_r8)))
+        call lhs%increment (i,i, -1.0_r8/(min_face_fraction*min_fluid_rho*cell_vol**(2.0_r8/3.0_r8)))
         return
       end if
       
@@ -338,13 +345,13 @@ contains
             rho_face(f) == 0.0_r8 .or. fluidRho == 0.0_r8 .or. is_pure_immobile .or. solid_face(f))
         tmp = face_area_over_rho / cell_vol * dot_product(gmesh%outnorm(:,f,i), dx) / sum(dx**2)
         
-        if (i_ngbr > 0) call lhs%increment (i,i_ngbr, -tmp)
-        call lhs%increment (i,i, tmp)
+        if (i_ngbr > 0) call lhs%increment (i,i_ngbr, tmp)
+        call lhs%increment (i,i, -tmp)
       end do
       
       ! void collapse term
       call lhs%increment (i,i, &
-          cell_compressibility(vof, sound_speed, fluidRho, material_is_immobile) / dt**2)
+          -cell_compressibility(vof, sound_speed, fluidRho, material_is_immobile) / dt**2)
 
     end subroutine cell_lhs
 

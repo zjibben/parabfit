@@ -220,14 +220,13 @@ contains
     write(*,*) 'l1 error = ',l1_error(this%vof_solver%vof,this%vof_solver%vof0)
   end subroutine run
 
-  subroutine step (this,dt,t)
-
-    use array_utils, only: isZero
+  ! update the flow from t to t+dt, subcycling as necessary
+  subroutine step (this, dt, t)
 
     class(flow_sim), intent(inout) :: this
-    real(r8),        intent(in)    :: dt,t
+    real(r8),        intent(in)    :: dt, t
 
-    real(r8)           :: flow_dt,tlocal
+    real(r8)           :: flow_dt, tlocal
     integer, save      :: iter = 0
 
     ! ! DEBUGGING/SCALING ##################
@@ -237,23 +236,20 @@ contains
 
     tlocal = 0.0_r8
     do while (tlocal<dt) ! .and. iter<nsteps)
-      ! update the timestep
+      ! update the timestep size
       flow_dt = this%ns_solver%timestep_size (dt-tlocal)
-
-      ! if the timestep is *almost* enough to finish this cycle, set it to that exact amount
-      ! this avoids extremely small (near machine zero) timesteps
-      if (isZero(abs(tlocal + flow_dt - dt))) flow_dt = dt - tlocal
       
       ! advect material
-      call this%vof_solver%advect_mass (flow_dt, this%dump_intrec .and. flow_dt==dt-tlocal )
+      call this%vof_solver%advect_mass (flow_dt, this%dump_intrec .and. flow_dt==dt-tlocal)
 
-      ! update the pressure and flowfield
+      ! update the pressure and velocity field
       call this%ns_solver%step (flow_dt, t+tlocal)
 
       ! increment the local time
       tlocal = tlocal + flow_dt
       iter = iter+1
     end do
+
     write(*,'(a,i6,es14.4)') 'cumulative iterations, dt: ', iter, flow_dt
     write(*,*) 'minmaxvel', &
         minval(this%ns_solver%velocity_cc(2,:)), maxval(this%ns_solver%velocity_cc(2,:))
@@ -271,6 +267,7 @@ contains
   !! file, VTK, or an HDF5 file), but procedures for writing GMV output were
   !! immediately available.
   subroutine write_solution (this, t)
+
     use unstr_mesh_gmv
     use array_utils, only: int2str
     
