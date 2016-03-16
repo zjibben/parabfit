@@ -230,10 +230,6 @@ contains
     real(r8)           :: flow_dt,tlocal
     integer, save      :: iter = 0
 
-    ! TODO: make these parameters user-specified from the input file
-    real(r8), parameter :: maxdt = 1e-2_r8 ! maximum allowed timestep. 
-    real(r8), parameter :: CFL = 0.25_r8
-
     ! ! DEBUGGING/SCALING ##################
     ! integer, parameter :: nsteps = 1
     ! write(*,*) 'WARNING - number of timesteps forced'
@@ -242,7 +238,7 @@ contains
     tlocal = 0.0_r8
     do while (tlocal<dt) ! .and. iter<nsteps)
       ! update the timestep
-      flow_dt = this%ns_solver%timestep_size (CFL, maxdt, dt-tlocal)
+      flow_dt = this%ns_solver%timestep_size (dt-tlocal)
 
       ! if the timestep is *almost* enough to finish this cycle, set it to that exact amount
       ! this avoids extremely small (near machine zero) timesteps
@@ -258,7 +254,7 @@ contains
       tlocal = tlocal + flow_dt
       iter = iter+1
     end do
-    write(*,*) 'cumulative iterations, dt: ', iter, flow_dt
+    write(*,'(a,i6,es14.4)') 'cumulative iterations, dt: ', iter, flow_dt
     write(*,*) 'minmaxvel', &
         minval(this%ns_solver%velocity_cc(2,:)), maxval(this%ns_solver%velocity_cc(2,:))
     

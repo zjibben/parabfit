@@ -52,7 +52,7 @@ module NS_solver_type
     real(r8), public, allocatable :: velocity_cc(:,:), pressure_cc(:), fluxing_velocity(:,:), &
         fluidRho(:)
     real(r8), allocatable :: gradP_dynamic_over_rho_cc(:,:), fluidVof(:), body_force(:)
-    real(r8) :: viscous_implicitness
+    real(r8) :: viscous_implicitness, CFL_multiplier, max_dt
     class(bndry_func), allocatable :: pressure_bc, velocity_bc
     logical         :: boussinesq_approximation, inviscid
     logical, public :: use_prescribed_velocity
@@ -121,6 +121,22 @@ contains
       this%projection_solver_params => params%sublist('projection-solver')
     else
       call LS_fatal (context//'missing "projection-solver" sublist parameter')
+    end if
+
+    !! get the CFL multiplier
+    !! tells the timestep to be a certain factor smaller than the actual restriction
+    if (params%is_scalar('cfl-multiplier')) then
+      call params%get ('cfl-multiplier', this%CFL_multiplier, stat=stat, errmsg=errmsg)
+    else
+      call LS_fatal (context//'missing "cfl-multiplier" sublist parameter')
+    end if
+
+    !! get the maximum allowed timestep
+    !! if the the flow is currently 0, we don't want an infinite timestep size, now do we?
+    if (params%is_scalar('max-dt')) then
+      call params%get ('max-dt', this%max_dt, stat=stat, errmsg=errmsg)
+    else
+      call LS_fatal (context//'missing "max-dt" sublist parameter')
     end if
 
     if (params%is_sublist('prediction-solver')) then
@@ -393,21 +409,26 @@ contains
 
   end function fluid_to_move
 
-  real(r8) function timestep_size (this, CFL, maxdt, remaining_dt)
+  real(r8) function timestep_size (this, remaining_dt)
 
     class(NS_solver), intent(in) :: this
-    real(r8),         intent(in) :: CFL, maxdt, remaining_dt
+    real(r8),         intent(in) :: remaining_dt
 
     ! TODO: pick a smarter time step size--this will cause problems for particularly long cells
-    timestep_size = min( &
-        CFL*minval(this%mesh%volume**(1.0_r8/3.0_r8))/maxval(this%fluxing_velocity), &
-        remaining_dt, &
-        maxdt)
+    timestep_size = &
+        this%CFL_multiplier/maxval(this%fluxing_velocity) * minval(this%mesh%volume**(1.0_r8/3.0_r8))
 
     ! if we are doing purely explicit viscous flow, calculate the necessary timestep
     if (.not.this%inviscid .and. this%viscous_implicitness == 0.0_r8) &
         timestep_size = min(timestep_size, &
-        CFL*minval(this%mesh%volume**(1.0_r8/3.0_r8))**2 / maxval(this%mprop%viscosity))
+        this%CFL_multiplier / maxval(this%mprop%viscosity)) &
+        * minval(this%mesh%volume**(1.0_r8/3.0_r8))**2
+
+    ! make sure the timestep is not bigger than the remaining time in this cycle,
+    ! or bigger than the requested maximum timestep size
+    timestep_size = min(timestep_size, &
+        remaining_dt, &
+        this%max_dt)
     
   end function timestep_size
 

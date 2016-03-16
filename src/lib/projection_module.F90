@@ -323,7 +323,7 @@ contains
       ! TODO: modify for nonorthogonal meshes
       do f = 1,nfc
         i_ngbr = gmesh%cneighbor(f,i)
-        if (solid_face(f)) cycle
+        !if (solid_face(f)) cycle
         ! if (i_ngbr < 1) cycle ! any boundary conditions are applied to the rhs
         
         ! dx  = gmesh%xc(:,i) - gmesh%xc(:,i_ngbr)
@@ -335,7 +335,7 @@ contains
         end if
 
         face_area_over_rho = merge(0.0_r8, mesh%area(mesh%cface(f,i)) / rho_face(f), &
-            rho_face(f) == 0.0_r8 .or. fluidRho == 0.0_r8 .or. is_pure_immobile)
+            rho_face(f) == 0.0_r8 .or. fluidRho == 0.0_r8 .or. is_pure_immobile .or. solid_face(f))
         tmp = face_area_over_rho / cell_vol * dot_product(gmesh%outnorm(:,f,i), dx) / sum(dx**2)
         
         if (i_ngbr > 0) call lhs%increment (i,i_ngbr, -tmp)
