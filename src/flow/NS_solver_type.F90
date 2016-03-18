@@ -31,6 +31,8 @@ module NS_solver_type
   use matl_props_type
   use logging_services
   use bndry_func_class
+  use projection_module
+  use predictor_module
   implicit none
   private
   
@@ -45,6 +47,8 @@ module NS_solver_type
     real(r8), pointer :: volume_flux(:,:,:) => null() ! reference only -- do not own
 
     !! Pending/current state
+    type(projection_solver) :: projection
+    type(predictor_solver)  :: predictor
     real(r8) :: t, dt
     type(parameter_list), pointer :: projection_solver_params => null(), &
         prediction_solver_params => null()
@@ -160,7 +164,7 @@ contains
     else
       call LS_fatal (context//'missing "bc" sublist parameter')
     end if
-    
+
   end subroutine init
 
   ! point vof-related quantities to the arrays owned by the vof solver
@@ -214,7 +218,17 @@ contains
       this%fluidRho(i) = 1.0_r8
       this%fluidVof(i) = 1.0_r8
     end do
-    
+
+    call this%projection%init (this%velocity_cc, this%fluxing_velocity, this%pressure_cc, &
+        this%gradP_dynamic_over_rho_cc, this%dt, this%fluidRho, this%fluidVof, this%vof, &
+        this%mprop%sound_speed, this%body_force, this%mprop%is_immobile, this%velocity_bc, &
+        this%pressure_bc, this%mesh, this%gmesh, this%projection_solver_params)
+
+    call this%predictor%init (this%velocity_cc, this%gradP_dynamic_over_rho_cc, this%volume_flux, &
+        this%fluidRho, this%vof, this%fluidVof, this%fluxing_velocity, this%viscous_implicitness, &
+        this%mprop, this%inviscid, this%velocity_bc, this%pressure_bc, this%mesh, this%gmesh, &
+        this%prediction_solver_params)
+
   end subroutine set_initial_state
 
   ! sets the velocity to a prescribed value across the entire domain
@@ -246,8 +260,7 @@ contains
   subroutine step (this, dt, t)
 
     use consts, only: ndim
-    use predictor_module
-    use projection_module
+    use timer_tree_type
 
     class(NS_solver), intent(inout) :: this
     real(r8),         intent(in)    :: dt, t
@@ -255,6 +268,8 @@ contains
     real(r8) :: fluidRho_n(this%mesh%ncell), fluidVof_n(this%mesh%ncell), rho(this%mesh%ncell), &
         velocity_cc_n(ndim,this%mesh%ncell), min_fluidRho
     logical  :: solid_face(this%mesh%nface), is_pure_immobile(this%mesh%ncell)
+
+    call start_timer ('navier stokes update')
 
     this%t = t
 
@@ -267,22 +282,14 @@ contains
 
       ! evaluate cell properties excluding immobile materials, and
       ! check that there are at least some flow equations to solve
-      call this%fluid_properties (rho, fluidRho_n, fluidVof_n, velocity_cc_n, &
-          min_fluidRho, solid_face, is_pure_immobile)
+      call this%fluid_properties (rho, fluidRho_n, fluidVof_n, velocity_cc_n, min_fluidRho, &
+          solid_face, is_pure_immobile)
       
       ! step the incompressible Navier-Stokes equations
       if (this%fluid_to_move(is_pure_immobile, solid_face)) then
-        ! WARNING: hardcoding inviscid flow for now
-        call predictor (this%velocity_cc, this%gradP_dynamic_over_rho_cc, dt, &
-            this%volume_flux, this%fluidRho, fluidRho_n, this%vof, this%fluidVof, fluidVof_n, &
-            velocity_cc_n, this%fluxing_velocity, this%viscous_implicitness, this%mprop, &
-            this%inviscid, solid_face, is_pure_immobile, this%velocity_bc, this%pressure_bc, &
-            this%mesh, this%gmesh, this%prediction_solver_params)
-        call projection (this%velocity_cc, this%fluxing_velocity, this%pressure_cc, &
-            this%gradP_dynamic_over_rho_cc, dt, this%fluidRho, fluidRho_n, this%fluidVof, this%vof, &
-            this%mprop%sound_speed, this%body_force, solid_face, is_pure_immobile, &
-            this%mprop%is_immobile, min_fluidRho, this%velocity_bc, this%pressure_bc, this%mesh, &
-            this%gmesh, this%projection_solver_params)
+        call this%predictor%solve (dt, fluidRho_n, fluidVof_n, velocity_cc_n, solid_face, &
+            is_pure_immobile)
+        call this%projection%solve (dt, fluidRho_n, min_fluidRho, solid_face, is_pure_immobile)
       else ! Everything solid; set velocities to zero and check again in the next timestep.
         this%fluxing_velocity = 0.0_r8
         this%velocity_cc = 0.0_r8
@@ -293,6 +300,8 @@ contains
     
     !write(*,*) 'maxfvel', maxval(this%fluxing_velocity)
     !write(*,*) 'minmaxvel', minval(this%velocity_cc(2,:)), maxval(this%velocity_cc(2,:))
+
+    call stop_timer ('navier stokes update')
 
   end subroutine step
 

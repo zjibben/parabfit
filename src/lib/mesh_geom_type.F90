@@ -11,6 +11,9 @@
 !! vcell(:,v) are the cell ids of cells containing node v
 !! xc(:,n) is the centroid of cell n
 !! fc(:,f) is the centroid of face f
+!! dx(:,f,i) is the vector from the centroid of its neighbor through face f to the centroid of cell i
+!!           on a boundary, this is the vector from that face's centroid
+!! dx_sclr(f,i) is the magnitude of dx(:,f,i)
 !!
 
 module mesh_geom_type

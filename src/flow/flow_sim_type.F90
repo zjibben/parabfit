@@ -250,8 +250,8 @@ contains
       iter = iter+1
     end do
 
-    write(*,'(a,i6,es14.4)') 'cumulative iterations, dt: ', iter, flow_dt
-    write(*,*) 'minmaxvel', &
+    write(*,'(a,i6,es14.4,a,2es14.4)') '  cumulative iterations, dt: ', iter, flow_dt, &
+        ',   minmaxvel: ', &
         minval(this%ns_solver%velocity_cc(2,:)), maxval(this%ns_solver%velocity_cc(2,:))
     
   end subroutine step

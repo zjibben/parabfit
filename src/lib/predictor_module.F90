@@ -6,96 +6,190 @@ module predictor_module
 
   use kinds,  only: r8
   use consts, only: ndim,nfc
+  use matl_props_type
+  use bndry_func_class
+  use unstr_mesh_type
+  use mesh_geom_type
+  use parameter_list_type
+  use csr_matrix_type
   use logging_services
+  use timer_tree_type
   implicit none
   private
 
-  public :: predictor
+  type, public :: predictor_solver
+    private
+    
+    !! intent inout state variables
+    real(r8), pointer :: velocity_cc(:,:)
+
+    !! intent in state variables
+    real(r8), pointer :: gradP_dynamic_over_rho_cc(:,:), dt, volume_flux(:,:,:), fluidRho(:), &
+        fluidRho_n(:), vof(:,:), fluidVof(:), fluidVof_n(:), velocity_cc_n(:,:), &
+        fluxing_velocity(:,:), viscous_implicitness
+    type(matl_props),  pointer :: mprop
+    logical,           pointer :: inviscid, solid_face(:), is_pure_immobile(:)
+    class(bndry_func), pointer :: velocity_bc, pressure_bc
+    type(unstr_mesh),  pointer :: mesh
+    type(mesh_geom),   pointer :: gmesh
+    type(parameter_list), pointer    :: params
+
+    !! locally owned persistent variables
+    type(csr_graph), pointer :: g
+    type(csr_matrix) :: lhs
+  contains
+    procedure :: init => init_predictor_solver
+    procedure :: solve
+    procedure :: update_matrix
+    final :: predictor_solver_delete
+  end type predictor_solver
 
 contains
 
+  subroutine init_predictor_solver (this, velocity_cc, gradP_dynamic_over_rho_cc, volume_flux, &
+      fluidRho, vof, fluidVof, fluxing_velocity, viscous_implicitness, mprop, inviscid, &
+      velocity_bc, pressure_bc, mesh, gmesh, params)
+
+    class(predictor_solver), intent(out) :: this
+    real(r8),             intent(in), target :: velocity_cc(:,:), gradP_dynamic_over_rho_cc(:,:), &
+        volume_flux(:,:,:), fluidRho(:), vof(:,:), fluidVof(:), fluxing_velocity(:,:), &
+        viscous_implicitness
+    type(matl_props),     intent(in), target :: mprop
+    logical,              intent(in), target :: inviscid
+    class(bndry_func),    intent(in), target :: velocity_bc, pressure_bc
+    type(unstr_mesh),     intent(in), target :: mesh
+    type(mesh_geom),      intent(in), target :: gmesh
+    type(parameter_list), intent(in), target :: params
+
+    this%velocity_cc => velocity_cc
+    this%gradP_dynamic_over_rho_cc => gradP_dynamic_over_rho_cc
+    this%volume_flux => volume_flux
+    this%fluidRho => fluidRho
+    this%vof => vof
+    this%fluidVof => fluidVof
+    this%fluxing_velocity => fluxing_velocity
+    this%viscous_implicitness => viscous_implicitness
+    this%mprop => mprop
+    this%inviscid => inviscid
+    this%velocity_bc => velocity_bc
+    this%pressure_bc => pressure_bc
+    this%mesh => mesh
+    this%gmesh => gmesh
+    this%params => params
+
+    call this%update_matrix ()
+
+  end subroutine init_predictor_solver
+
+  subroutine update_matrix (this)
+
+    class(predictor_solver), intent(inout) :: this
+
+    integer :: i,n,m, index
+
+    if (associated(this%g)) deallocate(this%g)
+    allocate(this%g)
+    call this%g%init (this%mesh%ncell*ndim)
+    do i = 1,this%mesh%ncell
+      do n = 1,ndim
+        index = (i-1)*ndim+n
+        call this%g%add_edge (index,index)
+        do m = 1,ndim
+          call this%g%add_edge (index, &
+              (pack(this%gmesh%cneighbor(:,i), mask=this%gmesh%cneighbor(:,i)>0) - 1) * ndim + m)
+        end do
+      end do
+    end do
+    call this%g%add_complete ()
+
+    call this%lhs%init (this%g, take_graph=.false.)
+
+  end subroutine update_matrix
+
+  subroutine predictor_solver_delete (this)
+    type(predictor_solver) :: this
+    if (associated(this%g)) deallocate(this%g)
+  end subroutine predictor_solver_delete
+  
   ! note 1: This is a crude way to account for solid material within the cell.
   !         In SOLVE_FOR_VELOCITY we also divide by FluidVof to account for
   !         the mass of fluid in the cell, more or less canceling out this
   !         term. Momentum advection is specifically excluded because the VOF
   !         is already accounting for the solid material.
-  subroutine predictor (velocity_cc, gradP_dynamic_over_rho_cc, dt, volume_flux, &
-      fluidRho, fluidRho_n, vof, fluidVof, fluidVof_n, velocity_cc_n, fluxing_velocity, &
-      viscous_implicitness, mprop, inviscid, solid_face, is_pure_immobile, velocity_bc, &
-      pressure_bc, mesh, gmesh, params)
 
-    use unstr_mesh_type
-    use mesh_geom_type
-    use csr_matrix_type
+  ! velocity_cc is inout
+  subroutine solve (this, dt, fluidRho_n, fluidVof_n, velocity_cc_n, solid_face, is_pure_immobile)
+
     use hypre_hybrid_type
-    use bndry_func_class
-    use matl_props_type
 
-    real(r8),          intent(inout) :: velocity_cc(:,:)
-    real(r8),          intent(in)    :: gradP_dynamic_over_rho_cc(:,:), dt, &
-        volume_flux(:,:,:), fluidRho(:), fluidRho_n(:), vof(:,:), fluidVof(:), fluidVof_n(:), &
-        velocity_cc_n(:,:), fluxing_velocity(:,:), viscous_implicitness
-    type(matl_props),  intent(in)    :: mprop
-    logical,           intent(in)    :: inviscid, solid_face(:), is_pure_immobile(:)
-    class(bndry_func), intent(in)    :: velocity_bc, pressure_bc
-    type(unstr_mesh),  intent(in)    :: mesh
-    type(mesh_geom),   intent(in)    :: gmesh
-    type(parameter_list), pointer    :: params
+    class(predictor_solver), intent(inout) :: this
+    real(r8),          intent(in)    :: dt, fluidRho_n(:), fluidVof_n(:), velocity_cc_n(:,:)
+    logical,           intent(in)    :: solid_face(:), is_pure_immobile(:)
 
-    real(r8) :: rhs(ndim*mesh%ncell), mass(ndim), mass_flux, cell_rhs(ndim), &
-        vel_cc_new(ndim*mesh%ncell), &
-        grad_vel_face_bndry(ndim,ndim,mesh%nface), viscosity_face_bndry(mesh%nface)
+    real(r8) :: rhs(ndim*this%mesh%ncell), mass(ndim), mass_flux, cell_rhs(ndim), &
+        vel_cc_new(ndim*this%mesh%ncell), &
+        grad_vel_face_bndry(ndim,ndim,this%mesh%nface), viscosity_face_bndry(this%mesh%nface)
     integer :: i, i_ngbr, f, stat
-    type(csr_matrix) :: lhs
     type(hypre_hybrid) :: solver
 
-    grad_vel_face_bndry = 0.0_r8
-    viscosity_face_bndry = 0.0_r8
+    call start_timer ('prediction')
 
     ! initialize the sparse left hand side matrix
-    if (.not.inviscid .and. viscous_implicitness > 0.0_r8) then
-      call init_disc (lhs, mesh%ncell, gmesh%cneighbor)
-      call lhs%set_all (0.0_r8)
+    if (.not.this%inviscid .and. this%viscous_implicitness > 0.0_r8) then
+      !call init_disc (lhs, mesh%ncell, gmesh%cneighbor)
+      call this%lhs%set_all (0.0_r8)
     end if
-    rhs = 0.0_r8
     
     ! update boundary face values prior to the rest of the domain
-    call apply_velocity_bcs (grad_vel_face_bndry, viscosity_face_bndry, rhs, velocity_bc, &
-        velocity_cc, dt, viscous_implicitness, inviscid, mesh, gmesh)
-    call apply_pressure_bcs (viscosity_face_bndry, rhs, pressure_bc, &
-        velocity_cc, dt, viscous_implicitness, inviscid, mesh, gmesh)
-    
-    do i = 1,mesh%ncell
+    call start_timer ('boundaries')
+    grad_vel_face_bndry = 0.0_r8
+    viscosity_face_bndry = 0.0_r8
+    rhs = 0.0_r8
+    call apply_velocity_bcs (grad_vel_face_bndry, viscosity_face_bndry, rhs, this%velocity_bc, &
+        this%velocity_cc, this%vof, this%fluidVof, dt, this%viscous_implicitness, this%inviscid, &
+        this%mprop, this%mesh, this%gmesh)
+    call apply_pressure_bcs (viscosity_face_bndry, rhs, this%pressure_bc, this%velocity_cc, &
+        this%vof, this%fluidVof, dt, this%viscous_implicitness, this%inviscid, this%mprop, &
+        this%mesh, this%gmesh)
+    call stop_timer ('boundaries')
+
+    call start_timer ('internal')
+    do i = 1,this%mesh%ncell
       cell_rhs = 0.0_r8
 
       ! pressure
-      cell_rhs = cell_rhs - dt*fluidRho(i)*gradP_dynamic_over_rho_cc(:,i)
+      cell_rhs = cell_rhs - dt*this%fluidRho(i)*this%gradP_dynamic_over_rho_cc(:,i)
 
-      ! TODO: viscosity
-      if (.not.inviscid) &
-          call apply_viscosity (cell_rhs, lhs, mprop, dt, viscous_implicitness, velocity_cc_n, vof, &
-          fluidVof, fluidRho(i), grad_vel_face_bndry(:,:,mesh%cface(:,i)), &
-          viscosity_face_bndry(mesh%cface(:,i)), mesh%area(mesh%cface(:,i)), mesh%volume(i), &
-          solid_face(mesh%cface(:,i)), is_pure_immobile(i), i, mesh%cface(:,i), gmesh)
+      ! viscosity
+      if (.not.this%inviscid) &
+          call apply_viscosity (cell_rhs, this%lhs, this%mprop, dt, this%viscous_implicitness, &
+          velocity_cc_n, this%vof, this%fluidVof, this%fluidRho(i), &
+          grad_vel_face_bndry(:,:,this%mesh%cface(:,i)), &
+          viscosity_face_bndry(this%mesh%cface(:,i)), this%mesh%area(this%mesh%cface(:,i)), &
+          this%mesh%volume(i), solid_face(this%mesh%cface(:,i)), is_pure_immobile(i), i, &
+          this%mesh%cface(:,i), this%gmesh)
 
       ! TODO: turbulence
       
       ! account for solid material (see note 1)
-      cell_rhs = cell_rhs * fluidVof(i)
+      cell_rhs = cell_rhs * this%fluidVof(i)
 
       ! advect momentum
       do f = 1,nfc
-        mass_flux = sum(mprop%density*volume_flux(:,f,i))
+        mass_flux = sum(this%mprop%density*this%volume_flux(:,f,i))
         ! upwind to determine which velocity to grab
         if (mass_flux > 0.0_r8) then ! outflow
-          cell_rhs = cell_rhs - mass_flux*velocity_cc_n(:,i) / mesh%volume(i)
+          cell_rhs = cell_rhs - mass_flux*velocity_cc_n(:,i) / this%mesh%volume(i)
         else ! inflow
-          i_ngbr = gmesh%cneighbor(f,i)
+          i_ngbr = this%gmesh%cneighbor(f,i)
           if (i_ngbr > 0) then ! not a boundary
-            cell_rhs = cell_rhs - mass_flux*velocity_cc_n(:,i_ngbr) / mesh%volume(i)
+            cell_rhs = cell_rhs - mass_flux*velocity_cc_n(:,i_ngbr) / this%mesh%volume(i)
           else
+            ! TODO: get this from boundary condition, including tangential components
+            !       Truchas grabs the dirichlet velocity BC when available, and the
+            !       cell center velocity where not (zero velocity gradient there)
             cell_rhs = cell_rhs &
-                - mass_flux*fluxing_velocity(f,i)*gmesh%outnorm(:,f,i) / mesh%volume(i)
+                - mass_flux*this%fluxing_velocity(f,i)*this%gmesh%outnorm(:,f,i)/this%mesh%volume(i)
           end if
         end if
       end do
@@ -108,7 +202,7 @@ contains
       
       ! TODO: body forces
 
-      ! final rhs part (here it is no longer dmomentum, but the new momentum value)
+      ! previous momentum value
       cell_rhs = cell_rhs + fluidRho_n(i)*fluidVof_n(i)*velocity_cc_n(:,i)
 
       ! update the velocity explicitly if there is no need for the implicit solve
@@ -117,27 +211,32 @@ contains
       ! TODO: * expand the "mass matrix" with the other physics that gets added,
       !         possibly warranting breaking this entire section into its own subroutine.
       !       * do the implicit stuff after this loop
-      if (inviscid .or. viscous_implicitness == 0.0_r8) then
-        mass = fluidRho(i)*fluidVof(i)
-        velocity_cc(:,i) = merge(cell_rhs / mass, 0.0_r8, mask=mass>0.0_r8)
+      if (this%inviscid .or. this%viscous_implicitness == 0.0_r8) then
+        mass = this%fluidRho(i)*this%fluidVof(i)
+        this%velocity_cc(:,i) = merge(cell_rhs / mass, 0.0_r8, mask=mass>0.0_r8)
       else
         rhs((i-1)*ndim+1:(i-1)*ndim+ndim) = rhs((i-1)*ndim+1:(i-1)*ndim+ndim) + cell_rhs
       end if
     end do
+    call stop_timer ('internal')
 
     ! solve the implicit system for viscous flows
-    if (.not.inviscid .and. viscous_implicitness > 0.0_r8) then
+    call start_timer ('solver')
+    if (.not.this%inviscid .and. this%viscous_implicitness > 0.0_r8) then
       ! initial guess is current velocity (TODO: better initial guess?)
-      vel_cc_new = reshape(velocity_cc, [ndim*mesh%ncell])
+      vel_cc_new = reshape(velocity_cc_n, [ndim*this%mesh%ncell])
 
-      call solver%init (lhs, params)
+      call solver%init (this%lhs, this%params)
       call solver%setup ()
       call solver%solve (rhs, vel_cc_new, stat)
       if (stat /= 0) call LS_fatal ("projection solver failed")
 
       ! copy result into velocity_cc (TODO: can I do all this directly without copying?)
-      velocity_cc = reshape(vel_cc_new, [ndim, mesh%ncell])
+      this%velocity_cc = reshape(vel_cc_new, [ndim, this%mesh%ncell])
     end if
+    call stop_timer ('solver')
+
+    call stop_timer ('prediction')
 
   contains
 
@@ -169,7 +268,7 @@ contains
     end subroutine init_disc
 
     subroutine apply_velocity_bcs (grad_vel_face_bndry, viscosity_face_bndry, rhs, velocity_bc, &
-        velocity_cc, dt, viscous_implicitness, inviscid, mesh, gmesh)
+        velocity_cc, vof, fluidVof, dt, viscous_implicitness, inviscid, mprop, mesh, gmesh)
 
       use bndry_func_class
       use mesh_geom_type
@@ -177,8 +276,10 @@ contains
 
       real(r8),          intent(inout) :: grad_vel_face_bndry(:,:,:), viscosity_face_bndry(:), rhs(:)
       class(bndry_func), intent(in)    :: velocity_bc
-      real(r8),          intent(in)    :: velocity_cc(:,:), dt, viscous_implicitness
+      real(r8),          intent(in)    :: velocity_cc(:,:), vof(:,:), fluidVof(:), dt, &
+          viscous_implicitness
       logical,           intent(in)    :: inviscid
+      type(matl_props),  intent(in)    :: mprop
       type(unstr_mesh),  intent(in)    :: mesh
       type(mesh_geom),   intent(in)    :: gmesh
 
@@ -222,15 +323,17 @@ contains
     end subroutine apply_velocity_bcs
 
     subroutine apply_pressure_bcs (viscosity_face_bndry, rhs, pressure_bc, &
-        velocity_cc, dt, viscous_implicitness, inviscid, mesh, gmesh)
+        velocity_cc, vof, fluidVof, dt, viscous_implicitness, inviscid, mprop, mesh, gmesh)
 
       use bndry_func_class
       use mesh_geom_type
 
       real(r8),          intent(inout) :: viscosity_face_bndry(:), rhs(:)
       class(bndry_func), intent(in)    :: pressure_bc
-      real(r8),          intent(in)    :: velocity_cc(:,:), dt, viscous_implicitness
+      real(r8),          intent(in)    :: velocity_cc(:,:), vof(:,:), fluidVof(:), dt, &
+          viscous_implicitness
       logical,           intent(in)    :: inviscid
+      type(matl_props),  intent(in)    :: mprop
       type(unstr_mesh),  intent(in)    :: mesh
       type(mesh_geom),   intent(in)    :: gmesh
 
@@ -266,7 +369,7 @@ contains
 
     end subroutine apply_pressure_bcs
 
-  end subroutine predictor
+  end subroutine solve
 
   subroutine apply_viscosity (rhs, lhs, mprop, dt, viscous_implicitness, velocity_cc, vof, &
       fluidVof, fluidRho, grad_vel_face_bndry, viscosity_face_bndry, face_area, cell_vol, &
@@ -289,16 +392,23 @@ contains
     real(r8) :: dx(ndim), viscosity_face(nfc), tmp
     integer  :: f,n, index, index_ngbr, i_ngbr
 
+    call start_timer ('viscosity')
+
     ! calculate face viscosities
+    call start_timer ('face viscosity')
     viscosity_face = viscosityFaces (mprop, vof, fluidVof, viscosity_face_bndry, solid_face, i, &
         gmesh%cneighbor(:,i))
+    call stop_timer ('face viscosity')
 
     ! explicit part
+    call start_timer ('explicit')
     if (viscous_implicitness < 1.0_r8) &
         rhs = rhs + viscousExplicit (dt, viscous_implicitness, velocity_cc, grad_vel_face_bndry, &
         viscosity_face, face_area, cell_vol, i, gmesh)
+    call stop_timer ('explicit')
 
     ! implicit part
+    call start_timer ('implicit')
     if (viscous_implicitness > 0.0_r8) then
       if (is_pure_immobile .or. fluidRho == 0.0_r8) then
         ! TODO: set this row such that Ax = x
@@ -328,10 +438,13 @@ contains
         end do
       end if
     end if
+    call stop_timer ('implicit')
+
+    call stop_timer ('viscosity')
 
   end subroutine apply_viscosity
 
-  function viscousExplicit (dt, viscous_implicitness, velocity_cc, &
+  pure function viscousExplicit (dt, viscous_implicitness, velocity_cc, &
       grad_vel_face_bndry, viscosity_face, face_area, cell_vol, i, gmesh) result(dMomentum)
 
     use mesh_geom_type
@@ -347,8 +460,8 @@ contains
 
   end function viscousExplicit
 
-  function divStress (velocity_cc, grad_vel_face_bndry, viscosity_face, face_area, cell_vol, i, &
-      gmesh)
+  pure function divStress (velocity_cc, grad_vel_face_bndry, viscosity_face, face_area, cell_vol, &
+      i, gmesh)
 
     use mesh_geom_type
     use differential_operators, only: faceGradient, divergence
