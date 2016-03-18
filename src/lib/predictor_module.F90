@@ -128,24 +128,21 @@ contains
 
     real(r8) :: rhs(ndim*this%mesh%ncell), mass(ndim), mass_flux, cell_rhs(ndim), &
         vel_cc_new(ndim*this%mesh%ncell), &
-        grad_vel_face_bndry(ndim,ndim,this%mesh%nface), viscosity_face_bndry(this%mesh%nface)
+        grad_vel_face_out_bndry(ndim,this%mesh%nface), viscosity_face_bndry(this%mesh%nface)
     integer :: i, i_ngbr, f, stat
     type(hypre_hybrid) :: solver
 
     call start_timer ('prediction')
 
     ! initialize the sparse left hand side matrix
-    if (.not.this%inviscid .and. this%viscous_implicitness > 0.0_r8) then
-      !call init_disc (lhs, mesh%ncell, gmesh%cneighbor)
-      call this%lhs%set_all (0.0_r8)
-    end if
+    if (.not.this%inviscid .and. this%viscous_implicitness > 0.0_r8) call this%lhs%set_all (0.0_r8)
     
     ! update boundary face values prior to the rest of the domain
     call start_timer ('boundaries')
-    grad_vel_face_bndry = 0.0_r8
+    grad_vel_face_out_bndry = 0.0_r8
     viscosity_face_bndry = 0.0_r8
     rhs = 0.0_r8
-    call apply_velocity_bcs (grad_vel_face_bndry, viscosity_face_bndry, rhs, this%velocity_bc, &
+    call apply_velocity_bcs (grad_vel_face_out_bndry, viscosity_face_bndry, rhs, this%velocity_bc, &
         this%velocity_cc, this%vof, this%fluidVof, dt, this%viscous_implicitness, this%inviscid, &
         this%mprop, this%mesh, this%gmesh)
     call apply_pressure_bcs (viscosity_face_bndry, rhs, this%pressure_bc, this%velocity_cc, &
@@ -164,7 +161,7 @@ contains
       if (.not.this%inviscid) &
           call apply_viscosity (cell_rhs, this%lhs, this%mprop, dt, this%viscous_implicitness, &
           velocity_cc_n, this%vof, this%fluidVof, this%fluidRho(i), &
-          grad_vel_face_bndry(:,:,this%mesh%cface(:,i)), &
+          grad_vel_face_out_bndry(:,this%mesh%cface(:,i)), &
           viscosity_face_bndry(this%mesh%cface(:,i)), this%mesh%area(this%mesh%cface(:,i)), &
           this%mesh%volume(i), solid_face(this%mesh%cface(:,i)), is_pure_immobile(i), i, &
           this%mesh%cface(:,i), this%gmesh)
@@ -240,41 +237,14 @@ contains
 
   contains
 
-    subroutine init_disc (matrix,ncell,cneighbor)
-
-      use csr_matrix_type
-
-      type(csr_matrix), intent(out) :: matrix
-      integer, intent(in) :: ncell,cneighbor(:,:)
-
-      type(csr_graph), pointer :: g
-      integer :: i,n,m, index
-
-      allocate(g)
-      call g%init (ncell*ndim)
-      do i = 1,ncell
-        do n = 1,ndim
-          index = (i-1)*ndim+n
-          call g%add_edge (index,index)
-          do m = 1,ndim
-            call g%add_edge (index, (pack(cneighbor(:,i), mask=cneighbor(:,i)>0) - 1) * ndim + m)
-          end do
-        end do
-      end do
-      call g%add_complete ()
-
-      call matrix%init (g, take_graph=.true.)
-
-    end subroutine init_disc
-
-    subroutine apply_velocity_bcs (grad_vel_face_bndry, viscosity_face_bndry, rhs, velocity_bc, &
+    subroutine apply_velocity_bcs (grad_vel_face_out_bndry, viscosity_face_bndry, rhs, velocity_bc, &
         velocity_cc, vof, fluidVof, dt, viscous_implicitness, inviscid, mprop, mesh, gmesh)
 
       use bndry_func_class
       use mesh_geom_type
       use differential_operators, only: faceGradient
 
-      real(r8),          intent(inout) :: grad_vel_face_bndry(:,:,:), viscosity_face_bndry(:), rhs(:)
+      real(r8),          intent(inout) :: grad_vel_face_out_bndry(:,:), viscosity_face_bndry(:), rhs(:)
       class(bndry_func), intent(in)    :: velocity_bc
       real(r8),          intent(in)    :: velocity_cc(:,:), vof(:,:), fluidVof(:), dt, &
           viscous_implicitness
@@ -302,9 +272,10 @@ contains
           ! explicit
           if (viscous_implicitness < 1.0_r8) then
             do n = 1,ndim
-              grad_vel_face_bndry(:,n,fid) = faceGradient (&
-                  [velocity_cc(n,i), velocity_bc_value*gmesh%outnorm(n,f,i)], &
-                  reshape([gmesh%xc(:,i), gmesh%fc(:,fid)], [ndim,2]))
+              grad_vel_face_out_bndry(n,fid) = dot_product( &
+                  faceGradient ([velocity_cc(n,i), velocity_bc_value*gmesh%outnorm(n,f,i)], &
+                  reshape([gmesh%xc(:,i), gmesh%fc(:,fid)], [ndim,2])), &
+                  gmesh%outnorm(:,f,i))
             end do
           end if
 
@@ -372,7 +343,7 @@ contains
   end subroutine solve
 
   subroutine apply_viscosity (rhs, lhs, mprop, dt, viscous_implicitness, velocity_cc, vof, &
-      fluidVof, fluidRho, grad_vel_face_bndry, viscosity_face_bndry, face_area, cell_vol, &
+      fluidVof, fluidRho, grad_vel_face_out_bndry, viscosity_face_bndry, face_area, cell_vol, &
       solid_face, is_pure_immobile, i, cface, gmesh)
     
     use csr_matrix_type
@@ -383,8 +354,8 @@ contains
     type(csr_matrix), intent(inout) :: lhs
     type(matl_props), intent(in)    :: mprop
     real(r8),         intent(in)    :: dt, viscous_implicitness, velocity_cc(:,:), vof(:,:), &
-        fluidVof(:), fluidRho, grad_vel_face_bndry(:,:,:), viscosity_face_bndry(:), face_area(:), &
-        cell_vol
+        fluidVof(:), fluidRho, grad_vel_face_out_bndry(:,:), viscosity_face_bndry(:), &
+        face_area(:), cell_vol
     logical,          intent(in)    :: solid_face(:), is_pure_immobile
     integer,          intent(in)    :: i, cface(:)
     type(mesh_geom),  intent(in)    :: gmesh
@@ -403,8 +374,8 @@ contains
     ! explicit part
     call start_timer ('explicit')
     if (viscous_implicitness < 1.0_r8) &
-        rhs = rhs + viscousExplicit (dt, viscous_implicitness, velocity_cc, grad_vel_face_bndry, &
-        viscosity_face, face_area, cell_vol, i, gmesh)
+        rhs = rhs + viscousExplicit (dt, viscous_implicitness, velocity_cc, &
+        grad_vel_face_out_bndry, viscosity_face, face_area, cell_vol, i, gmesh)
     call stop_timer ('explicit')
 
     ! implicit part
@@ -445,29 +416,29 @@ contains
   end subroutine apply_viscosity
 
   pure function viscousExplicit (dt, viscous_implicitness, velocity_cc, &
-      grad_vel_face_bndry, viscosity_face, face_area, cell_vol, i, gmesh) result(dMomentum)
+      grad_vel_face_out_bndry, viscosity_face, face_area, cell_vol, i, gmesh) result(dMomentum)
 
     use mesh_geom_type
 
     real(r8),        intent(in) :: dt, viscous_implicitness, velocity_cc(:,:), &
-        grad_vel_face_bndry(:,:,:), viscosity_face(:), face_area(:), cell_vol
+        grad_vel_face_out_bndry(:,:), viscosity_face(:), face_area(:), cell_vol
     integer,         intent(in) :: i
     type(mesh_geom), intent(in) :: gmesh
     real(r8)                    :: dMomentum(ndim)
 
-    dMomentum = dt * (1.0_r8 - viscous_implicitness) &
-        * divStress(velocity_cc, grad_vel_face_bndry, viscosity_face, face_area, cell_vol, i, gmesh)
+    dMomentum = dt * (1.0_r8 - viscous_implicitness) * divStress(velocity_cc, &
+        grad_vel_face_out_bndry, viscosity_face, face_area, cell_vol, i, gmesh)
 
   end function viscousExplicit
 
-  pure function divStress (velocity_cc, grad_vel_face_bndry, viscosity_face, face_area, cell_vol, &
-      i, gmesh)
+  pure function divStress (velocity_cc, grad_vel_face_out_bndry, viscosity_face, face_area, &
+      cell_vol, i, gmesh)
 
     use mesh_geom_type
     use differential_operators, only: faceGradient, divergence
 
-    real(r8),        intent(in) :: velocity_cc(:,:), grad_vel_face_bndry(:,:,:), viscosity_face(:), &
-        face_area(:), cell_vol
+    real(r8),        intent(in) :: velocity_cc(:,:), grad_vel_face_out_bndry(:,:), &
+        viscosity_face(:), face_area(:), cell_vol
     integer,         intent(in) :: i
     type(mesh_geom), intent(in) :: gmesh
     real(r8)                    :: divStress(ndim)
@@ -484,7 +455,7 @@ contains
               faceGradient (velocity_cc(n,[i, i_ngbr]), gmesh%xc(:,[i, i_ngbr])), &
               gmesh%outnorm(:,f,i))
         else ! boundary face gradient already calculated
-          grad_vel_face_out(f) = dot_product(grad_vel_face_bndry(:,n,f), gmesh%outnorm(:,f,i))
+          grad_vel_face_out(f) = grad_vel_face_out_bndry(n,f)
         end if
       end do
 

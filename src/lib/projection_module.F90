@@ -17,8 +17,6 @@ module projection_module
   implicit none
   private
 
-  !public :: projection
-
   ! TODO: make these a user-set parameters
   real(r8), parameter :: void_pressure = 0.0_r8
   real(r8), parameter :: min_face_fraction = 1e-3_r8
@@ -95,7 +93,6 @@ contains
     call start_timer ('pressure poisson')
 
     ! initialize the sparse left hand side matrix
-    !call init_disc (lhs, mesh%ncell, gmesh%cneighbor)
     call this%lhs%set_all (0.0_r8)
 
     ! update boundary face values prior to the rest of the domain
@@ -265,26 +262,6 @@ contains
       !   ! TODO: modify this for time-varying pressure boundary conditions.
 
     end subroutine apply_pressure_bcs
-
-    subroutine init_disc (matrix,ncell,cneighbor)
-
-      type(csr_matrix), intent(out) :: matrix
-      integer, intent(in) :: ncell,cneighbor(:,:)
-
-      type(csr_graph), pointer :: g
-      integer :: i
-
-      allocate(g)
-      call g%init (ncell)
-      do i = 1,ncell
-        call g%add_edge (i,i)
-        call g%add_edge (i, pack(cneighbor(:,i), mask=cneighbor(:,i)>0))
-      end do
-      call g%add_complete ()
-
-      call matrix%init (g, take_graph=.true.)
-
-    end subroutine init_disc
 
     real(r8) function cell_rhs (fluxing_velocity, face_area, cell_vol, fluidRho, pressure, &
         outnorm, min_face_fraction, min_fluidRho, dt, solid_face, is_pure_immobile)
