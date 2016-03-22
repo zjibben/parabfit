@@ -16,10 +16,9 @@ module body_force_module
 
 contains
 
-  function calc_gravityhead (fluidRho, vel_cc, xc, xf, body_force, neighbor_exists) result(gh)
+  function calc_gravityhead (fluidRho, vel_cc, xc, xf, body_force) result(gh)
     
     real(r8), intent(in)  :: fluidRho(:), vel_cc(:,:), xc(:,:), xf(:), body_force(:)
-    logical,  intent(in)  :: neighbor_exists
     real(r8)              :: gh(2)
 
     logical :: gl
@@ -27,8 +26,7 @@ contains
     gl = gravity_limited(body_force, vel_cc, xc)
     
     gh(1) = merge(-fluidRho(1)*dot_product(xc(:,1)-xf, body_force), 0.0_r8, .not.gl)
-    gh(2) = merge(-fluidRho(2)*dot_product(xc(:,2)-xf, body_force), 0.0_r8, &
-        neighbor_exists .and. .not.gl)
+    gh(2) = merge(-fluidRho(2)*dot_product(xc(:,2)-xf, body_force), 0.0_r8, .not.gl)
 
   end function calc_gravityhead
 
@@ -36,15 +34,12 @@ contains
 
     real(r8), intent(in) :: body_force(:), vel_cc(:,:), xc(:,:)
 
-    real(r8) :: factor
-
     if (mech_energy_bound == NULL_R) then
       gravity_limited = .false.
     else
-      factor = 0.5_r8 / sum(body_force**2) ! TODO: store this along with body_force? seems constant
       gravity_limited = &
-          cell_mech_energy(vel_cc(:,1), xc(:,1), body_force, factor) > mech_energy_bound .or. &
-          cell_mech_energy(vel_cc(:,2), xc(:,2), body_force, factor) > mech_energy_bound
+          cell_mech_energy(vel_cc(:,1), xc(:,1), body_force) > mech_energy_bound .or. &
+          cell_mech_energy(vel_cc(:,2), xc(:,2), body_force) > mech_energy_bound
     end if
     
   end function gravity_limited
@@ -68,23 +63,21 @@ contains
 
     real(r8), intent(in) :: body_force(:), vel_cc(:), xc(:)
 
-    real(r8) :: factor
-
     if (mech_energy_bound == NULL_R) then
       gravity_limited_bndry = .false.
     else
-      factor = 0.5_r8 / sum(body_force**2)
-      gravity_limited_bndry = cell_mech_energy(vel_cc, xc, body_force, factor) > mech_energy_bound
+      gravity_limited_bndry = cell_mech_energy(vel_cc, xc, body_force) > mech_energy_bound
     end if
     
   end function gravity_limited_bndry
     
   ! calculate the cell mechanical energy
   ! note the potential energy increases in the direction opposite to body_force
-  real(r8) pure function cell_mech_energy (vel_cc, xc, body_force, factor)
-    real(r8), intent(in) :: vel_cc(:), xc(:), body_force(:), factor
-    cell_mech_energy = factor * sum(max(0.0_r8,vel_cc*body_force))**2 & ! kinetic
-        + (-dot_product(xc,body_force))                                 ! potential
+  real(r8) pure function cell_mech_energy (vel_cc, xc, body_force)
+    use array_utils, only: normalize
+    real(r8), intent(in) :: vel_cc(:), xc(:), body_force(:)
+    cell_mech_energy = 0.5_r8 * sum(max(0.0_r8,vel_cc*normalize(body_force)))**2 & ! kinetic
+        + (-dot_product(xc,body_force))                                            ! potential
   end function cell_mech_energy
 
 end module body_force_module

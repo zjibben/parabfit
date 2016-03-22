@@ -4,12 +4,11 @@
 {
     "mesh": {
         "corner-min": [0.0, 0.0, 0.0],
-        //"corner-max": [1.0, 1.0, 1.0],
-        "corner-max": [1.0, 4.0, 1.0],
+        "corner-max": [1.0, 1.0, 1.0],
         //"intervals" : [ 5, 16, 5]
         //"intervals" : [ 5, 5, 5]
         //"intervals" : [ 8, 32, 8]
-        "intervals" : [ 17,  64,  17]
+        "intervals" : [ 16, 16, 16]
         //"intervals" : [ 17,  64,  17]
         //"intervals" : [ 32, 128, 32]
     },
@@ -58,17 +57,7 @@
         "bc": {
             "no-slip-walls": {
                 "condition": "dirichlet-velocity",
-                "face-sets": [1,2,5,6],
-                "data-constant": 0.0
-            },
-            "inlet-pressure": { // y=ymin
-                "condition": "dirichlet-pressure",
-                "face-sets": [3],
-                "data-constant": 1.0
-            },
-            "outlet-pressure": { // y=ymax
-                "condition": "dirichlet-pressure",
-                "face-sets": [4],
+                "face-sets": [1,2,3,4,5,6],
                 "data-constant": 0.0
             }
         },

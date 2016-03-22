@@ -243,6 +243,7 @@ contains
       use bndry_func_class
       use mesh_geom_type
       use differential_operators, only: faceGradient
+      use array_utils,            only: magnitude2
 
       real(r8),          intent(inout) :: grad_vel_face_out_bndry(:,:), viscosity_face_bndry(:), rhs(:)
       class(bndry_func), intent(in)    :: velocity_bc
@@ -286,7 +287,7 @@ contains
             rhs((i-1)*ndim+1:(i-1)*ndim+ndim) = rhs((i-1)*ndim+1:(i-1)*ndim+ndim) &
                 + dt*viscous_implicitness &
                 *viscosity_face_bndry(fid)*velocity_bc_value*gmesh%outnorm(:,f,i) &
-                *dot_product(gmesh%outnorm(:,f,i), dx) / sum(dx**2) / mesh%volume(i)
+                *dot_product(gmesh%outnorm(:,f,i), dx) / magnitude2(dx) / mesh%volume(i)
           end if
         end if
       end do
@@ -298,6 +299,7 @@ contains
 
       use bndry_func_class
       use mesh_geom_type
+      use array_utils, only: magnitude2
 
       real(r8),          intent(inout) :: viscosity_face_bndry(:), rhs(:)
       class(bndry_func), intent(in)    :: pressure_bc
@@ -333,7 +335,7 @@ contains
             dx = gmesh%xc(:,i) - gmesh%fc(:,fid)
             rhs((i-1)*ndim+1:(i-1)*ndim+ndim) = rhs((i-1)*ndim+1:(i-1)*ndim+ndim) - &
                 dt*viscous_implicitness*viscosity_face_bndry(fid)*velocity_cc(:,i) &
-                *mesh%area(fid)*dot_product(gmesh%outnorm(:,f,i), dx) / sum(dx**2) / mesh%volume(i)
+                *mesh%area(fid)*dot_product(gmesh%outnorm(:,f,i), dx) / magnitude2(dx) / mesh%volume(i)
           end if
         end if
       end do
@@ -349,6 +351,7 @@ contains
     use csr_matrix_type
     use mesh_geom_type
     use matl_props_type
+    use array_utils, only: magnitude2
 
     real(r8),         intent(inout) :: rhs(:)
     type(csr_matrix), intent(inout) :: lhs
@@ -401,7 +404,7 @@ contains
 
             tmp = dt * viscous_implicitness &
                 * viscosity_face(f) * face_area(f) * dot_product(gmesh%outnorm(:,f,i), dx) &
-                / sum(dx**2) / cell_vol
+                / magnitude2(dx) / cell_vol
 
             if (i_ngbr > 0) call lhs%increment (index,index_ngbr, tmp)
             call lhs%increment (index,index, -tmp)

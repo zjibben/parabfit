@@ -208,10 +208,12 @@ contains
       this%fluxing_velocity = 0.0_r8
     end if
 
-    write(*,*) 'WARNING: hard-coded initial condition for single-phase channel flow'
+    write(*,*) 'WARNING: hard-coded initial condition'
     do i = 1,this%mesh%ncell
-      this%pressure_cc(i) = 1.0_r8 - this%gmesh%xc(2,i) / 4.0_r8
-      this%gradP_dynamic_over_rho_cc(:,i) = [0.0_r8, -0.25_r8, 0.0_r8] / 1000.0_r8
+      this%pressure_cc(i) = &!1.0_r8 - this%gmesh%xc(2,i) / 4.0_r8 &
+          + this%mprop%density(1)*dot_product(this%body_force,this%gmesh%xc(:,i))
+      this%gradP_dynamic_over_rho_cc(:,i) = 0.0_r8 & ![0.0_r8, -0.25_r8, 0.0_r8] / 1000.0_r8 &
+          - this%body_force
       
       ! this%pressure_cc(i) = 0.0_r8
       ! this%gradP_dynamic_over_rho_cc(:,i) = 0.0_r8

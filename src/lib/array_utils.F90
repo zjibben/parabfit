@@ -8,6 +8,7 @@
 !!
 
 module array_utils
+
   use kinds,  only: r8
   use consts, only: alittle
   implicit none
@@ -15,7 +16,8 @@ module array_utils
 
   public :: first_true_loc,last_true_loc,xrange,reorder,insertion_sort,mag,prj,int2str,&
       reverse,invert,isZero, index_of, &
-      meanArithmetic, meanHarmonic
+      meanArithmetic, meanHarmonic, &
+      magnitude, magnitude2, normalize
 
   ! interface append
   !   procedure append_polygon
@@ -41,6 +43,11 @@ module array_utils
     procedure :: isZero_r8a
     procedure :: isZero_r8aa
   end interface isZero
+
+  interface meanArithmetic
+    procedure :: meanArithmeticNoWeights
+    procedure :: meanArithmeticWeights
+  end interface meanArithmetic
 
 contains
 
@@ -272,7 +279,6 @@ contains
 
   end function reverse_i
 
-
   function invert (x)
     integer, intent(in) :: x(:)
     integer             :: invert(size(x))
@@ -298,20 +304,42 @@ contains
 
   end function index_of
 
-  real(r8) pure function meanArithmetic (x)
-
+  real(r8) pure function meanArithmeticNoWeights (x)
     real(r8), intent(in) :: x(:)
+    meanArithmeticNoWeights = sum(x) / real(size(x), r8)
+  end function meanArithmeticNoWeights
 
-    meanArithmetic = sum(x) / real(size(x), r8)
-
-  end function meanArithmetic
+  real(r8) pure function meanArithmeticWeights (x,w)
+    real(r8), intent(in) :: x(:),w(:)
+    meanArithmeticWeights = sum(x*w) / sum(w)
+  end function meanArithmeticWeights
 
   real(r8) pure function meanHarmonic (x)
-
     real(r8), intent(in) :: x(:)
-
     meanHarmonic = merge(1.0_r8 / meanArithmetic(1.0_r8/x), 0.0_r8, mask=.not.any(x==0.0_r8))
-
   end function meanHarmonic
+
+  real(r8) pure function magnitude (v)
+    real(r8), intent(in) :: v(:)
+    magnitude = sqrt(magnitude2(v))
+  end function magnitude
+
+  real(r8) pure function magnitude2 (v)
+    real(r8), intent(in) :: v(:)
+    magnitude2 = sum(v**2)
+  end function magnitude2
+
+  pure function normalize (v)
+    real(r8), intent(in) :: v(:)
+    real(r8)             :: normalize(size(v))
+    normalize = v / magnitude(v)
+  end function normalize
+
+  ! project vector x1 into the direction of vector x2
+  pure function projectOnto (x1, x2)
+    real(r8), intent(in) :: x1(:), x2(:)
+    real(r8)             :: projectOnto(size(x1))
+    projectOnto = dot_product(x1, normalize(x2))
+  end function projectOnto
 
 end module array_utils
