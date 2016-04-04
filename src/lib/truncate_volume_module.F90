@@ -389,11 +389,11 @@ contains
     real(r8) :: R(3,4), S1(3), S3(3), tmp(3)
 
     tmp = cell%P%rho*cell%P%normal
-    !$omp simd
+    ! !$omp simd
     do i = 1,4
       R(:,i) = x(:,i) - tmp
     end do
-    !$omp end simd
+    ! !$omp end simd
     
     S1 = cross_product (R(:,1),R(:,2)) ! S1 = (X1 - Normal.Ro) X (X2 - Normal.Ro)
     S3 = cross_product (R(:,3),R(:,4)) ! S3 = (X3 - Normal.Ro) X (X4 - Normal.Ro)

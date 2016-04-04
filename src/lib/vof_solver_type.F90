@@ -314,7 +314,7 @@ contains
     !$omp do
     do n = 1,mesh%ncell
       call renorm_cell (volume_flux_sub(:,:,n), volume_flux_tot(:,:,n), vof_n(:,n), &
-          adv_dt*Fluxing_Velocity(:,n)*mesh%area(mesh%cnode(:,n)), mesh%volume(n), ierr)
+          adv_dt*Fluxing_Velocity(:,n)*mesh%area(mesh%cface(:,n)), mesh%volume(n), ierr)
       if (ierr /= 0) then
         write(*,'(a,i10)')     'cell id:       ',n
         write(*,'(a,3f14.10)') 'cell centroid: ',sum(mesh%x(:,mesh%cnode(:,n)), dim=2) / 8.0_r8
@@ -349,7 +349,8 @@ contains
     real(r8), intent(inout) :: volume_flux_sub(:,:)
     integer,  intent(out)   :: ierr
 
-    real(r8) :: Ratio, total_material_flux, cumulative_outward_material_flux, total_flux_through_face,total_flux_through_face_not_maxed
+    real(r8) :: Ratio, total_material_flux, cumulative_outward_material_flux, &
+        total_flux_through_face, total_flux_through_face_not_maxed
     integer  :: norm_iter, f, m, number_not_maxed
     logical  :: flux_reduced, maxed(size(vof_n))
 
@@ -412,7 +413,7 @@ contains
           ! un-maxed material fluxes (Sum_not_maxed).
           total_flux_through_face           = sum(Volume_Flux_Sub(:,f))
           total_flux_through_face_not_maxed = sum(volume_flux_sub(:,f), mask=.not.maxed)
-
+          
           ! Ratio as defined below, when used to multiply the non-maxed fluxes at 
           ! a face, will restore the flux balance.
           if (total_flux_through_face_not_maxed > 0.0_r8) then

@@ -210,9 +210,9 @@ contains
 
     write(*,*) 'WARNING: hard-coded initial condition'
     do i = 1,this%mesh%ncell
-      this%pressure_cc(i) = &!1.0_r8 - this%gmesh%xc(2,i) / 4.0_r8 &
+      this%pressure_cc(i) = 1.0_r8 - this%gmesh%xc(2,i) / 4.0_r8 &
           + this%mprop%density(1)*dot_product(this%body_force,this%gmesh%xc(:,i))
-      this%gradP_dynamic_over_rho_cc(:,i) = 0.0_r8 & ![0.0_r8, -0.25_r8, 0.0_r8] / 1000.0_r8 &
+      this%gradP_dynamic_over_rho_cc(:,i) = [0.0_r8, -0.25_r8, 0.0_r8] / 1000.0_r8 &
           - this%body_force
       
       ! this%pressure_cc(i) = 0.0_r8
@@ -221,15 +221,8 @@ contains
       this%fluidVof(i) = 1.0_r8
     end do
 
-    call this%projection%init (this%velocity_cc, this%fluxing_velocity, this%pressure_cc, &
-        this%gradP_dynamic_over_rho_cc, this%dt, this%fluidRho, this%fluidVof, this%vof, &
-        this%mprop%sound_speed, this%body_force, this%mprop%is_immobile, this%velocity_bc, &
-        this%pressure_bc, this%mesh, this%gmesh, this%projection_solver_params)
-
-    call this%predictor%init (this%velocity_cc, this%gradP_dynamic_over_rho_cc, this%volume_flux, &
-        this%fluidRho, this%vof, this%fluidVof, this%fluxing_velocity, this%viscous_implicitness, &
-        this%mprop, this%inviscid, this%velocity_bc, this%pressure_bc, this%mesh, this%gmesh, &
-        this%prediction_solver_params)
+    call this%projection%init (this%mesh, this%gmesh, this%projection_solver_params)
+    call this%predictor%init  (this%mesh, this%gmesh, this%prediction_solver_params)
 
   end subroutine set_initial_state
 
@@ -289,9 +282,14 @@ contains
       
       ! step the incompressible Navier-Stokes equations
       if (this%fluid_to_move(is_pure_immobile, solid_face)) then
-        call this%predictor%solve (dt, fluidRho_n, fluidVof_n, velocity_cc_n, solid_face, &
-            is_pure_immobile)
-        call this%projection%solve (dt, fluidRho_n, min_fluidRho, solid_face, is_pure_immobile)
+        call this%predictor%solve (this%velocity_cc, this%gradP_dynamic_over_rho_cc, dt, &
+            this%volume_flux, this%fluidRho, fluidRho_n, this%vof, this%fluidVof, fluidVof_n, &
+            velocity_cc_n, this%fluxing_velocity, this%viscous_implicitness, this%inviscid, &
+            solid_face, is_pure_immobile, this%mprop, this%velocity_bc, this%pressure_bc)
+        call this%projection%solve (this%velocity_cc, this%pressure_cc, &
+            this%gradP_dynamic_over_rho_cc, this%fluxing_velocity, dt, this%fluidRho, fluidRho_n, &
+            min_fluidRho, this%fluidVof, this%vof, this%body_force, solid_face, is_pure_immobile, &
+            this%mprop, this%velocity_bc, this%pressure_bc)
       else ! Everything solid; set velocities to zero and check again in the next timestep.
         this%fluxing_velocity = 0.0_r8
         this%velocity_cc = 0.0_r8
@@ -320,7 +318,7 @@ contains
         velocity_cc_n(:,:), min_fluidRho
     logical,          intent(out)   :: solid_face(:), is_pure_immobile(:)
 
-    logical :: real_fluidVof(size(fluidVof_n))
+    real(r8) :: real_fluidVof(size(fluidVof_n))
     integer :: i, f
     
     do i = 1,this%mesh%ncell
@@ -427,9 +425,14 @@ contains
     class(NS_solver), intent(in) :: this
     real(r8),         intent(in) :: remaining_dt ! the remaining time left for this flow_sim step
 
+    real(r8) :: maxvel
+
+    maxvel = maxval(this%fluxing_velocity)
+
     ! TODO: pick a smarter time step size--this will cause problems for particularly long cells
-    timestep_size = &
-        this%CFL_multiplier/maxval(this%fluxing_velocity) * minval(this%mesh%volume**(1.0_r8/3.0_r8))
+    timestep_size = merge(&
+        this%CFL_multiplier/maxvel * minval(this%mesh%volume**(1.0_r8/3.0_r8)),&
+        huge(1.0_r8), mask=maxvel/=0.0_r8)
 
     ! if we are doing purely explicit viscous flow, reduce the step size as necessary
     if (.not.this%inviscid .and. this%viscous_implicitness == 0.0_r8) &

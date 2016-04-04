@@ -112,13 +112,13 @@ contains
     mult = 1.0_r8; iter = 1; volume = 1e10_r8;
     do while (abs(flux_vol%vol - volume) > cutvof*cell%volume .and. iter<flux_vol_iter_max)
       ! loop over edges to adjust the vertices
-      !$omp simd
+      ! !$omp simd
       do e = 1,nvf
         ia = Edge_ends(1,e,face)
         ib = Edge_ends(2,e,face)
         Flux_Vol%Xv(:,ib) = Flux_Vol%Xv(:,ia) + Mult*Percnt(e)*Uedge(:,e)
       end do
-      !$omp end simd
+      ! !$omp end simd
       
       ! compute the flux volume bounded by the computed vertices
       call eval_hex_volumes (flux_vol%xv, volume, tmp)

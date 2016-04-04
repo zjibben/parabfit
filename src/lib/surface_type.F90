@@ -73,7 +73,7 @@ contains
     class(surface), intent(inout) :: this
     class(polygon), intent(in)    :: new_element
 
-    type(polygon)                 :: tmp(size(this%element))
+    type(polygon), allocatable    :: tmp(:)
     integer                       :: N
 
     if (new_element%nVerts < 3) return
@@ -218,6 +218,8 @@ contains
 
     integer                       :: e,j,i,Nelements,Nverts
 
+    if (.not.allocated(this%element)) return
+
     Nelements = size(this%element)
     Nverts    = sum(this%element(:)%nVerts)
 
@@ -225,30 +227,30 @@ contains
     open(99, file=trim(fname))
 
     ! write PLY header
-    write(99,'(a)')   'ply'
-    write(99,'(a)')   'format ascii 1.0'
-    write(99,'(a,i)') 'element vertex ',Nverts
-    write(99,'(a)')   'property float32 x'
-    write(99,'(a)')   'property float32 y'
-    write(99,'(a)')   'property float32 z'
-    write(99,'(a,i)') 'element face ',Nelements
-    write(99,'(a)')   'property list uint8 int32 vertex_index'
-    write(99,'(a)')   'end_header'
+    write(99,'(a)')    'ply'
+    write(99,'(a)')    'format ascii 1.0'
+    write(99,'(a,i9)') 'element vertex ',Nverts
+    write(99,'(a)')    'property float32 x'
+    write(99,'(a)')    'property float32 y'
+    write(99,'(a)')    'property float32 z'
+    write(99,'(a,i9)') 'element face ',Nelements
+    write(99,'(a)')    'property list uint8 int32 vertex_index'
+    write(99,'(a)')    'end_header'
 
     ! write polygon data
     ! vertices
     do e = 1,Nelements
       do j = 1,this%element(e)%nVerts
-        write(99,'(3f)') this%element(e)%x(:,j)
+        write(99,'(3f20.10)') this%element(e)%x(:,j)
       end do
     end do
 
     ! faces
     j = 0
     do e = 1,Nelements
-      write(99,'(i)',advance='no') this%element(e)%nVerts
+      write(99,'(i9)',advance='no') this%element(e)%nVerts
       do i = j,j+this%element(e)%nVerts-1
-        write(99,'(i)',advance='no') i
+        write(99,'(i9)',advance='no') i
       end do
       write(99,*)
       j = j+this%element(e)%nVerts

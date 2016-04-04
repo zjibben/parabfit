@@ -25,8 +25,8 @@ module flow_sim_type
 
   type, public :: flow_sim
     type(unstr_mesh), pointer :: mesh       => null()
-    type(mesh_geom)           :: gmesh
-    type(NS_solver), pointer  :: ns_solver  => null()
+    type(mesh_geom),  pointer :: gmesh      => null()
+    type(NS_solver),  pointer :: ns_solver  => null()
     type(vof_solver), pointer :: vof_solver => null()
     type(matl_props), pointer :: mprop      => null()
 
@@ -51,6 +51,7 @@ contains
   subroutine flow_sim_delete (this)
     type(flow_sim), intent(inout) :: this
     if (associated(this%mesh)) deallocate(this%mesh)
+    if (associated(this%gmesh)) deallocate(this%gmesh)
     if (associated(this%ns_solver)) deallocate(this%ns_solver)
     if (associated(this%vof_solver)) deallocate(this%vof_solver)
   end subroutine flow_sim_delete
@@ -84,6 +85,7 @@ contains
     else
       call LS_fatal ('missing "mesh" sublist parameter')
     end if
+    allocate(this%gmesh)
     call this%gmesh%init (this%mesh)
     call stop_timer ('mesh')
 

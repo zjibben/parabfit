@@ -10,6 +10,7 @@
 !!
 
 module brent_module
+
   use kinds,  only: r8
   use consts, only: alittle,cutvof
   implicit none
@@ -25,10 +26,11 @@ module brent_module
   end type brent_func
 
   abstract interface
-    real(r8) function eval (this, x)
+    function eval (this, x)
       import r8, brent_func
       class(brent_func), intent(in) :: this
       real(r8),          intent(in) :: x
+      real(r8) :: eval
     end function eval
   end interface
 

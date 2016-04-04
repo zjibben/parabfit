@@ -42,40 +42,49 @@ module hex_types
     !   procedure              :: locate_plane
   end type reconstruction_hex
   
-  integer, parameter, public :: hex_f(4,6) = [ & ! face vertices
-       [ 3,4,8,7 ], & ! y+
-       [ 1,2,6,5 ], & ! y-
-       [ 1,5,8,4 ], & ! x-
-       [ 2,3,7,6 ], & ! x+
-       [ 1,4,3,2 ], & ! z-
-       [ 5,6,7,8 ]  & ! z+
-       ]
-  integer, parameter, public :: hex_e(2,12) = [ &
-       [ 1,2 ], & ! edge vertices
-       [ 2,3 ], &
-       [ 3,4 ], &
-       [ 4,1 ], &
-       [ 1,5 ], &
-       [ 2,6 ], &
-       [ 3,7 ], &
-       [ 4,8 ], &
-       [ 5,6 ], &
-       [ 6,7 ], &
-       [ 7,8 ], &
-       [ 8,5 ]  &
-       ]
+  integer, parameter, public :: hex_f(4,6) = reshape([ & ! face vertices
+       3,4,8,7, & ! y+
+       1,2,6,5, & ! y-
+       1,5,8,4, & ! x-
+       2,3,7,6, & ! x+
+       1,4,3,2, & ! z-
+       5,6,7,8],& ! z+
+       shape(hex_f))
+  ! [ & ! face vertices
+  !      [ 3,4,8,7 ], & ! y+
+  !      [ 1,2,6,5 ], & ! y-
+  !      [ 1,5,8,4 ], & ! x-
+  !      [ 2,3,7,6 ], & ! x+
+  !      [ 1,4,3,2 ], & ! z-
+  !      [ 5,6,7,8 ]  & ! z+
+  !      ]
+
+  integer, parameter, public :: hex_e(2,12) = reshape([ &
+       1,2, & ! edge vertices
+       2,3, &
+       3,4, &
+       4,1, &
+       1,5, &
+       2,6, &
+       3,7, &
+       4,8, &
+       5,6, &
+       6,7, &
+       7,8, &
+       8,5],&
+       shape(hex_e))
 
   ! cube vertex positions for unit testing
-  real(r8), parameter, public :: cube_v(3,8) = [ &
-       [ 0.0_r8, 0.0_r8, 0.0_r8 ], &
-       [ 1.0_r8, 0.0_r8, 0.0_r8 ], &
-       [ 1.0_r8, 1.0_r8, 0.0_r8 ], &
-       [ 0.0_r8, 1.0_r8, 0.0_r8 ], &
-       [ 0.0_r8, 0.0_r8, 1.0_r8 ], &
-       [ 1.0_r8, 0.0_r8, 1.0_r8 ], &
-       [ 1.0_r8, 1.0_r8, 1.0_r8 ], &
-       [ 0.0_r8, 1.0_r8, 1.0_r8 ]  &
-       ]
+  real(r8), parameter, public :: cube_v(3,8) = reshape([ &
+       0.0_r8, 0.0_r8, 0.0_r8, &
+       1.0_r8, 0.0_r8, 0.0_r8, &
+       1.0_r8, 1.0_r8, 0.0_r8, &
+       0.0_r8, 1.0_r8, 0.0_r8, &
+       0.0_r8, 0.0_r8, 1.0_r8, &
+       1.0_r8, 0.0_r8, 1.0_r8, &
+       1.0_r8, 1.0_r8, 1.0_r8, &
+       0.0_r8, 1.0_r8, 1.0_r8],&
+       shape(cube_v))
 
 contains
 

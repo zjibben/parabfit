@@ -52,88 +52,172 @@ contains
     type(plane)      :: P
     real(r8)         :: volume,tmpr1,tmpr2
     logical          :: success
-    real(r8)         :: pyr3_v(3,4) = [ &
-         [ 0.0_r8, 0.0_r8, 0.0_r8 ], & ! vertex positions
-         [ 0.0_r8, 1.0_r8, 0.0_r8 ], &
-         [ 1.0_r8, 0.0_r8, 0.0_r8 ], &
-         [ 0.0_r8, 0.0_r8, 1.0_r8 ]  &
-         ]
-    integer          :: pyr3_f(3,4) = [ &
-         [ 1,2,3 ], & ! face vertices
-         [ 1,4,2 ], &
-         [ 1,3,4 ], &
-         [ 4,3,2 ]  &
-         ]
-    integer          :: pyr3_e(2,6) = [ &
-         [ 1,2 ], & ! edge vertices
-         [ 2,3 ], &
-         [ 3,4 ], &
-         [ 1,3 ], &
-         [ 4,1 ], &
-         [ 4,2 ]  &
-         ]
-    real(r8)         :: pyr_v(3,5) = [ & ! pyramid with square bottom
-         [ 0.0_r8, 0.0_r8, 0.0_r8 ], & ! vertex positions
-         [ 1.0_r8, 0.0_r8, 0.0_r8 ], &
-         [ 1.0_r8, 1.0_r8, 0.0_r8 ], &
-         [ 0.0_r8, 1.0_r8, 0.0_r8 ], &
-         [ 0.5_r8, 0.5_r8, 0.5_r8 ]  &
-         ]
-    integer          :: pyr_f(4,5) = [ &
-         [ 1,2,3,4 ], & ! face vertices
-         [ 1,2,5,0 ], &
-         [ 2,3,5,0 ], &
-         [ 3,4,5,0 ], &
-         [ 4,1,5,0 ]  &
-         ]
-    integer          :: pyr_e(2,8) = [ &
-         [ 1,2 ], & ! edge vertices
-         [ 2,3 ], &
-         [ 3,4 ], &
-         [ 4,1 ], &
-         [ 1,5 ], &
-         [ 2,5 ], &
-         [ 3,5 ], &
-         [ 4,5 ]  &
-         ]
-    real(r8)         :: cutcube_v(3,10) = [ &
-         [ 0.9_r8, 0.0_r8, 0.0_r8 ], & ! cube cut with triangle face
-         [ 0.0_r8, 0.9_r8, 0.0_r8 ], &
-         [ 0.0_r8, 0.0_r8, 0.9_r8 ], &
-         [ 1.0_r8, 0.0_r8, 0.0_r8 ], &
-         [ 1.0_r8, 1.0_r8, 0.0_r8 ], &
-         [ 0.0_r8, 1.0_r8, 0.0_r8 ], &
-         [ 0.0_r8, 0.0_r8, 1.0_r8 ], &
-         [ 1.0_r8, 0.0_r8, 1.0_r8 ], &
-         [ 1.0_r8, 1.0_r8, 1.0_r8 ], &
-         [ 0.0_r8, 1.0_r8, 1.0_r8 ]  &
-         ]
-    integer :: cutcube_f(5,7) = [ &
-         [  3,2,1,0,0 ], &
-         [  7,3,1,4,8 ], &
-         [  4,5,9,8,0 ], &
-         [ 10,9,5,6,0 ], &
-         [ 10,6,2,3,7 ], &
-         [  1,2,6,5,4 ], &
-         [ 10,7,8,9,0 ]  &
-         ]
-    integer :: cutcube_e(2,15) = [ &
-         [  1,2 ], &
-         [  2,3 ], &
-         [  3,1 ], &
-         [  1,4 ], &
-         [  4,5 ], &
-         [  5,6 ], &
-         [  6,2 ], &
-         [  3,7 ], &
-         [  7,8 ], &
-         [  8,9 ], &
-         [ 10,9 ], &
-         [ 10,7 ], &
-         [ 10,6 ], &
-         [  9,5 ], &
-         [  8,4 ]  &
-         ]
+    real(r8)         :: pyr3_v(3,4) = reshape([ &
+         0.0_r8, 0.0_r8, 0.0_r8, & ! vertex positions
+         0.0_r8, 1.0_r8, 0.0_r8, &
+         1.0_r8, 0.0_r8, 0.0_r8, &
+         0.0_r8, 0.0_r8, 1.0_r8],&
+         shape(pyr3_v))
+    integer          :: pyr3_f(3,4) = reshape([ &
+         1,2,3, & ! face vertices
+         1,4,2, &
+         1,3,4, &
+         4,3,2],&
+         shape(pyr3_f))
+    integer          :: pyr3_e(2,6) = reshape([ &
+         1,2, & ! edge vertices
+         2,3, &
+         3,4, &
+         1,3, &
+         4,1, &
+         4,2],&
+         shape(pyr3_e))
+    real(r8)         :: pyr_v(3,5) = reshape([ & ! pyramid with square bottom
+         0.0_r8, 0.0_r8, 0.0_r8, & ! vertex positions
+         1.0_r8, 0.0_r8, 0.0_r8, &
+         1.0_r8, 1.0_r8, 0.0_r8, &
+         0.0_r8, 1.0_r8, 0.0_r8, &
+         0.5_r8, 0.5_r8, 0.5_r8],&
+         shape(pyr_v))
+    integer          :: pyr_f(4,5) = reshape([ &
+         1,2,3,4, & ! face vertices
+         1,2,5,0, &
+         2,3,5,0, &
+         3,4,5,0, &
+         4,1,5,0],&
+         shape(pyr_f))
+    integer          :: pyr_e(2,8) = reshape([ &
+         1,2, & ! edge vertices
+         2,3, &
+         3,4, &
+         4,1, &
+         1,5, &
+         2,5, &
+         3,5, &
+         4,5],&
+         shape(pyr_e))
+    real(r8)         :: cutcube_v(3,10) = reshape([ &
+         0.9_r8, 0.0_r8, 0.0_r8, & ! cube cut with triangle face
+         0.0_r8, 0.9_r8, 0.0_r8, &
+         0.0_r8, 0.0_r8, 0.9_r8, &
+         1.0_r8, 0.0_r8, 0.0_r8, &
+         1.0_r8, 1.0_r8, 0.0_r8, &
+         0.0_r8, 1.0_r8, 0.0_r8, &
+         0.0_r8, 0.0_r8, 1.0_r8, &
+         1.0_r8, 0.0_r8, 1.0_r8, &
+         1.0_r8, 1.0_r8, 1.0_r8, &
+         0.0_r8, 1.0_r8, 1.0_r8],&
+         shape(cutcube_v))
+    integer :: cutcube_f(5,7) = reshape([ &
+          3,2,1,0,0, &
+          7,3,1,4,8, &
+          4,5,9,8,0, &
+         10,9,5,6,0, &
+         10,6,2,3,7, &
+          1,2,6,5,4, &
+         10,7,8,9,0],&
+         shape(cutcube_f))
+    integer :: cutcube_e(2,15) = reshape([ &
+          1,2, &
+          2,3, &
+          3,1, &
+          1,4, &
+          4,5, &
+          5,6, &
+          6,2, &
+          3,7, &
+          7,8, &
+          8,9, &
+         10,9, &
+         10,7, &
+         10,6, &
+          9,5, &
+          8,4],  &
+         shape(cutcube_e))
+
+    !     real(r8)         :: pyr3_v(3,4) = [ &
+    !      [ 0.0_r8, 0.0_r8, 0.0_r8 ], & ! vertex positions
+    !      [ 0.0_r8, 1.0_r8, 0.0_r8 ], &
+    !      [ 1.0_r8, 0.0_r8, 0.0_r8 ], &
+    !      [ 0.0_r8, 0.0_r8, 1.0_r8 ]  &
+    !      ]
+    ! integer          :: pyr3_f(3,4) = [ &
+    !      [ 1,2,3 ], & ! face vertices
+    !      [ 1,4,2 ], &
+    !      [ 1,3,4 ], &
+    !      [ 4,3,2 ]  &
+    !      ]
+    ! integer          :: pyr3_e(2,6) = [ &
+    !      [ 1,2 ], & ! edge vertices
+    !      [ 2,3 ], &
+    !      [ 3,4 ], &
+    !      [ 1,3 ], &
+    !      [ 4,1 ], &
+    !      [ 4,2 ]  &
+    !      ]
+    ! real(r8)         :: pyr_v(3,5) = [ & ! pyramid with square bottom
+    !      [ 0.0_r8, 0.0_r8, 0.0_r8 ], & ! vertex positions
+    !      [ 1.0_r8, 0.0_r8, 0.0_r8 ], &
+    !      [ 1.0_r8, 1.0_r8, 0.0_r8 ], &
+    !      [ 0.0_r8, 1.0_r8, 0.0_r8 ], &
+    !      [ 0.5_r8, 0.5_r8, 0.5_r8 ]  &
+    !      ]
+    ! integer          :: pyr_f(4,5) = [ &
+    !      [ 1,2,3,4 ], & ! face vertices
+    !      [ 1,2,5,0 ], &
+    !      [ 2,3,5,0 ], &
+    !      [ 3,4,5,0 ], &
+    !      [ 4,1,5,0 ]  &
+    !      ]
+    ! integer          :: pyr_e(2,8) = [ &
+    !      [ 1,2 ], & ! edge vertices
+    !      [ 2,3 ], &
+    !      [ 3,4 ], &
+    !      [ 4,1 ], &
+    !      [ 1,5 ], &
+    !      [ 2,5 ], &
+    !      [ 3,5 ], &
+    !      [ 4,5 ]  &
+    !      ]
+    ! real(r8)         :: cutcube_v(3,10) = [ &
+    !      [ 0.9_r8, 0.0_r8, 0.0_r8 ], & ! cube cut with triangle face
+    !      [ 0.0_r8, 0.9_r8, 0.0_r8 ], &
+    !      [ 0.0_r8, 0.0_r8, 0.9_r8 ], &
+    !      [ 1.0_r8, 0.0_r8, 0.0_r8 ], &
+    !      [ 1.0_r8, 1.0_r8, 0.0_r8 ], &
+    !      [ 0.0_r8, 1.0_r8, 0.0_r8 ], &
+    !      [ 0.0_r8, 0.0_r8, 1.0_r8 ], &
+    !      [ 1.0_r8, 0.0_r8, 1.0_r8 ], &
+    !      [ 1.0_r8, 1.0_r8, 1.0_r8 ], &
+    !      [ 0.0_r8, 1.0_r8, 1.0_r8 ]  &
+    !      ]
+    ! integer :: cutcube_f(5,7) = [ &
+    !      [  3,2,1,0,0 ], &
+    !      [  7,3,1,4,8 ], &
+    !      [  4,5,9,8,0 ], &
+    !      [ 10,9,5,6,0 ], &
+    !      [ 10,6,2,3,7 ], &
+    !      [  1,2,6,5,4 ], &
+    !      [ 10,7,8,9,0 ]  &
+    !      ]
+    ! integer :: cutcube_e(2,15) = [ &
+    !      [  1,2 ], &
+    !      [  2,3 ], &
+    !      [  3,1 ], &
+    !      [  1,4 ], &
+    !      [  4,5 ], &
+    !      [  5,6 ], &
+    !      [  6,2 ], &
+    !      [  3,7 ], &
+    !      [  7,8 ], &
+    !      [  8,9 ], &
+    !      [ 10,9 ], &
+    !      [ 10,7 ], &
+    !      [ 10,6 ], &
+    !      [  9,5 ], &
+    !      [  8,4 ]  &
+    !      ]
+
 
     write(*,*)
     write(*,*) 'POLYHEDRON'
@@ -311,7 +395,9 @@ contains
   ! divergence theorem.
   !
   real(r8) function volume (this)
-    use array_utils, only: isZero
+    
+    use array_utils,     only: isZero
+    use ieee_arithmetic, only: ieee_is_nan
 
     class(polyhedron), intent(inout) :: this
     
@@ -320,9 +406,10 @@ contains
     
     ! sum up the integral of n_x*x over all faces
     ! (could just as easily be any other direction)
-    volume = this%vol
+    volume = merge(this%vol, 0.0_r8, mask=.not.ieee_is_nan(this%vol))
+    !write(*,*) 'pre', this%vol, ieee_is_nan(this%vol)
     
-    if (.not.allocated(this%x) .or. this%vol /= 0.0_r8) return
+    if (.not.allocated(this%x) .or. volume /= 0.0_r8) return
     
     do f = 1,this%nFaces
       ! generate a polygon from this face
@@ -333,6 +420,8 @@ contains
       if (.not.isZero (face%norm(1))) volume = volume + face%norm(1) * face%intXdA (1)
     end do
     this%vol = volume
+    
+    !write(*,*) 'post', this%vol
 
     ! if (isnan(volume)) then
     !   call this%print_data ()
@@ -469,6 +558,7 @@ contains
   ! return the volume behind (opposite normal) a plane and inside the polyhedron
   real(r8) function volume_behind_plane (this,P)
     use consts, only: alpha
+    use ieee_arithmetic, only: ieee_is_nan
     use plane_type
 
     class(polyhedron), intent(in) :: this
@@ -488,7 +578,7 @@ contains
       dist = P%signed_distance (this%x(:,v)) ! calculate the signed distance from the plane
       side(v) = merge( int(sign(1.0_r8, dist)), 0, abs(dist) > alpha ) ! decide where it lies
     end do
-
+    !write(*,*) 'side',side
     if (all(side<=0)) then
       behind = this
     else if (any(side>0) .and. any(side<0)) then
@@ -497,13 +587,16 @@ contains
     end if
     volume_behind_plane = behind%volume ()
 
-    if (isnan(volume_behind_plane)) then
+    if (ieee_is_nan(volume_behind_plane)) then
       write(*,*)
+      write(*,*) volume_behind_plane
       write(*,'(9i3)') side
       call this%print_data (normalized=.true.)
-      do v = 1,size(intpoly%x,dim=2)
-        write(*,*) intpoly%x(:,v)
-      end do
+      if (allocated(intpoly%x)) then
+        do v = 1,size(intpoly%x,dim=2)
+          write(*,*) intpoly%x(:,v)
+        end do
+      end if
       call behind%print_data (normalized=.true.)
       call LS_fatal ('polyhedron volume is NaN')
     end if
@@ -551,6 +644,8 @@ contains
     ! initialize final polyhedron
     tmp = maxval(count(face_vid(:,:) /= 0,dim=1)) ! the maximum number of vertices on a face
     call polyhedron_on_side_of_plane%init (x(:,1:nVerts), face_vid(1:tmp,1:nFaces), edge_vid(:,1:nEdges))
+
+    !write(*,*) 'poly', nVerts, tmp, nFaces, nEdges
 
   contains
     
@@ -725,29 +820,35 @@ contains
     normalizedh = merge(normalized, .false., present(normalized))
     
     write(*,*) 'POLYHEDRON DATA:'
-
-    if (normalizedh) then
-      x0 = minval(this%x,dim=2)
-      xl = maxval(this%x,dim=2) - x0
-      do v = 1,this%nVerts
-        write(*,'(a,i3,a,3es14.4)') 'x ',v,':  ',(this%x(:,v)-x0)/xl
-      end do
-    else
-      do v = 1,this%nVerts
-        write(*,'(a,i3,a,3es14.4)') 'x ',v,':  ',this%x(:,v)
-      end do
+    
+    if (allocated(this%x)) then
+      if (normalizedh) then
+        x0 = minval(this%x,dim=2)
+        xl = maxval(this%x,dim=2) - x0
+        do v = 1,this%nVerts
+          write(*,'(a,i3,a,3es14.4)') 'x ',v,':  ',(this%x(:,v)-x0)/xl
+        end do
+      else
+        do v = 1,this%nVerts
+          write(*,'(a,i3,a,3es14.4)') 'x ',v,':  ',this%x(:,v)
+        end do
+      end if
+      write(*,*)
     end if
-    write(*,*)
     
-    do e = 1,this%nEdges
-      write(*,'(a,i3,a,2i4)') 'edge ',e,':  ',this%edge_vid(:,e)
-    end do
-    write(*,*)
+    if (allocated(this%edge_vid)) then
+      do e = 1,this%nEdges
+        write(*,'(a,i3,a,2i4)') 'edge ',e,':  ',this%edge_vid(:,e)
+      end do
+      write(*,*)
+    end if
     
-    do f = 1,this%nFaces
-      write(*,'(a,i3,a,10i4)') 'face ',f,':  ',this%face_vid(:,f)
-    end do
-    write(*,*)
+    if (allocated(this%face_vid)) then
+      do f = 1,this%nFaces
+        write(*,'(a,i3,a,10i4)') 'face ',f,':  ',this%face_vid(:,f)
+      end do
+      write(*,*)
+    end if
 
     write(*,'(a,es14.4)') 'volume ',this%vol
     write(*,*)

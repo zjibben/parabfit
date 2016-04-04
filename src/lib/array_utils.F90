@@ -14,7 +14,7 @@ module array_utils
   implicit none
   private
 
-  public :: first_true_loc,last_true_loc,xrange,reorder,insertion_sort,mag,prj,int2str,&
+  public :: first_true_loc,last_true_loc,xrange,reorder,insertion_sort,mag,prj,int2str, &
       reverse,invert,isZero, index_of, &
       meanArithmetic, meanHarmonic, &
       magnitude, magnitude2, normalize
@@ -24,29 +24,23 @@ module array_utils
   ! end interface append
 
   interface reorder
-    procedure :: reorder_r81d
-    procedure :: reorder_r82d
+    module procedure reorder_r81d, reorder_r82d
   end interface reorder
 
   interface insertion_sort
-    procedure :: insertion_sort_3r8r8
-    procedure :: insertion_sort_ir8
+    module procedure insertion_sort_3r8r8, insertion_sort_ir8
   end interface insertion_sort
 
   interface reverse
-    procedure :: reverse_i
-    procedure :: reverse_r8r8
+    module procedure reverse_i, reverse_r8r8
   end interface reverse
 
   interface isZero
-    procedure :: isZero_r8
-    procedure :: isZero_r8a
-    procedure :: isZero_r8aa
+    module procedure isZero_r8, isZero_r8a, isZero_r8aa
   end interface isZero
 
   interface meanArithmetic
-    procedure :: meanArithmeticNoWeights
-    procedure :: meanArithmeticWeights
+    module procedure meanArithmeticNoWeights, meanArithmeticWeights
   end interface meanArithmetic
 
 contains
@@ -72,6 +66,7 @@ contains
 
   ! return the index of the last true element of a logical array
   integer function last_true_loc (mask)
+
     logical, intent(in) :: mask(:)
 
     do last_true_loc = size(mask),1,-1
@@ -83,6 +78,7 @@ contains
 
   ! return the index of the first true element of a logical array
   integer function first_true_loc (mask)
+
     logical, intent(in) :: mask(:)
 
     do first_true_loc = 1,size(mask)
