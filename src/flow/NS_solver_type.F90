@@ -212,7 +212,7 @@ contains
     do i = 1,this%mesh%ncell
       this%pressure_cc(i) = 1.0_r8 - this%gmesh%xc(2,i) / 4.0_r8 &
           + this%mprop%density(1)*dot_product(this%body_force,this%gmesh%xc(:,i))
-      this%gradP_dynamic_over_rho_cc(:,i) = [0.0_r8, -0.25_r8, 0.0_r8] / 1000.0_r8 &
+      this%gradP_dynamic_over_rho_cc(:,i) = [0.0_r8, -0.25_r8, 0.0_r8] / this%mprop%density(1) &
           - this%body_force
       
       ! this%pressure_cc(i) = 0.0_r8
