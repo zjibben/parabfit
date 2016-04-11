@@ -1,0 +1,73 @@
+// rayleigh-taylor instability
+
+{
+    "mesh": {
+        "corner-min": [-0.5, -0.5, -2.0],
+        "corner-max": [ 0.5,  0.5,  2.0],
+        "intervals" : [17,  17,  64]
+    },
+    
+    "sim-control": {
+        "initial-time": 0.0,
+        "initial-time-step": 1.0e-6,
+        "min-time-step": 1.0e-8,
+        "output-times": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0,
+                         1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0,
+                         2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9, 3.0, 
+                         3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8, 3.9, 4.0, 
+                         4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 4.8, 4.9, 5.0, 
+                         5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 5.8, 5.9, 6.0, 
+                         6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 6.8, 6.9, 7.0, 
+                         7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 7.7, 7.8, 7.9, 8.0, 
+                         8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.7, 8.8, 8.9, 9.0, 
+                         9.1, 9.2, 9.3, 9.4, 9.5, 9.6, 9.7, 9.8, 9.9, 10.0]
+    },
+    
+    "ns-solver": {
+        "cfl-multiplier": 0.25,
+        "max-dt": 1e-1,
+        "body-force": [0.0, 0.0, -9.8],
+        "bc": {
+            "no-slip-walls": {
+                "condition": "dirichlet-velocity",
+                "face-sets": [1,2,3,4,5,6],
+                "data-constant": 0.0
+            }
+        },
+        "projection-solver": {
+            "rel-tol": 1.0e-10,
+            "max-ds-iter": 1000,
+            "max-amg-iter": 10,
+            "krylov-method": "cg",
+            "gmres-krylov-dim": 5
+        },
+        "prediction-solver": {
+            "viscous-implicitness": 0.5,
+            "rel-tol": 1.0e-10,
+            "max-ds-iter": 1000,
+            "max-amg-iter": 5,
+            "krylov-method": "cg",
+            "gmres-krylov-dim": 5
+        }
+    },
+
+    "material-properties": {
+        "densities":   [1.0, 1.5],
+        "viscosities": [0.0, 0.0]
+    },
+    
+    "vof-solver": {
+        "advection-method": 1,
+        "materials": [1, 2],
+    	"initial-vof": {
+    	    "plane": {
+    		"material-id": 1,
+    		"normal": [0.0, 0.0, 1.0],
+    		"plane-const": 0.0
+    	    },
+	    "all": {
+    		"material-id": 2
+            }
+    	}
+    }
+}
