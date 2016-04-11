@@ -38,7 +38,7 @@ contains
   subroutine surface_unit_test ()
     use polyhedron_type
     use plane_type
-    use array_utils, only: mag
+    use array_utils, only: normalize
     use hex_types,   only: hex_f,hex_e,cube_v
 
     type(surface)    :: surf
@@ -61,7 +61,7 @@ contains
 
     call surf%purge ()
     P%normal = [4.0_r8, 1.0_r8, 1.0_r8]
-    P%normal = P%normal / mag (P%normal)
+    P%normal = normalize(P%normal)
     P%rho    = 0.5_r8 / sqrt(3.0_r8)
     call surf%append (cube%intersection_verts (P))
     call surf%write_ply ('surf.ply')

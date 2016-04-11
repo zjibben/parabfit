@@ -142,7 +142,7 @@ contains
   ! then the angle of that vector with respect to the x-axis in that space.
   ! this angle is used to sort the vertices
   subroutine order (this,array)
-    use array_utils, only: insertion_sort,mag,prj,xrange,invert
+    use array_utils, only: insertion_sort,xrange,invert,magnitude,projectOnto
 
     class(polygon),    intent(inout) :: this
     integer, optional, intent(inout) :: array(:)
@@ -159,9 +159,9 @@ contains
 
     ! the projection coordinate directions
     ! WARNING: need to ensure the second vector here is not parallel to q1
-    q(:,1) = xl(:,1) / mag (xl(:,1))
-    q(:,2) = xl(:,2) - prj (xl(:,2),q(:,1))
-    q(:,2) = q(:,2) / mag (q(:,2))
+    q(:,1) = xl(:,1) / magnitude (xl(:,1))
+    q(:,2) = xl(:,2) - projectOnto (xl(:,2),q(:,1))
+    q(:,2) = q(:,2) / magnitude (q(:,2))
     
     ! calculate the rotation angle
     t(1) = 0.0_r8
@@ -198,7 +198,7 @@ contains
 
     write(*,*) 'POLYGON DATA'
     do v = 1,this%nVerts
-      write(*,'(a,i3,a,3es14.4)') 'x ',v,':  ',this%x(:,v)
+      write(*,'(a,i3,a,3es20.10)') 'x ',v,':  ',this%x(:,v)
     end do
     write(*,*)
 

@@ -14,10 +14,10 @@ module array_utils
   implicit none
   private
 
-  public :: first_true_loc,last_true_loc,xrange,reorder,insertion_sort,mag,prj,int2str, &
+  public :: first_true_loc,last_true_loc,xrange,reorder,insertion_sort,int2str,containsPair, &
       reverse,invert,isZero, index_of, &
       meanArithmetic, meanHarmonic, &
-      magnitude, magnitude2, normalize
+      magnitude, magnitude2, normalize, projectOnto
 
   ! interface append
   !   procedure append_polygon
@@ -103,21 +103,19 @@ contains
 
   end function xrange
 
-  pure real(r8) function dot (a,b)
-    real(r8), intent(in) :: a(:),b(:)
-    dot = sum(a*b)
-  end function dot
+  pure logical function containsPair (pair,list)
 
-  pure real(r8) function mag (a)
-    real(r8), intent(in) :: a(:)
-    mag = sqrt(sum(a**2))
-  end function mag
+    integer, intent(in) :: pair(:), list(:,:)
 
-  pure function prj (x,v)
-    real(r8), intent(in) :: x(:),v(:)
-    real(r8)             :: prj(size(x))
-    prj = sum(x*v) * v / sum(v**2)
-  end function prj
+    integer :: i
+
+    containsPair = .false.
+    do i = 1,size(list, dim=2)
+      containsPair = containsPair .or. &
+          all(list(:,i)==pair) .or. all(list(:,i)==reverse(pair))
+    end do
+    
+  end function containsPair
 
   subroutine insertion_sort_3r8r8 (x,key)
     real(r8), intent(inout) :: x(:,:),key(:)
@@ -249,7 +247,7 @@ contains
   end function eq
 
   ! return a reversed array
-  function reverse_r8r8 (x) result(r)
+  pure function reverse_r8r8 (x) result(r)
     real(r8), intent(in) :: x(:,:)
     real(r8)             :: r(size(x,dim=1),size(x,dim=2))
 
@@ -262,7 +260,7 @@ contains
 
   end function reverse_r8r8
 
-  function reverse_i (x) result(r)
+  pure function reverse_i (x) result(r)
     integer, intent(in) :: x(:)
     integer             :: r(size(x))
 
@@ -331,11 +329,13 @@ contains
     normalize = v / magnitude(v)
   end function normalize
 
-  ! project vector x1 into the direction of vector x2
+  ! project vector x1 into the direction of vector x2 
   pure function projectOnto (x1, x2)
     real(r8), intent(in) :: x1(:), x2(:)
     real(r8)             :: projectOnto(size(x1))
-    projectOnto = dot_product(x1, normalize(x2))
+    real(r8)             :: n2(size(x1))
+    n2 = normalize(x2)
+    projectOnto = dot_product(x1, n2) * n2
   end function projectOnto
 
 end module array_utils

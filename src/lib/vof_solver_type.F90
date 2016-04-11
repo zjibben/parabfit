@@ -39,8 +39,8 @@ module vof_solver_type
     !! Pending/current state
     integer                            :: advect_method
     real(r8)                           :: t, dt
-    integer,                    public :: nmat                  ! number of materials present globally
-    !real(r8),      allocatable, public :: velocity(:,:)         ! face velocities
+    integer,                    public :: nmat                 ! number of materials present globally
+    !real(r8),      allocatable, public :: velocity(:,:)       ! face velocities
     integer,       allocatable, public :: matl_id(:)
     real(r8),      allocatable, public :: vof(:,:), vof0(:,:), volume_flux_tot(:,:,:)
     type(surface), allocatable, public :: intrec(:)             ! interface reconstruction
@@ -52,20 +52,12 @@ module vof_solver_type
     procedure, private :: advect_volume
     procedure :: update_intrec_surf
     !procedure, private :: flux_renorm
-    ! procedure :: time
-    ! procedure :: get_interpolated_solution
-    ! procedure :: get_solution_view
-    ! procedure :: get_solution_copy
-    ! procedure :: write_metrics
-    ! procedure :: advance_state
-    ! procedure :: commit_pending_state
   end type vof_solver
 
   public :: parallel_interfaces_test, intersecting_interfaces_test
 
-  ! these need to be put somewhere and used appropriately
+  ! this needs to be removed and replaced with use of the velocity_bc and pressure_bc variables
   integer, allocatable :: boundary_flag(:,:)
-  logical, allocatable :: is_void(:)
 
   logical, parameter :: using_mic = .false.
 
@@ -86,23 +78,28 @@ module vof_solver_type
 
 contains
 
-  subroutine init (this, mesh, gmesh, velocity_cc, fluxing_velocity, fluidRho, params)
+  subroutine init (this, mesh, gmesh, nmat, fluxing_velocity, fluidRho, params, velocity_bc)
+
     use consts, only: nfc
     use parameter_list_type
+    use bndry_func_class
 
     class(vof_solver),        intent(out) :: this
     type(unstr_mesh), target, intent(in)  :: mesh
     type(mesh_geom),  target, intent(in)  :: gmesh
-    real(r8),         target, intent(in)  :: velocity_cc(:,:), fluxing_velocity(:,:), fluidRho(:)
+    ! WARNING: these aren't actually targets. need to pass in when they are used, not store them
+    !          as type members
+    real(r8),         target, intent(in)  :: fluxing_velocity(:,:), fluidRho(:)
+    integer,                  intent(in)  :: nmat
+    class(bndry_func),        intent(in)  :: velocity_bc
     type(parameter_list)                  :: params
 
     integer                       :: stat
     type(parameter_list), pointer :: plist
     character(:),     allocatable :: context,errmsg
 
-    !this%velocity_cc => velocity_cc
-    this%mesh     => mesh
-    this%gmesh    => gmesh
+    this%mesh  => mesh
+    this%gmesh => gmesh
 
     this%fluidRho => fluidRho
     this%fluxing_velocity => fluxing_velocity
@@ -115,7 +112,7 @@ contains
     call params%get ('advection-method', this%advect_method, stat=stat, errmsg=errmsg)
     if (stat /= 0) call LS_fatal (context//errmsg)
 
-    this%nmat = size(this%matl_id)
+    this%nmat = nmat
 
     allocate(this%vof(this%nmat,this%mesh%ncell), this%vof0(this%nmat,this%mesh%ncell), &
         this%volume_flux_tot(this%nmat,nfc,this%mesh%ncell), &
@@ -124,19 +121,39 @@ contains
     this%vof = 0.0_r8
     this%volume_flux_tot = 0.0_r8
 
-    ! these needs to be done appropriately and elsewhere
+    ! this type of boundary handling ought to be refactored (it is already done nicely elsewhere)
     ! for right now, this just exists so that we can run simple tests,
     ! without removing the branches of code that deal with more complex scenarios
-    allocate(boundary_flag(nfc,this%mesh%ncell), is_void(this%nmat))
+    allocate(boundary_flag(nfc,this%mesh%ncell))
     boundary_flag = 0
-    is_void = .false.
+    call assign_vel_bc_flags (boundary_flag, velocity_bc)
+
+  contains
+
+    subroutine assign_vel_bc_flags (boundary_flag, velocity_bc)
+
+      integer,           intent(inout) :: boundary_flag(:,:)
+      class(bndry_func), intent(in)    :: velocity_bc
+
+      integer :: bndry_f, i, f, fid
+
+      do bndry_f = 1,size(velocity_bc%index)
+        fid = velocity_bc%index(bndry_f)
+
+        i = gmesh%fcell(1,fid) ! id of cell attached to this face
+        f = gmesh%flid(1,fid)  ! local id of the face
+
+        boundary_flag(f,i) = 2
+      end do
+
+    end subroutine assign_vel_bc_flags
 
   end subroutine init
 
   subroutine set_initial_state (this, plist)
+
     use parameter_list_type
     use vof_init
-    !use vof_tools, only: distinct_matls, volume_of_matl
 
     class(vof_solver),    intent(inout) :: this
     type(parameter_list), intent(in)    :: plist
@@ -147,23 +164,23 @@ contains
 
     !! Initialize the Vof
     call vof_initialize (this%mesh, plist, this%vof, this%matl_id, this%nmat)
-
+    this%vof0 = this%vof
     
     ! DEBUGGING ############
     do m = 1,size(this%vof, dim=1)
-      write(*,*) sum(this%vof(m,:)*this%mesh%volume(:))
+      write(*,'(a,i3,es14.4)') 'vof ',m,sum(this%vof(m,:)*this%mesh%volume(:))
     end do
     ! ######################
 
-    this%vof0 = this%vof
-
   end subroutine set_initial_state
 
-  subroutine advect_mass (this, dt, dump_intrec)
+  subroutine advect_mass (this, dt, matl_is_void, dump_intrec)
+
     use timer_tree_type
+
     class(vof_solver), intent(inout) :: this
     real(r8),          intent(in)    :: dt
-    logical,           intent(in)    :: dump_intrec
+    logical,           intent(in)    :: matl_is_void(:), dump_intrec
 
     integer  :: stat
     real(r8) :: Vof_n(this%nmat, this%mesh%ncell)
@@ -182,7 +199,7 @@ contains
     Vof_n = this%vof
 
     ! Advect material volumes.
-    call this%advect_volume (Vof_n,dt,dump_intrec)
+    call this%advect_volume (Vof_n, dt, matl_is_void, dump_intrec)
 
     ! ! Update the mass & concentration distributions.
     ! if (volume_track_interfaces) then 
@@ -225,7 +242,8 @@ contains
   !   end do
   ! end subroutine inflow_outflow_update
 
-  subroutine advect_volume (this, vof_n, dt, dump_intrec)
+  subroutine advect_volume (this, vof_n, dt, matl_is_void, dump_intrec)
+
     use consts,                 only: nfc
     use timer_tree_type
     use volume_track_module,    only: volume_track
@@ -233,19 +251,19 @@ contains
 
     class(vof_solver), intent(inout) :: this
     real(r8),          intent(in)    :: Vof_n(:,:), dt
-    logical,           intent(in)    :: dump_intrec
+    logical,           intent(in)    :: matl_is_void(:), dump_intrec
 
     integer  :: status, p, vps, volume_track_subcycles
     real(r8) :: adv_dt
-    real(r8) :: volume_flux_sub(this%nmat, nfc, this%mesh%ncell) ! keeps track of volume changes in every subcycle
+    real(r8) :: volume_flux_sub(this%nmat, nfc, this%mesh%ncell) ! volume changes in every subcycle
 
-    call start_timer("Volume Tracking")
+    call start_timer ("volume tracking")
 
     ! Zero the total flux array
     this%volume_flux_tot = 0.0_r8
 
     ! Set the advection timestep. this can be improved.
-    volume_track_subcycles = 2
+    volume_track_subcycles = 2 ! TODO: make this a user-set parameter
     adv_dt = dt/real(volume_track_subcycles,r8)
     
 !!$omp parallel if(using_mic) default(private) shared(adv_dt, this, vof_n, volume_flux_sub, volume_track_subcycles)
@@ -254,19 +272,21 @@ contains
       ! Get the donor fluxes.
       select case (this%advect_method)
       case (ONION_SKIN)
-        call volume_track (volume_flux_sub, adv_dt, this%mesh, this%gmesh, this%vof, this%fluxing_velocity, &
-            this%nmat, this%fluidRho, this%intrec, dump_intrec .and. p==volume_track_subcycles)
+        call volume_track (volume_flux_sub, adv_dt, this%mesh, this%gmesh, this%vof, &
+            this%fluxing_velocity, this%nmat, this%fluidRho, this%intrec, &
+            dump_intrec .and. p==volume_track_subcycles)
       case (NESTED_DISSECTION)
-        call volume_track_nd (volume_flux_sub, adv_dt, this%mesh, this%gmesh, this%vof, this%fluxing_velocity, &
-            this%fluidRho, this%intrec, dump_intrec .and. p==volume_track_subcycles)
+        call volume_track_nd (volume_flux_sub, adv_dt, this%mesh, this%gmesh, this%vof, &
+            this%fluxing_velocity, this%fluidRho, this%intrec, &
+            dump_intrec .and. p==volume_track_subcycles)
       case default
         call LS_fatal ("invalid advection method")
       end select
 
       !$omp parallel if(.not.using_mic) default(private) shared(adv_dt, this, vof_n, volume_flux_sub)
-
       ! Normalize the donor fluxes.
-      call flux_renorm (this%fluxing_velocity, Vof_n, this%volume_flux_tot, Volume_Flux_Sub, adv_dt, this%mesh)
+      call flux_renorm (this%fluxing_velocity, Vof_n, this%volume_flux_tot, Volume_Flux_Sub, &
+          adv_dt, this%mesh)
 
       ! Compute the acceptor fluxes.
       call flux_acceptor (volume_flux_sub, this%gmesh)
@@ -274,38 +294,30 @@ contains
       ! Compute BC (inflow) fluxes.
       call flux_bc (this%fluxing_velocity, vof_n, volume_flux_sub, adv_dt, this%mesh, this%gmesh)
 
-      ! Add the volume fluxes from this subcycle to the  total flux array and update the volume fraction array
+      ! Add the volume fluxes from this subcycle to the total flux array
+      ! and update the volume fraction array
       call volume_advance (Volume_Flux_Sub, this%volume_flux_tot, this%vof, this%mesh%volume)
 
       ! Ensure volume fractions of each material are within 0 and 1 and that all materials sum to one
-      call vof_bounds (this%vof, this%volume_flux_tot, this%mesh)
-
+      call vof_bounds (this%vof, this%volume_flux_tot, matl_is_void, this%mesh)
       !$omp end parallel
-      !call LS_fatal ("stop here")
-
-      !write(*,*) 'completed subcycle, dt =',adv_dt
     end do
 !!$omp end parallel
-    call stop_timer("Volume Tracking")
+    call stop_timer ("volume tracking")
 
   end subroutine advect_volume
 
-  !=======================================================================
-  ! Purpose(s):
-  !
-  !   Scan all faces with an outward flux and determine if any
-  !   material is over-exhausted from this cell.  If so lower
-  !   the fluxes until the material is just exhausted.  Then
-  !   loop over the faces and balance the individual material
-  !   fluxes with the total face flux. The sum of the material
-  !   volume fluxes (Volume_Flux_Sub) for each face should sum
-  !   to the total volume flux for that face.
-  !
-  !=======================================================================
+  ! Scan all faces with an outward flux and determine if any
+  ! material is over-exhausted from this cell. If so lower
+  ! the fluxes until the material is just exhausted. Then
+  ! loop over the faces and balance the individual material
+  ! fluxes with the total face flux. The sum of the material
+  ! volume fluxes (Volume_Flux_Sub) for each face should sum
+  ! to the total volume flux for that face.
   subroutine flux_renorm (Fluxing_Velocity, Vof_n, Volume_Flux_Tot, Volume_Flux_Sub, adv_dt, mesh)
-    use unstr_mesh_type
 
-    real(r8),          intent(in)    :: fluxing_velocity(:,:), vof_n(:,:), adv_dt, volume_flux_tot(:,:,:)
+    real(r8),          intent(in)    :: fluxing_velocity(:,:), vof_n(:,:), adv_dt, &
+        volume_flux_tot(:,:,:)
     real(r8),          intent(inout) :: volume_flux_sub(:,:,:)
     class(unstr_mesh), intent(in)    :: mesh
 
@@ -324,13 +336,12 @@ contains
         end do
         call LS_fatal ('FLUX_RENORM: cannot reassign face flux to any other material')
       end if
-    end do ! cell loop
+    end do
     !$omp end do nowait
 
   end subroutine flux_renorm
 
 
-  ! 
   ! renorm_cell: ensure no materials are over-exhausted in a given cell
   !
   ! note 1:   We stay in this loop until the sum of material fluxes from each face of
@@ -341,12 +352,11 @@ contains
   !           to be fluxed, and increase other fluxes appropriately.  If this increase
   !           leads to the over-exhaustion of other materials, we work our way through
   !           this loop again, and again, and again, and ... , until we're done.
-  ! 
-  subroutine renorm_cell (volume_flux_sub, volume_flux_tot, vof_n, total_face_flux, cell_volume, ierr)
-    !use fluid_data_module,    only: isImmobile
+  subroutine renorm_cell (volume_flux_sub, volume_flux_tot, vof_n, total_face_flux, cell_volume, &
+      ierr)
 
-    real(r8), intent(in)    :: vof_n(:), volume_flux_tot(:,:), total_face_flux(:), cell_volume
     real(r8), intent(inout) :: volume_flux_sub(:,:)
+    real(r8), intent(in)    :: volume_flux_tot(:,:), vof_n(:), total_face_flux(:), cell_volume
     integer,  intent(out)   :: ierr
 
     real(r8) :: Ratio, total_material_flux, cumulative_outward_material_flux, &
@@ -404,13 +414,12 @@ contains
       ! fluxes by another 'Ratio' (this time > 1) that restores the flux balance.  
       ! This may in turn over-exhaust one or more of these materials, and so from
       ! the bottom of this loop, we head back to the top.
-      do f = 1,6
+      do f = 1,nfc
         ! Calculate the total flux volume through the cell face (is this already
         ! available elsewhere?), and if the flux volume is greater than zero, 
         ! then concern ourselves with adjusting individual material fluxes.
         if (Total_Face_Flux(f) > cutvof*cell_volume) then
-          ! Add up the sum of material fluxes at a face (Sum), and the sum of 
-          ! un-maxed material fluxes (Sum_not_maxed).
+          ! calculate the sum of material fluxes at a face, and the sum of un-maxed material fluxes.
           total_flux_through_face           = sum(Volume_Flux_Sub(:,f))
           total_flux_through_face_not_maxed = sum(volume_flux_sub(:,f), mask=.not.maxed)
           
@@ -427,9 +436,9 @@ contains
               return
             end if
 
-            Ratio = (Total_Face_Flux(f) - total_flux_through_face) / real(number_not_maxed,r8)
             where (.not.Maxed) & ! .and. .not.isImmobile)
-                Volume_Flux_Sub(:,f) = Ratio
+                Volume_Flux_Sub(:,f) = (Total_Face_Flux(f) - total_flux_through_face) &
+                / real(number_not_maxed,r8)
           end if
 
         end if
@@ -439,14 +448,8 @@ contains
 
   end subroutine renorm_cell
 
-  !=======================================================================
-  ! Purpose(s):
-  !
-  !   Compute inflow volume fluxes.
-  !
-  !=======================================================================
+  ! Compute inflow volume fluxes.
   subroutine flux_bc (Fluxing_Velocity, Vof_n, Volume_Flux_Sub, adv_dt, mesh, gmesh)
-    use unstr_mesh_type
 
     type(unstr_mesh), intent(in)    :: mesh
     type(mesh_geom),  intent(in)    :: gmesh
@@ -458,7 +461,7 @@ contains
 
     !$omp do
     do n = 1,mesh%ncell ! loop over all cells and faces
-      do f = 1,6
+      do f = 1,nfc
         fid = mesh%cface(f,n)
 
         ! Calculate the inflow flux volume
@@ -466,7 +469,6 @@ contains
 
         ! if this is an inflow face, calculate the flux and delta volume
         if (gmesh%cneighbor(f,n)==-1 .and. flux_vol < -cutvof*mesh%volume(n)) then
-
 
           ! If inflow material specified as a BC, assign it.
           ! otherwise, assume what's flowing in is more of what was in the cell at the beginning of the timestep
@@ -484,7 +486,6 @@ contains
   end subroutine flux_bc
 
   subroutine flux_acceptor (volume_flux_sub,gmesh)
-    use unstr_mesh_type
 
     real(r8), intent(inout) :: volume_flux_sub(:,:,:)
     type(mesh_geom),  intent(in) :: gmesh
@@ -495,13 +496,15 @@ contains
     !$omp barrier
 
     !$omp do
-    do n = 1,size(volume_flux_sub, dim=3) ! loop through cells
-      do f = 1,6                          ! loop through faces
-        nc = gmesh%cneighbor(f,n)         ! neighbor cell id
+    do n = 1,size(volume_flux_sub, dim=3)
+      do f = 1,nfc
+        nc = gmesh%cneighbor(f,n)   ! neighbor cell id
 
-        if (nc>0) then                    ! neighbor exists (not boundary cell)
-          nf = gmesh%fneighbor(f,n)       ! neighbor cell's local face id
-          do m = 1,size(volume_flux_sub, dim=1) ! loop through materials
+        if (nc>0) then              ! neighbor exists (not boundary cell)
+          nf = gmesh%fneighbor(f,n) ! neighbor cell's local face id
+          ! check how much of every material is being fluxed to me from my neighbor,
+          ! if there is any, note it in my own volume_flux_sub
+          do m = 1,size(volume_flux_sub, dim=1)
             acceptor_flux = volume_flux_sub(m,nf,nc)
             if (acceptor_flux > 0.0_r8) volume_flux_sub(m,f,n) = -acceptor_flux
           end do
@@ -525,26 +528,22 @@ contains
       volume_flux_tot(:,:,n) = volume_flux_tot(:,:,n) + volume_flux_sub(:,:,n)
 
       do m = 1,size(vof, dim=1)
-        !if (.not.isImmobile(m)) then
+        !if (.not.isImmobile(m)) &
         vof(m,n) = vof(m,n) - sum(volume_flux_sub(m,:,n)) / volume(n)
-        !end if
       end do
     end do
     !$omp end do nowait
 
   end subroutine volume_advance
 
-  !=======================================================================
-  ! Purpose(s):
-  !
-  !   Make sure volume fractions are within bounds:  0 <= Vof <= 1.
-  !   If not, remove the overshoots (Vof > 1) and undershoots (Vof < 0).
-  !
-  !=======================================================================
-  subroutine vof_bounds (vof, volume_flux_tot, mesh)
+  ! Make sure volume fractions are within bounds:  0 <= Vof <= 1.
+  ! If not, remove the overshoots (Vof > 1) and undershoots (Vof < 0).
+  subroutine vof_bounds (vof, volume_flux_tot, matl_is_void, mesh)
+
     use array_utils, only: last_true_loc
 
     real(r8),         intent(inout) :: vof(:,:),Volume_Flux_Tot(:,:,:)
+    logical,          intent(in)    :: matl_is_void(:)
     type(unstr_mesh), intent(in)    :: mesh
 
     integer  :: m, n, void_m, vmc, nmat
@@ -557,17 +556,19 @@ contains
       ! make sure individual material vofs are within bounds
       do m = 1,nmat
         if (Vof(m,n) > (1.0_r8-cutvof) .and. Vof(m,n) /= 1.0_r8) then ! If volume fraction is > 1.0 - cutvof, round to one.
-          if (is_void(m)) then
+          if (matl_is_void(m)) then
             vof(m,n) = 1.0_r8
           else 
-            call adjust_flux_matl (volume_flux_tot(m,:,n), Vof(m,n), 1.0_r8, mesh%volume(n), boundary_flag(:,n))
+            call adjust_flux_matl (volume_flux_tot(m,:,n), Vof(m,n), 1.0_r8, mesh%volume(n), &
+                boundary_flag(:,n))
             Vof(m,n) = 1.0_r8
           end if
         else if (Vof(m,n) < cutvof .and. Vof(m,n) /= 0.0_r8) then     ! If volume fraction is < cutvof; round to zero.
-          if (is_void(m)) then
+          if (matl_is_void(m)) then
             vof(m,n) = 0.0_r8
           else if (vof(m,n) /= 0.0_r8) then
-            call adjust_flux_matl (volume_flux_tot(m,:,n), vof(m,n), 0.0_r8, mesh%volume(n), boundary_flag(:,n))
+            call adjust_flux_matl (volume_flux_tot(m,:,n), vof(m,n), 0.0_r8, mesh%volume(n), &
+                boundary_flag(:,n))
             vof(m,n) = 0.0_r8
           end if
         end if
@@ -581,16 +582,16 @@ contains
 
       ! Check to see if void is already in the cell.
       ! if so, grab the index of the last void material present
-      void_m = last_true_loc (is_void .and. vof(:,n) > 0.0_r8)
-      if (any(is_void) .and. void_m > 0) then
+      void_m = last_true_loc (matl_is_void .and. vof(:,n) > 0.0_r8)
+      if (any(matl_is_void) .and. void_m > 0) then
         ! sum up the volume fraction taken up by void
-        void_volume = sum(vof(:,n), is_void .and. vof(:,n)>0.0_r8)
+        void_volume = sum(vof(:,n), matl_is_void .and. vof(:,n)>0.0_r8)
         if (Ftot > 1.0_r8) then ! if there is too much material in this cell
           ! Is there enough to balance the cell?
           if (void_volume > Ftot-1.0_r8) then ! There is enough void ...
             Ftot_m1 = Ftot - 1.0_r8
             do m = 1,nmat
-              if (.not.is_void(m)) cycle
+              if (.not.matl_is_void(m)) cycle
               if (Vof(m,n) > Ftot_m1) then
                 Vof(m,n) = Vof(m,n) - Ftot_m1
                 exit
@@ -601,12 +602,13 @@ contains
             end do
           else ! There isn't enough void ...
             do m = 1,nmat
-              if (is_void(m)) then
+              if (matl_is_void(m)) then
                 Ftot = Ftot - Vof(m,n)
                 Vof(m,n) = 0.0_r8
               end if
             end do
-            call adjust_flux_total (volume_flux_tot(:,:,n), Ftot, mesh%volume(n), Delta_Vol, boundary_flag(:,n))
+            call adjust_flux_total (volume_flux_tot(:,:,n), delta_vol, Ftot, mesh%volume(n), &
+                boundary_flag(:,n), matl_is_void)
             vof(:,n) = vof(:,n) + delta_vol(:) / mesh%volume(n)
           end if
         else ! Ftot < 1, and there's void already in the cell
@@ -614,7 +616,8 @@ contains
         end if
 
       else ! there's no void in this cell
-        call adjust_flux_total (Volume_Flux_Tot(:,:,n), Ftot, mesh%volume(n), Delta_Vol, boundary_flag(:,n))
+        call adjust_flux_total (Volume_Flux_Tot(:,:,n), delta_vol, Ftot, mesh%volume(n), &
+            boundary_flag(:,n), matl_is_void)
         vof(:,n) = vof(:,n) + delta_vol(:) / mesh%volume(n)
       end if
     end do ! cells
@@ -622,16 +625,11 @@ contains
 
   end subroutine vof_bounds
 
-  !=======================================================================
-  ! Purpose(s):
-  !
-  !  Adjust the material volume fluxes on the faces of a single cell to
-  !  match the evaluated material volume to a target value.
-  !
-  !      Jim Sicilian,   CCS-2,   October 2002
-  !
-  !=======================================================================
-  subroutine adjust_flux_matl (Volume_Flux_Tot, Current_Material_Vof, Target_Material_Vof, volume, local_BC)
+  ! Adjust the material volume fluxes on the faces of a single cell
+  ! to match the evaluated material volume to a target value.
+  subroutine adjust_flux_matl (Volume_Flux_Tot, Current_Material_Vof, Target_Material_Vof, volume, &
+      local_BC)
+
     real(r8), intent(inout) :: Volume_Flux_Tot(:)
     real(r8), intent(in)    :: Current_Material_Vof,Target_Material_Vof,volume
     integer,  intent(in)    :: local_BC(:)
@@ -646,7 +644,7 @@ contains
     Total_Flow      = inflow  (volume_flux_tot, local_BC) + outflow (volume_flux_tot, local_BC)
     Change_Fraction = Target_Material_Vof - Current_Material_Vof
 
-    if(Total_Flow /= 0.0_r8) then
+    if (Total_Flow /= 0.0_r8) then
       ! calculate the ratio between change in volume flux needed and current total volume being fluxed
       Change_Fraction = Change_Fraction*volume / Total_Flow
 
@@ -702,20 +700,16 @@ contains
 
   end subroutine adjust_flux_matl
 
-  !=======================================================================
-  ! Purpose(s):
-  !
-  !  Adjust the material fluxes on the faces of a single cell to match
-  !  the evaluated total material volume to a target value
-  !
-  !      Jim Sicilian,   CCS-2,   October 2002
-  !
-  !=======================================================================
-  subroutine adjust_flux_total (volume_flux_tot, current_vof, volume, delta_vol, local_BC)
+  ! Adjust the material fluxes on the faces of a single cell to match
+  ! the evaluated total material volume to a target value
+  subroutine adjust_flux_total (volume_flux_tot, delta_vol, current_vof, volume, local_BC, &
+      matl_is_void)
+
     real(r8), intent(inout) :: Volume_Flux_Tot(:,:)
+    real(r8), intent(out)   :: Delta_Vol(:)
     real(r8), intent(in)    :: Current_Vof, volume
     integer,  intent(in)    :: local_BC(:)
-    real(r8), intent(out)   :: Delta_Vol(:) !size(volume_flux_tot,dim=1)
+    logical,  intent(in)    :: matl_is_void(:)
 
     integer        :: f, m, v, nmat
     real(r8)       :: Inflow_Volume, Outflow_Volume, Volume_Change, Total_Flow, Change_Fraction
@@ -726,7 +720,7 @@ contains
     ! Determine total incoming and outgoing volumes changes
     Inflow_Volume = 0.0_r8; Outflow_Volume = 0.0_r8
     do m = 1, nmat
-      if (.not.is_void(m)) then
+      if (.not.matl_is_void(m)) then
         inflow_volume  = inflow_volume  + inflow  (volume_flux_tot(m,:), local_BC)
         outflow_volume = outflow_volume + outflow (volume_flux_tot(m,:), local_BC)
       end if
@@ -756,12 +750,13 @@ contains
       ! Adjust the Volume Changes by face and accumulate them by cell.
       Delta_Vol = 0.0_r8
       do m = 1, nmat
-        if(is_void(m)) cycle
+        if (matl_is_void(m)) cycle
         do f = 1,nfc
           if (local_BC(f)==2) cycle ! Don't change dirichlet velocity BCs.
           ! adjust material transfers
           Delta_Vol(m) = Delta_Vol(m) + Change_Fraction*abs(Volume_Flux_Tot(m,f))
-          Volume_Flux_Tot(m,f) = Volume_Flux_Tot(m,f)*(1.0_r8-sign(1.0_r8,volume_flux_tot(m,f))*Change_Fraction)
+          Volume_Flux_Tot(m,f) = Volume_Flux_Tot(m,f) &
+              * (1.0_r8 - sign(1.0_r8,volume_flux_tot(m,f))*Change_Fraction)
         end do
       end do ! material loop
     else ! there is no total flow through this cell
@@ -782,34 +777,17 @@ contains
   real(r8) function outflow (volume_flux_tot, local_BC)
     real(r8), intent(in) :: volume_flux_tot(:)
     integer,  intent(in) :: local_BC(:)
-
-    integer :: f
-
-    outflow = 0.0_r8
-    do f = 1,nfc
-      ! Don't change dirichlet velocity BCs.
-      if (local_BC(f)/=2 .and. Volume_Flux_Tot(f) > 0.0_r8) &
-          Outflow = Outflow + Volume_Flux_Tot(f)
-    end do
-
+    outflow = sum(volume_flux_tot, mask = local_bc/=2 .and. volume_flux_tot>0.0_r8)
   end function outflow
 
   real(r8) function inflow (volume_flux_tot, local_BC)
     real(r8), intent(in) :: volume_flux_tot(:)
     integer,  intent(in) :: local_BC(:)
-
-    integer :: f
-
-    inflow = 0.0_r8
-    do f = 1, nfc
-      ! Don't change dirichlet velocity BCs.
-      if (local_BC(f)/=2 .and. Volume_Flux_Tot(f) < 0.0_r8) &
-          Inflow = Inflow - Volume_Flux_Tot(f)
-    end do
-
+    inflow = -sum(volume_flux_tot, mask = local_bc/=2 .and. volume_flux_tot<0.0_r8)
   end function inflow
 
   subroutine update_intrec_surf (this)
+
     use locate_plane_module
     use polyhedron_type
     use multimat_cell_type
@@ -837,7 +815,8 @@ contains
         do ni = 1,size(this%intrec)
           vofint = min(max(sum(this%vof(1:ni,i)), 0.0_r8), 1.0_r8)
           if (cutvof < vofint .and. vofint < 1.0_r8 - cutvof) then
-            call plane_cell%init (int_norm(:,ni,i), vofint, this%mesh%volume(i), this%mesh%x(:,this%mesh%cnode(:,i)))
+            call plane_cell%init (int_norm(:,ni,i), vofint, this%mesh%volume(i), &
+                this%mesh%x(:,this%mesh%cnode(:,i)))
             call plane_cell%locate_plane (locate_plane_niters)
             call poly%init (plane_cell%node, hex_f, hex_e)
             call this%intrec(ni)%append (poly%intersection_verts (plane_cell%P))
@@ -845,7 +824,8 @@ contains
         end do
       case (NESTED_DISSECTION)
         ! send cell data to the multimat_cell type
-        call ndcell%init (this%mesh%x(:,this%mesh%cnode(:,i)), hex_f, hex_e, this%mesh%volume(i), this%gmesh%outnorm(:,:,i))
+        call ndcell%init (this%mesh%x(:,this%mesh%cnode(:,i)), hex_f, hex_e, this%mesh%volume(i), &
+            this%gmesh%outnorm(:,:,i))
 
         ! partition the cell based on vofs and norms
         call ndcell%partition (this%vof(:,i), int_norm(:,:,i))
@@ -861,9 +841,8 @@ contains
 
   ! unit tests ------------------
   subroutine parallel_interfaces_test ()
-    use unstr_mesh_type
+
     use unstr_mesh_factory
-    use mesh_geom_type
     use array_utils, only: int2str
 
     type(unstr_mesh), target :: mesh
@@ -877,7 +856,8 @@ contains
 
     ! initialize the vof solver
     vof_slv%nmat = 3
-    allocate(vof_slv%matl_id(vof_slv%nmat), vof_slv%vof(vof_slv%nmat,mesh%ncell), vof_slv%intrec(vof_slv%nmat-1))
+    allocate(vof_slv%matl_id(vof_slv%nmat), vof_slv%vof(vof_slv%nmat,mesh%ncell), &
+        vof_slv%intrec(vof_slv%nmat-1))
     vof_slv%matl_id = [1,2,3]
     vof_slv%mesh  => mesh
     vof_slv%gmesh => gmesh
@@ -926,9 +906,8 @@ contains
   end subroutine parallel_interfaces_test
 
   subroutine intersecting_interfaces_test ()
-    use unstr_mesh_type
+
     use unstr_mesh_factory
-    use mesh_geom_type
     use array_utils, only: int2str
 
     type(unstr_mesh), target :: mesh
@@ -942,7 +921,8 @@ contains
 
     ! initialize the vof solver
     vof_slv%nmat = 3
-    allocate(vof_slv%matl_id(vof_slv%nmat), vof_slv%vof(vof_slv%nmat,mesh%ncell), vof_slv%intrec(vof_slv%nmat))
+    allocate(vof_slv%matl_id(vof_slv%nmat), vof_slv%vof(vof_slv%nmat,mesh%ncell), &
+        vof_slv%intrec(vof_slv%nmat))
     vof_slv%matl_id = [1,2,3]
     vof_slv%mesh  => mesh
     vof_slv%gmesh => gmesh

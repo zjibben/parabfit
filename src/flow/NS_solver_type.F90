@@ -57,7 +57,7 @@ module NS_solver_type
         fluidRho(:)
     real(r8), allocatable :: gradP_dynamic_over_rho_cc(:,:), fluidVof(:), body_force(:)
     real(r8) :: viscous_implicitness, CFL_multiplier, max_dt
-    class(bndry_func), allocatable :: pressure_bc, velocity_bc
+    class(bndry_func), public, allocatable :: pressure_bc, velocity_bc
     logical         :: boussinesq_approximation, inviscid
     logical, public :: use_prescribed_velocity
     integer, public :: prescribed_velocity_case
@@ -210,13 +210,21 @@ contains
 
     write(*,*) 'WARNING: hard-coded initial condition'
     do i = 1,this%mesh%ncell
-      this%pressure_cc(i) = 1.0_r8 - this%gmesh%xc(2,i) / 4.0_r8 &
-          + this%mprop%density(1)*dot_product(this%body_force,this%gmesh%xc(:,i))
-      this%gradP_dynamic_over_rho_cc(:,i) = [0.0_r8, -0.25_r8, 0.0_r8] / this%mprop%density(1) &
+
+      if (this%gmesh%xc(3,i) > 0.0_r8) then
+        this%pressure_cc(i) = this%mprop%density(2)*dot_product(this%body_force,this%gmesh%xc(:,i))
+      else
+        this%pressure_cc(i) = this%mprop%density(1)*dot_product(this%body_force,this%gmesh%xc(:,i))
+      end if
+
+      ! this%pressure_cc(i) = & !1.0_r8 - this%gmesh%xc(2,i) / 4.0_r8 &
+      !     + this%mprop%density(1)*dot_product(this%body_force,this%gmesh%xc(:,i))
+      this%gradP_dynamic_over_rho_cc(:,i) = & ![0.0_r8, -0.25_r8, 0.0_r8] / this%mprop%density(1) &
           - this%body_force
       
       ! this%pressure_cc(i) = 0.0_r8
       ! this%gradP_dynamic_over_rho_cc(:,i) = 0.0_r8
+      
       this%fluidRho(i) = 1.0_r8
       this%fluidVof(i) = 1.0_r8
     end do
@@ -285,7 +293,7 @@ contains
         call this%predictor%solve (this%velocity_cc, this%gradP_dynamic_over_rho_cc, dt, &
             this%volume_flux, this%fluidRho, fluidRho_n, this%vof, this%fluidVof, fluidVof_n, &
             velocity_cc_n, this%fluxing_velocity, this%viscous_implicitness, this%inviscid, &
-            solid_face, is_pure_immobile, this%mprop, this%velocity_bc, this%pressure_bc)
+            solid_face, is_pure_immobile, this%mprop, this%velocity_bc)
         call this%projection%solve (this%velocity_cc, this%pressure_cc, &
             this%gradP_dynamic_over_rho_cc, this%fluxing_velocity, dt, this%fluidRho, fluidRho_n, &
             min_fluidRho, this%fluidVof, this%vof, this%body_force, solid_face, is_pure_immobile, &

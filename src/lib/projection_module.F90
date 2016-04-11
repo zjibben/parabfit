@@ -483,7 +483,6 @@ contains
       end if
     end do
 
-    
     ! Void cells don't have physical (nor solenoidal) Fluxing_Velocity's
     ! Set Fluxing_Velocity on faces that adjoin 'real' fluid cells to the 
     ! corresponding velocity on the other side of the face (corrected for direction)

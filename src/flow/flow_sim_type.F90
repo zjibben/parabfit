@@ -120,8 +120,9 @@ contains
     if (params%is_sublist('vof-solver')) then
       plist => params%sublist('vof-solver')
       allocate(this%vof_solver)
-      call this%vof_solver%init (this%mesh, this%gmesh, this%ns_solver%velocity_cc, &
-          this%ns_solver%fluxing_velocity, this%ns_solver%fluidRho, plist)
+      call this%vof_solver%init (this%mesh, this%gmesh, this%mprop%nmat, &
+          this%ns_solver%fluxing_velocity, this%ns_solver%fluidRho, plist, &
+          this%ns_solver%velocity_bc)
       call this%ns_solver%init_matls(this%vof_solver%vof, this%vof_solver%volume_flux_tot)
     else
       call LS_fatal ('missing "vof-solver" sublist parameter')
@@ -242,7 +243,8 @@ contains
       flow_dt = this%ns_solver%timestep_size (dt-tlocal)
       
       ! advect material
-      call this%vof_solver%advect_mass (flow_dt, this%dump_intrec .and. flow_dt==dt-tlocal)
+      call this%vof_solver%advect_mass (flow_dt, this%mprop%is_void, &
+          this%dump_intrec .and. flow_dt==dt-tlocal)
 
       ! update the pressure and velocity field
       call this%ns_solver%step (flow_dt, t+tlocal)
@@ -255,6 +257,7 @@ contains
     write(*,'(a,i6,es14.4,a,2es14.4)') '  cumulative iterations, dt: ', iter, flow_dt, &
         ',   minmaxvel: ', &
         minval(this%ns_solver%velocity_cc(2,:)), maxval(this%ns_solver%velocity_cc(2,:))
+    write(*,*) 'vofs', sum(this%vof_solver%vof(1,:)*this%mesh%volume), sum(this%vof_solver%vof(2,:)*this%mesh%volume)
     
   end subroutine step
 
@@ -309,7 +312,7 @@ contains
     ! dump the interface reconstruction
     if (this%dump_intrec) then
       do m = 1,size(this%vof_solver%intrec)
-        call this%vof_solver%intrec(m)%write_ply ('surf_'//trim(int2str(m))//'.ply.'//trim(nstr))
+        call this%vof_solver%intrec(m)%write_ply ('surf'//trim(int2str(m))//'_'//trim(nstr)//'.ply.')
       end do
     end if
     this%nfile = this%nfile + 1
