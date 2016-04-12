@@ -99,6 +99,22 @@ contains
 
     context = 'processing ' // params%name() // ': '
 
+    !! get the CFL multiplier
+    !! tells the timestep to be a certain factor smaller than the actual restriction
+    if (params%is_scalar('cfl-multiplier')) then
+      call params%get ('cfl-multiplier', this%CFL_multiplier, stat=stat, errmsg=errmsg)
+    else
+      call LS_fatal (context//'missing "cfl-multiplier" sublist parameter')
+    end if
+
+    !! get the maximum allowed timestep
+    !! if the the flow is currently 0, we don't want an infinite timestep size, now do we?
+    if (params%is_scalar('max-dt')) then
+      call params%get ('max-dt', this%max_dt, stat=stat, errmsg=errmsg)
+    else
+      call LS_fatal (context//'missing "max-dt" sublist parameter')
+    end if
+
     !! check for prescribed velocity case
     this%use_prescribed_velocity = params%is_scalar('prescribed-velocity')
     if (this%use_prescribed_velocity) then
@@ -125,22 +141,6 @@ contains
       this%projection_solver_params => params%sublist('projection-solver')
     else
       call LS_fatal (context//'missing "projection-solver" sublist parameter')
-    end if
-
-    !! get the CFL multiplier
-    !! tells the timestep to be a certain factor smaller than the actual restriction
-    if (params%is_scalar('cfl-multiplier')) then
-      call params%get ('cfl-multiplier', this%CFL_multiplier, stat=stat, errmsg=errmsg)
-    else
-      call LS_fatal (context//'missing "cfl-multiplier" sublist parameter')
-    end if
-
-    !! get the maximum allowed timestep
-    !! if the the flow is currently 0, we don't want an infinite timestep size, now do we?
-    if (params%is_scalar('max-dt')) then
-      call params%get ('max-dt', this%max_dt, stat=stat, errmsg=errmsg)
-    else
-      call LS_fatal (context//'missing "max-dt" sublist parameter')
     end if
 
     if (params%is_sublist('prediction-solver')) then
@@ -206,29 +206,28 @@ contains
     else
       this%velocity_cc = 0.0_r8
       this%fluxing_velocity = 0.0_r8
+
+      write(*,*) 'WARNING: hard-coded initial condition'
+      do i = 1,this%mesh%ncell
+        if (this%gmesh%xc(3,i) > 0.0_r8) then
+          this%pressure_cc(i) = this%mprop%density(2)*dot_product(this%body_force,this%gmesh%xc(:,i))
+        else
+          this%pressure_cc(i) = this%mprop%density(1)*dot_product(this%body_force,this%gmesh%xc(:,i))
+        end if
+
+        ! this%pressure_cc(i) = & !1.0_r8 - this%gmesh%xc(2,i) / 4.0_r8 &
+        !     + this%mprop%density(1)*dot_product(this%body_force,this%gmesh%xc(:,i))
+        this%gradP_dynamic_over_rho_cc(:,i) = & ![0.0_r8, -0.25_r8, 0.0_r8] / this%mprop%density(1) &
+            - this%body_force
+
+        ! this%pressure_cc(i) = 0.0_r8
+        ! this%gradP_dynamic_over_rho_cc(:,i) = 0.0_r8
+
+        this%fluidRho(i) = 1.0_r8
+        this%fluidVof(i) = 1.0_r8
+      end do
     end if
-
-    write(*,*) 'WARNING: hard-coded initial condition'
-    do i = 1,this%mesh%ncell
-
-      if (this%gmesh%xc(3,i) > 0.0_r8) then
-        this%pressure_cc(i) = this%mprop%density(2)*dot_product(this%body_force,this%gmesh%xc(:,i))
-      else
-        this%pressure_cc(i) = this%mprop%density(1)*dot_product(this%body_force,this%gmesh%xc(:,i))
-      end if
-
-      ! this%pressure_cc(i) = & !1.0_r8 - this%gmesh%xc(2,i) / 4.0_r8 &
-      !     + this%mprop%density(1)*dot_product(this%body_force,this%gmesh%xc(:,i))
-      this%gradP_dynamic_over_rho_cc(:,i) = & ![0.0_r8, -0.25_r8, 0.0_r8] / this%mprop%density(1) &
-          - this%body_force
-      
-      ! this%pressure_cc(i) = 0.0_r8
-      ! this%gradP_dynamic_over_rho_cc(:,i) = 0.0_r8
-      
-      this%fluidRho(i) = 1.0_r8
-      this%fluidVof(i) = 1.0_r8
-    end do
-
+    
     call this%projection%init (this%mesh, this%gmesh, this%projection_solver_params)
     call this%predictor%init  (this%mesh, this%gmesh, this%prediction_solver_params)
 
@@ -243,7 +242,8 @@ contains
     class(NS_solver), intent(inout) :: this
 
     integer :: i,f
-    
+
+    !$omp parallel do private(f)
     do i = 1,this%mesh%ncell
       this%velocity_cc(:,i) = prescribed_velocity (this%gmesh%xc(:,i), this%t, &
           this%prescribed_velocity_case)
@@ -255,6 +255,7 @@ contains
             this%gmesh%outnorm(:,f,i))
       end do
     end do
+    !$omp end parallel do
 
   end subroutine update_prescribed_velocity
 
@@ -443,10 +444,12 @@ contains
         huge(1.0_r8), mask=maxvel/=0.0_r8)
 
     ! if we are doing purely explicit viscous flow, reduce the step size as necessary
-    if (.not.this%inviscid .and. this%viscous_implicitness == 0.0_r8) &
-        timestep_size = min(timestep_size, &
-        this%CFL_multiplier / maxval(this%mprop%viscosity)) &
-        * minval(this%mesh%volume**(1.0_r8/3.0_r8))**2
+    if (.not.this%use_prescribed_velocity) then
+      if (.not.this%inviscid .and. this%viscous_implicitness == 0.0_r8) &
+          timestep_size = min(timestep_size, &
+          this%CFL_multiplier / maxval(this%mprop%viscosity)) &
+          * minval(this%mesh%volume**(1.0_r8/3.0_r8))**2
+    end if
 
     ! ensure the timestep size is not larger than the remaining time in this cycle
     ! or the requested maximum timestep size

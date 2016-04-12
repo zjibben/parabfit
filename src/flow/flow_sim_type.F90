@@ -70,7 +70,7 @@ contains
     integer :: stat
     type(parameter_list), pointer :: plist
     character(:), allocatable :: errmsg, context
-    !real(r8), allocatable :: temp(:)
+    integer, allocatable :: tmp(:)
     real(r8) :: t_init
 
     call start_timer ('initialization')
@@ -103,15 +103,26 @@ contains
 
     !! Load material properties
     write(*,*) 'Reading material properties...'
-    if (.not.this%ns_solver%use_prescribed_velocity) then
-      if (params%is_sublist('material-properties')) then
-        plist => params%sublist('material-properties')
-        allocate(this%mprop)
-        call this%mprop%init (plist)
-        call this%ns_solver%init_mprop (this%mprop)
+    if (params%is_sublist('material-properties')) then
+      plist => params%sublist('material-properties')
+      allocate(this%mprop)
+      call this%mprop%init (plist)
+      call this%ns_solver%init_mprop (this%mprop)
+    else if (this%ns_solver%use_prescribed_velocity) then
+      allocate(this%mprop)
+      ! get the number of materials from the material id array
+      if (params%is_sublist('vof-solver')) then
+        plist => params%sublist('vof-solver')
+        call plist%get ('materials', tmp, stat=stat, errmsg=errmsg)
+        if (stat /= 0) call LS_fatal (context//errmsg)
+        ! set all materials to non-void
+        allocate(this%mprop%is_void(size(tmp)))
+        this%mprop%is_void = .false.
       else
-        call LS_fatal ('missing "material-properties" sublist parameter')
+        call LS_fatal ('missing "vof-solver" sublist parameter')
       end if
+    else
+      call LS_fatal ('missing "material-properties" sublist parameter')
     end if
     
     !! Create the volume of fluid solver.
@@ -203,7 +214,7 @@ contains
 
     do n = 1, size(this%tout)
       call this%step (this%tout(n)-t, t)
-      
+
       t = this%tout(n)
       call this%write_solution (t)
 
@@ -231,6 +242,7 @@ contains
 
     real(r8)           :: flow_dt, tlocal
     integer, save      :: iter = 0
+    integer :: n
 
     ! ! DEBUGGING/SCALING ##################
     ! integer, parameter :: nsteps = 1
@@ -254,10 +266,10 @@ contains
       iter = iter+1
     end do
 
-    write(*,'(a,i6,es14.4,a,2es14.4)') '  cumulative iterations, dt: ', iter, flow_dt, &
+    write(*,'(a,i6,es14.4,a,2es20.10)') '  cumulative iterations, dt: ', iter, flow_dt, &
         ',   minmaxvel: ', &
         minval(this%ns_solver%velocity_cc(2,:)), maxval(this%ns_solver%velocity_cc(2,:))
-    write(*,*) 'vofs', sum(this%vof_solver%vof(1,:)*this%mesh%volume), sum(this%vof_solver%vof(2,:)*this%mesh%volume)
+    call this%vof_solver%print_vofs ()
     
   end subroutine step
 
@@ -312,7 +324,7 @@ contains
     ! dump the interface reconstruction
     if (this%dump_intrec) then
       do m = 1,size(this%vof_solver%intrec)
-        call this%vof_solver%intrec(m)%write_ply ('surf'//trim(int2str(m))//'_'//trim(nstr)//'.ply.')
+        call this%vof_solver%intrec(m)%write_ply ('surf'//trim(int2str(m))//'_'//trim(nstr)//'.ply')
       end do
     end if
     this%nfile = this%nfile + 1

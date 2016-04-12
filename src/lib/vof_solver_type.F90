@@ -37,7 +37,7 @@ module vof_solver_type
     real(r8),         pointer :: fluxing_velocity(:,:) => null() ! reference only -- do not own
 
     !! Pending/current state
-    integer                            :: advect_method
+    integer                            :: advect_method, volume_track_subcycles
     real(r8)                           :: t, dt
     integer,                    public :: nmat                 ! number of materials present globally
     !real(r8),      allocatable, public :: velocity(:,:)       ! face velocities
@@ -51,6 +51,7 @@ module vof_solver_type
     procedure :: advect_mass
     procedure, private :: advect_volume
     procedure :: update_intrec_surf
+    procedure :: print_vofs
     !procedure, private :: flux_renorm
   end type vof_solver
 
@@ -91,7 +92,7 @@ contains
     !          as type members
     real(r8),         target, intent(in)  :: fluxing_velocity(:,:), fluidRho(:)
     integer,                  intent(in)  :: nmat
-    class(bndry_func),        intent(in)  :: velocity_bc
+    class(bndry_func), allocatable, intent(in)  :: velocity_bc
     type(parameter_list)                  :: params
 
     integer                       :: stat
@@ -112,8 +113,13 @@ contains
     call params%get ('advection-method', this%advect_method, stat=stat, errmsg=errmsg)
     if (stat /= 0) call LS_fatal (context//errmsg)
 
-    this%nmat = nmat
+    call params%get ('subcycles', this%volume_track_subcycles, stat=stat, errmsg=errmsg)
+    if (stat /= 0) call LS_fatal (context//errmsg)
 
+    ! when we prescribe the velocity field (and hence don't need to specify material properties),
+    ! the nmat passed in will not have been initialized
+    this%nmat = size(this%matl_id) !nmat
+    
     allocate(this%vof(this%nmat,this%mesh%ncell), this%vof0(this%nmat,this%mesh%ncell), &
         this%volume_flux_tot(this%nmat,nfc,this%mesh%ncell), &
         this%intrec(this%nmat))
@@ -126,8 +132,10 @@ contains
     ! without removing the branches of code that deal with more complex scenarios
     allocate(boundary_flag(nfc,this%mesh%ncell))
     boundary_flag = 0
-    call assign_vel_bc_flags (boundary_flag, velocity_bc)
 
+    ! when we prescribe the velocity field, velocity_bc will be unallocated
+    if (allocated(velocity_bc)) call assign_vel_bc_flags (boundary_flag, velocity_bc)
+    
   contains
 
     subroutine assign_vel_bc_flags (boundary_flag, velocity_bc)
@@ -158,18 +166,12 @@ contains
     class(vof_solver),    intent(inout) :: this
     type(parameter_list), intent(in)    :: plist
 
-    ! DEBUGGING ############
-    integer :: m
-    ! ######################
-
     !! Initialize the Vof
     call vof_initialize (this%mesh, plist, this%vof, this%matl_id, this%nmat)
     this%vof0 = this%vof
     
     ! DEBUGGING ############
-    do m = 1,size(this%vof, dim=1)
-      write(*,'(a,i3,es14.4)') 'vof ',m,sum(this%vof(m,:)*this%mesh%volume(:))
-    end do
+    call this%print_vofs ()
     ! ######################
 
   end subroutine set_initial_state
@@ -253,7 +255,7 @@ contains
     real(r8),          intent(in)    :: Vof_n(:,:), dt
     logical,           intent(in)    :: matl_is_void(:), dump_intrec
 
-    integer  :: status, p, vps, volume_track_subcycles
+    integer  :: status, p, vps
     real(r8) :: adv_dt
     real(r8) :: volume_flux_sub(this%nmat, nfc, this%mesh%ncell) ! volume changes in every subcycle
 
@@ -263,22 +265,20 @@ contains
     this%volume_flux_tot = 0.0_r8
 
     ! Set the advection timestep. this can be improved.
-    volume_track_subcycles = 2 ! TODO: make this a user-set parameter
-    adv_dt = dt/real(volume_track_subcycles,r8)
+    adv_dt = dt/real(this%volume_track_subcycles,r8)
     
 !!$omp parallel if(using_mic) default(private) shared(adv_dt, this, vof_n, volume_flux_sub, volume_track_subcycles)
-    do p = 1,volume_track_subcycles
-
+    do p = 1,this%volume_track_subcycles
       ! Get the donor fluxes.
       select case (this%advect_method)
       case (ONION_SKIN)
         call volume_track (volume_flux_sub, adv_dt, this%mesh, this%gmesh, this%vof, &
             this%fluxing_velocity, this%nmat, this%fluidRho, this%intrec, &
-            dump_intrec .and. p==volume_track_subcycles)
+            dump_intrec .and. p==this%volume_track_subcycles)
       case (NESTED_DISSECTION)
         call volume_track_nd (volume_flux_sub, adv_dt, this%mesh, this%gmesh, this%vof, &
             this%fluxing_velocity, this%fluidRho, this%intrec, &
-            dump_intrec .and. p==volume_track_subcycles)
+            dump_intrec .and. p==this%volume_track_subcycles)
       case default
         call LS_fatal ("invalid advection method")
       end select
@@ -976,5 +976,16 @@ contains
     integer, parameter  :: nx(3) = [3,3,1]
     cell_index = i + ((j-1) + (k-1)*nx(2))*nx(1)
   end function cell_index
+
+  subroutine print_vofs (this)
+
+    class(vof_solver), intent(in) :: this
+    integer :: n
+
+    do n = 1,this%nmat
+      write(*,'(a,i2,es20.10)') 'vof ', n, sum(this%vof(n,:)*this%mesh%volume)
+    end do
+
+  end subroutine print_vofs
 
 end module vof_solver_type
