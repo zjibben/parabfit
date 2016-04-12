@@ -255,7 +255,7 @@ contains
     real(r8),          intent(in)    :: Vof_n(:,:), dt
     logical,           intent(in)    :: matl_is_void(:), dump_intrec
 
-    integer  :: status, p, vps
+    integer  :: p
     real(r8) :: adv_dt
     real(r8) :: volume_flux_sub(this%nmat, nfc, this%mesh%ncell) ! volume changes in every subcycle
 
@@ -283,7 +283,8 @@ contains
         call LS_fatal ("invalid advection method")
       end select
 
-      !$omp parallel if(.not.using_mic) default(private) shared(adv_dt, this, vof_n, volume_flux_sub)
+      !$omp parallel if(.not.using_mic) default(private) &
+      !$omp shared(adv_dt, this, vof_n, volume_flux_sub, matl_is_void)
       ! Normalize the donor fluxes.
       call flux_renorm (this%fluxing_velocity, Vof_n, this%volume_flux_tot, Volume_Flux_Sub, &
           adv_dt, this%mesh)
@@ -555,7 +556,8 @@ contains
     do n = 1,mesh%ncell
       ! make sure individual material vofs are within bounds
       do m = 1,nmat
-        if (Vof(m,n) > (1.0_r8-cutvof) .and. Vof(m,n) /= 1.0_r8) then ! If volume fraction is > 1.0 - cutvof, round to one.
+        if (Vof(m,n) > (1.0_r8-cutvof) .and. Vof(m,n) /= 1.0_r8) then
+          ! If volume fraction is > 1.0 - cutvof, round to one.
           if (matl_is_void(m)) then
             vof(m,n) = 1.0_r8
           else 
@@ -563,7 +565,8 @@ contains
                 boundary_flag(:,n))
             Vof(m,n) = 1.0_r8
           end if
-        else if (Vof(m,n) < cutvof .and. Vof(m,n) /= 0.0_r8) then     ! If volume fraction is < cutvof; round to zero.
+        else if (Vof(m,n) < cutvof .and. Vof(m,n) /= 0.0_r8) then
+          ! If volume fraction is < cutvof; round to zero.
           if (matl_is_void(m)) then
             vof(m,n) = 0.0_r8
           else if (vof(m,n) /= 0.0_r8) then
@@ -980,9 +983,10 @@ contains
   subroutine print_vofs (this)
 
     class(vof_solver), intent(in) :: this
+    
     integer :: n
 
-    do n = 1,this%nmat
+    do n = 1,size(this%vof, dim=1)
       write(*,'(a,i2,es20.10)') 'vof ', n, sum(this%vof(n,:)*this%mesh%volume)
     end do
 
