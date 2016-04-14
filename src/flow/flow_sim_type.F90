@@ -230,8 +230,8 @@ contains
     stat = 0
     call stop_timer ('integration')
 
-    ! TODO: set some sort of exact state type to compare to
-    write(*,*) 'l1 error = ',l1_error(this%vof_solver%vof,this%vof_solver%vof0)
+    ! print L1, L2, and Linf error norms (TODO: optionally)
+    call this%vof_solver%print_error_norms ()
   end subroutine run
 
   ! update the flow from t to t+dt, subcycling as necessary
@@ -242,7 +242,6 @@ contains
 
     real(r8)           :: flow_dt, tlocal
     integer, save      :: iter = 0
-    integer :: n
 
     ! ! DEBUGGING/SCALING ##################
     ! integer, parameter :: nsteps = 1
@@ -258,7 +257,7 @@ contains
       call this%vof_solver%advect_mass (flow_dt, this%mprop%is_void, &
           this%dump_intrec .and. flow_dt==dt-tlocal)
 
-      ! update the pressure and velocity field
+      ! update the pressure and velocity fields
       call this%ns_solver%step (flow_dt, t+tlocal)
 
       ! increment the local time
@@ -273,11 +272,6 @@ contains
     
   end subroutine step
 
-
-  real(r8) function l1_error (vof1,vof2)
-    real(r8), intent(in) :: vof1(:,:), vof2(:,:)
-    l1_error = sum(abs(vof1(1,:)-vof2(1,:))) / size(vof1,dim=2)
-  end function l1_error
 
   !! This auxiliary subroutine writes the solution to a GMV format viz file.
   !! There are lots of better things we could do here (write back to an Exodus

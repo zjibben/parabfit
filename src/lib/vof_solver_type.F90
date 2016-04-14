@@ -52,12 +52,13 @@ module vof_solver_type
     procedure, private :: advect_volume
     procedure :: update_intrec_surf
     procedure :: print_vofs
+    procedure :: print_error_norms
     !procedure, private :: flux_renorm
   end type vof_solver
 
   public :: parallel_interfaces_test, intersecting_interfaces_test
 
-  ! this needs to be removed and replaced with use of the velocity_bc and pressure_bc variables
+  ! TODO: this needs to be removed and replaced with use of the velocity_bc and pressure_bc variables
   integer, allocatable :: boundary_flag(:,:)
 
   logical, parameter :: using_mic = .false.
@@ -991,5 +992,38 @@ contains
     end do
 
   end subroutine print_vofs
+
+  subroutine print_error_norms (this)
+
+    class(vof_solver), intent(in) :: this
+
+    real(r8) :: error(this%mesh%ncell)
+
+    ! calculate the error
+    ! TODO: compare against a given exact solution.
+    !       right now just initial condition for time-reversing tests
+    error = sum(abs(this%vof - this%vof0), dim=1) / size(this%vof, dim=1)
+
+    write(*,'(a,3es14.4)') 'L1, L2, Linf norm: ', l1_norm(error), l2_norm(error), linf_norm(error)
+
+  end subroutine print_error_norms
+
+  ! TODO: these norms are rather general and could be placed elsewhere
+  real(r8) function l1_norm (error)
+    use array_utils, only: meanArithmetic
+    real(r8), intent(in) :: error(:)
+    l1_norm = meanArithmetic(error)
+  end function l1_norm
+
+  real(r8) function l2_norm (error)
+    use array_utils, only: meanArithmetic
+    real(r8), intent(in) :: error(:)
+    l2_norm = sqrt(meanArithmetic(error**2))
+  end function l2_norm
+
+  real(r8) function linf_norm (error)
+    real(r8), intent(in) :: error(:)
+    linf_norm = maxval(error)
+  end function linf_norm
 
 end module vof_solver_type
