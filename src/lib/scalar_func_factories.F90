@@ -28,6 +28,7 @@ module scalar_func_factories
 
   use kinds, only: r8
   use scalar_func_class
+  use scalar_func_containers
   implicit none
   private
 
@@ -85,6 +86,15 @@ contains
     allocate(f, source=tabular_scalar_func(x, y))
   end subroutine alloc_tabular_scalar_func
 
+  subroutine alloc_piecewise_scalar_func (f, subfunc, r)
+    use piecewise_scalar_func_type
+    use region_class
+    class(scalar_func), allocatable, intent(out) :: f
+    type(scalar_func_box), intent(in) :: subfunc(:)
+    type(region_box),      intent(in) :: r(:)
+    allocate(f, source=piecewise_scalar_func(subfunc, r))
+  end subroutine alloc_piecewise_scalar_func
+
   subroutine alloc_fptr_scalar_func (f, fptr, p)
     use fptr_scalar_func_type
     class(scalar_func), allocatable, intent(out) :: f
@@ -92,7 +102,6 @@ contains
     real(r8), intent(in), optional :: p(:)
     allocate(f, source=fptr_scalar_func(fptr, p))
   end subroutine alloc_fptr_scalar_func
-
 
   function new_const_scalar_func (const) result (f)
     use const_scalar_func_type
@@ -223,6 +232,7 @@ contains
 
     use parameter_list_type
     use logging_services
+    use region_class
 
     class(scalar_func), allocatable, intent(out) :: f
     type(parameter_list), intent(inout) :: params
@@ -231,6 +241,8 @@ contains
     integer, allocatable :: expon(:), expon2(:,:)
     real(r8), allocatable :: coef(:), x(:), y(:), x0_def(:), x02(:)
     character(:), allocatable :: ftype, context, errmsg
+    type(scalar_func_box), allocatable :: subfunc(:)
+    type(region_box), allocatable :: rgn(:)
     integer :: stat
 
     context = 'processing ' // params%name() // ': '
@@ -293,12 +305,54 @@ contains
       call params%get ('time-shift', t0, default=0.0_r8, stat=stat, errmsg=errmsg)
       if (stat /= 0) call LS_fatal (context//errmsg)
       call alloc_fptr_scalar_func(f, sinusoid, [t0,t1,v0,v1])
+    case ('piecewise')
+      call get_subfunctions (subfunc, rgn, params)
+      call alloc_piecewise_scalar_func (f, subfunc, rgn)
     case default
       call LS_fatal (context//'unknown "type" value: '//ftype)
     end select
     ASSERT(allocated(f))
 
   end subroutine alloc_scalar_func
+
+  subroutine get_subfunctions (subfunc, rgn, params)
+
+    use region_class
+    use region_factories
+    use parameter_list_type
+    use logging_services
+
+    type(scalar_func_box), allocatable, intent(out) :: subfunc(:)
+    type(region_box), allocatable, intent(out) :: rgn(:)
+    type(parameter_list), intent(inout) :: params
+
+    type(parameter_list_iterator) :: params_iter
+    type(parameter_list), pointer :: fparams, rparams, subfunc_params
+    character(:), allocatable :: context
+    integer :: f,nfuncs
+
+    nfuncs = params%count() - 1
+    allocate(subfunc(nfuncs), rgn(nfuncs))
+    params_iter = parameter_list_iterator(params)
+    call params_iter%next () ! skip the "type" parameter
+
+    f = 1
+    do while (.not.params_iter%at_end())
+      subfunc_params => params_iter%sublist()
+      context = 'processing ' // subfunc_params%name() // ': '
+      if (.not.subfunc_params%is_sublist('region'))   call LS_fatal (context//'missing "region" sublist parameter')
+      if (.not.subfunc_params%is_sublist('function')) call LS_fatal (context//'missing "function" sublist parameter')
+
+      rparams => subfunc_params%sublist('region')
+      fparams => subfunc_params%sublist('function')
+      call alloc_region (rgn(f)%r, rparams)
+      call alloc_scalar_func (subfunc(f)%f, fparams)
+
+      f = f+1
+      call params_iter%next ()
+    end do
+
+  end subroutine get_subfunctions
 
 
   real(r8) function smooth_ramp (x, p)

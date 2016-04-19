@@ -26,5 +26,9 @@ module region_class
       real(r8), intent(in) :: x(:)
     end function location_is_inside_region
   end interface
+
+  type, public :: region_box
+    class(region), allocatable :: r
+  end type region_box
   
 end module region_class

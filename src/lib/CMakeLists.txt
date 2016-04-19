@@ -41,13 +41,14 @@ set(Pececillo_SOURCE_FILES
 
 # Function modules
     scalar_func_class.F90
-    scalar_func_factories.F90
     scalar_func_containers.F90
     const_scalar_func_type.F90
     poly_scalar_func_type.F90
     mpoly_scalar_func_type.F90
     tabular_scalar_func_type.F90
     fptr_scalar_func_type.F90
+    piecewise_scalar_func_type.F90
+    scalar_func_factories.F90
 
 # Mesh function modules
     bndry_func_class.F90

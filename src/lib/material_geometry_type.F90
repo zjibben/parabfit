@@ -13,15 +13,17 @@
 module material_geometry_type
 
   use kinds, only: r8
+  use region_class
   use logging_services
   implicit none
   private
 
-  type :: object_ptr
-    class(object_t), pointer :: o
+  ! define shape types
+  type :: object_t
+    integer :: matl_id
   contains
-    final :: delete_object_ptr
-  end type object_ptr
+    procedure :: location_is_inside
+  end type object_t
   
   ! region type
   type, abstract, public :: base_region
@@ -57,13 +59,10 @@ module material_geometry_type
   
 contains
 
-  subroutine delete_object_ptr (this)
-    type(object_ptr), intent(inout) :: this
-    if (associated(this%o)) deallocate(this%o)
-  end subroutine delete_object_ptr
-
   subroutine init (this, params, user_matl_id)
+
     use parameter_list_type
+    use region_factories
     use array_utils, only: index_of
 
     class(material_geometry), intent(inout) :: this
@@ -149,6 +148,26 @@ contains
     end do
 
   end subroutine init
+
+  ! returns whether or not the given location is inside the described shape
+  logical function location_is_inside (this, x)
+    class(object_t), intent(in) :: this
+    real(r8),        intent(in) :: x(3)
+
+    select type (this)
+    type is (plane_t)
+      location_is_inside = sum(x*this%normal) - this%plane_const <= 0
+    type is (sphere_t)
+      location_is_inside = sum((x-this%center)**2) <= this%radius**2
+    type is (halfsphere_t)
+      location_is_inside = sum((x-this%center)**2) <= this%radius**2 &
+          .and. sum((x-this%center)*this%normal) <= 0.0_r8
+    class default ! all
+      location_is_inside = .true.
+      !call LS_fatal('location_is_inside: unrecognized shape')
+    end select
+
+  end function location_is_inside
 
   ! determines and returns the id of the material at point x
   integer function material_at(this, x)
