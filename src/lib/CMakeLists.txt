@@ -18,6 +18,14 @@ set(Pececillo_SOURCE_FILES
     logging_services.F90
     data_layout_type.F90
     array_utils.F90
+
+# Region modules
+    region_class.F90
+    fill_region_type.F90
+    plane_region_type.F90
+    sphere_region_type.F90
+    halfsphere_region_type.F90
+    region_factories.F90
     
 # Mesh modules
     unstr_mesh_type.F90

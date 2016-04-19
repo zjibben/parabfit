@@ -17,27 +17,6 @@ module material_geometry_type
   implicit none
   private
 
-  ! define shape types
-  type :: object_t
-    integer :: matl_id
-  contains
-    procedure :: location_is_inside
-  end type object_t
-
-  type, extends(object_t) :: plane_t
-    real(r8), allocatable :: normal(:)
-    real(r8)              :: plane_const
-  end type plane_t
-
-  type, extends(object_t) :: sphere_t
-    real(r8), allocatable :: center(:)
-    real(r8)              :: radius
-  end type sphere_t
-  
-  type, extends(sphere_t) :: halfsphere_t
-    real(r8), allocatable :: normal(:)
-  end type halfsphere_t
-  
   type :: object_ptr
     class(object_t), pointer :: o
   contains
@@ -170,26 +149,6 @@ contains
     end do
 
   end subroutine init
-
-  ! returns whether or not the given location is inside the described shape
-  logical function location_is_inside (this, x)
-    class(object_t), intent(in) :: this
-    real(r8),        intent(in) :: x(3)
-
-    select type (this)
-    type is (plane_t)
-      location_is_inside = sum(x*this%normal) - this%plane_const <= 0
-    type is (sphere_t)
-      location_is_inside = sum((x-this%center)**2) <= this%radius**2
-    type is (halfsphere_t)
-      location_is_inside = sum((x-this%center)**2) <= this%radius**2 &
-          .and. sum((x-this%center)*this%normal) <= 0.0_r8
-    class default ! all
-      location_is_inside = .true.
-      !call LS_fatal('location_is_inside: unrecognized shape')
-    end select
-
-  end function location_is_inside
 
   ! determines and returns the id of the material at point x
   integer function material_at(this, x)
