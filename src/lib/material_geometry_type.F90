@@ -14,16 +14,10 @@ module material_geometry_type
 
   use kinds, only: r8
   use region_class
+  use scalar_func_class
   use logging_services
   implicit none
   private
-
-  ! define shape types
-  type :: object_t
-    integer :: matl_id
-  contains
-    procedure :: location_is_inside
-  end type object_t
   
   ! region type
   type, abstract, public :: base_region
@@ -36,22 +30,14 @@ module material_geometry_type
       use kinds, only: r8
       import base_region
       class(base_region), intent(in) :: this
-      real(r8), intent(in) :: x(3)
+      real(r8), intent(in) :: x(:)
     end function index_at
   end interface
 
-  ! object_geometry type
-  type, extends(base_region), public :: object_geometry
-    private
-    type(object_ptr), allocatable :: object(:)
-  contains
-    !procedure :: init
-    procedure :: index_at => object_index_at
-    procedure :: object_at
-  end type object_geometry
-  
   ! material_geometry type
-  type, extends(object_geometry), public :: material_geometry
+  type, extends(base_region), public :: material_geometry
+    private
+    class(scalar_func), allocatable :: matl_index
   contains
     procedure :: init
     procedure :: index_at => material_at
@@ -63,168 +49,67 @@ contains
 
     use parameter_list_type
     use region_factories
+    use scalar_func_containers
+    use scalar_func_factories, only: alloc_const_scalar_func, alloc_piecewise_scalar_func
     use array_utils, only: index_of
 
     class(material_geometry), intent(inout) :: this
     type(parameter_list),     intent(in)    :: params
     integer,                  intent(in)    :: user_matl_id(:)
 
-    integer :: i,id,stat
-    type(parameter_list_iterator)       :: param
-    type(parameter_list), pointer       :: property
+    integer :: i,nregions,matl_id,matl_index,stat
+    type(parameter_list_iterator)       :: param_iter
+    type(parameter_list), pointer       :: mparams,rparams
     character(:), allocatable           :: context,errmsg
-    class(object_t), pointer            :: obj_ptr
+    type(scalar_func_box), allocatable :: subfunc(:)
+    type(region_box), allocatable :: rgn(:)
 
     ! loop through every item in params
     ! each item describes a region of the domain as a shape
     ! and the material present in that region
 
     ! allocate the object array
-    allocate(this%object(params%count()))
+    nregions = params%count()
+    allocate(subfunc(nregions), rgn(nregions))
 
     ! generate an iterator
-    param = parameter_list_iterator(params)
-
+    param_iter = parameter_list_iterator(params)
+    
     i = 1
-    do while(.not.param%at_end())
-      context = 'processing ' // param%name() // ': '
+    do while(.not.param_iter%at_end())
+      context = 'processing ' // param_iter%name() // ': '
 
-      ! allocate the object as the user-given shape
-      select case (param%name())
-      case('sphere')
-        allocate(sphere_t :: this%object(i)%o)
-      case('half-sphere','halfsphere')
-        allocate(halfsphere_t :: this%object(i)%o)
-      case('plane')
-        allocate(plane_t :: this%object(i)%o)
-      case('all')
-        ! 'all' should always be the last item in the list
-        allocate(object_t :: this%object(i)%o)
-      case default
-        call LS_fatal (context//'unrecognized shape "'//param%name()//'"')
-      end select
+      mparams => param_iter%sublist()
 
-      ! read in details on the shape
-      property => param%sublist()
-      call property%get ('material-id', id, stat=stat, errmsg=errmsg)
+      ! get the user material id defined for this region
+      call mparams%get ('material-id', matl_id, stat=stat, errmsg=errmsg)
       if (stat /= 0) call LS_fatal (context//errmsg)
-      this%object(i)%o%matl_id = index_of (id, user_matl_id)
 
-      select type (obj_ptr => this%object(i)%o)
-      type is (sphere_t)
-        call property%get ('center'     , obj_ptr%center , stat=stat, errmsg=errmsg)
-        if (stat /= 0) call LS_fatal (context//errmsg)
-        call property%get ('radius'     , obj_ptr%radius , stat=stat, errmsg=errmsg)
-        if (stat /= 0) call LS_fatal (context//errmsg)
-        ! should do some check here to ensure center is of length 3
-        ASSERT(size(obj_ptr%center)==3)
-      type is (halfsphere_t)
-        call property%get ('normal'     , obj_ptr%normal, stat=stat, errmsg=errmsg)
-        if (stat /= 0) call LS_fatal (context//errmsg)
-        call property%get ('center'     , obj_ptr%center, stat=stat, errmsg=errmsg)
-        if (stat /= 0) call LS_fatal (context//errmsg)
-        call property%get ('radius'     , obj_ptr%radius, stat=stat, errmsg=errmsg)
-        if (stat /= 0) call LS_fatal (context//errmsg)
-        ! should do some check here to ensure center/normal are of length 3
-        ASSERT(size(obj_ptr%center)==3)
-        ASSERT(size(obj_ptr%normal)==3)
-      type is (plane_t)
-        call property%get ('normal'     , obj_ptr%normal , stat=stat, errmsg=errmsg)
-        if (stat /= 0) call LS_fatal (context//errmsg)
-        call property%get ('plane-const'     , obj_ptr%plane_const , stat=stat, errmsg=errmsg)
-        if (stat /= 0) call LS_fatal (context//errmsg)
-        ! should do some check here to ensure center is of length 3
-        ASSERT(size(obj_ptr%normal)==3)
-        ! make sure the normal is normalized
-        obj_ptr%normal = obj_ptr%normal / sqrt(sum(obj_ptr%normal**2))
-      type is (object_t)
-        ! already done
-        class default
-        call LS_fatal (context//'unrecognized type')
-      end select
+      ! convert from user material id to vof index
+      matl_index = index_of(matl_id, user_matl_id)
+
+      ! place as constant in subfunction
+      call alloc_const_scalar_func (subfunc(i)%f, real(matl_index, r8))
+
+      ! get the user-defined region
+      if (.not.mparams%is_sublist('region')) call LS_fatal (context//'missing "region" sublist parameter')
+      rparams => mparams%sublist('region')
+      call alloc_region (rgn(i)%r, rparams)
 
       i = i+1
-      call param%next()
+      call param_iter%next()
     end do
 
+    ! build piecewise-constant function giving the material index over given regions
+    call alloc_piecewise_scalar_func(this%matl_index, subfunc, rgn)
+
   end subroutine init
-
-  ! returns whether or not the given location is inside the described shape
-  logical function location_is_inside (this, x)
-    class(object_t), intent(in) :: this
-    real(r8),        intent(in) :: x(3)
-
-    select type (this)
-    type is (plane_t)
-      location_is_inside = sum(x*this%normal) - this%plane_const <= 0
-    type is (sphere_t)
-      location_is_inside = sum((x-this%center)**2) <= this%radius**2
-    type is (halfsphere_t)
-      location_is_inside = sum((x-this%center)**2) <= this%radius**2 &
-          .and. sum((x-this%center)*this%normal) <= 0.0_r8
-    class default ! all
-      location_is_inside = .true.
-      !call LS_fatal('location_is_inside: unrecognized shape')
-    end select
-
-  end function location_is_inside
-
+  
   ! determines and returns the id of the material at point x
   integer function material_at(this, x)
     class(material_geometry), intent(in) :: this
-    real(r8),                 intent(in) :: x(3)
-    class(object_t),          pointer    :: object
-
-    object => this%object_at(x)
-    material_at = object%matl_id
-
+    real(r8),                 intent(in) :: x(:)
+    material_at = nint(this%matl_index%eval(x))
   end function material_at
-
-  ! identifies and returns the index of object at point x
-  integer function object_index_at (this, x)
-    class(object_geometry), intent(in) :: this
-    real(r8),               intent(in) :: x(3)
-
-    integer :: i
-
-    ! loop through every shape defined in the initial geometry
-    do i = 1,size(this%object)
-      ! check if we are inside the shape
-      ! these shapes are ordered such that if materials overlap,
-      ! the first one hit is the actual material at this location
-      ! the last 'shape' covers the remainder of the domain, so
-      ! there should always be a material discovered
-      if (this%object(i)%o%location_is_inside (x)) then
-        object_index_at = i
-        return
-      end if
-    end do
-    call LS_fatal('material_at: did not find any material at this location')
-
-  end function object_index_at
-
-  ! identifies and returns the object at point x
-  function object_at(this, x)
-    class(object_geometry), intent(in) :: this
-    real(r8),               intent(in) :: x(3)
-    class(object_t),        pointer    :: object_at
-
-    integer :: i
-
-    ! loop through every shape defined in the initial geometry
-    do i = 1,size(this%object)
-      ! check if we are inside the shape
-      ! these shapes are ordered such that if materials overlap,
-      ! the first one hit is the actual material at this location
-      ! the last 'shape' covers the remainder of the domain, so
-      ! there should always be a material discovered
-      if (this%object(i)%o%location_is_inside (x)) then
-        object_at => this%object(i)%o
-        return
-      end if
-    end do
-    call LS_fatal('material_at: did not find any material at this location')
-
-  end function object_at
 
 end module material_geometry_type

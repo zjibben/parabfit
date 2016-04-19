@@ -230,11 +230,11 @@ contains
       write(*,*) 'WARNING: hard-coded initial condition'
       do i = 1,this%mesh%ncell
         ! rayleigh-taylor
-        ! if (this%gmesh%xc(3,i) > 0.0_r8) then
-        !   this%pressure_cc(i) = this%mprop%density(2)*dot_product(this%body_force,this%gmesh%xc(:,i))
-        ! else
-        !   this%pressure_cc(i) = this%mprop%density(1)*dot_product(this%body_force,this%gmesh%xc(:,i))
-        ! end if
+        if (this%gmesh%xc(3,i) > 0.0_r8) then
+          this%pressure_cc(i) = this%mprop%density(2)*dot_product(this%body_force,this%gmesh%xc(:,i))
+        else
+          this%pressure_cc(i) = this%mprop%density(1)*dot_product(this%body_force,this%gmesh%xc(:,i))
+        end if
 
 
 
@@ -248,11 +248,11 @@ contains
             / merge(this%fluidVof(i), 1.0_r8, this%fluidVof(i) > 0.0_r8)
 
 
-        this%pressure_cc(i) = this%pressure_init%eval(this%gmesh%xc(:,i)) & !1.0_r8 - this%gmesh%xc(2,i) / 4.0_r8 &
-            + this%fluidRho(i)*dot_product(this%body_force,this%gmesh%xc(:,i))
+        this%pressure_cc(i) = this%pressure_init%eval(this%gmesh%xc(:,i)) !& !1.0_r8 - this%gmesh%xc(2,i) / 4.0_r8 &
+            !+ this%fluidRho(i)*dot_product(this%body_force,this%gmesh%xc(:,i))
 
-        this%gradP_dynamic_over_rho_cc(:,i) = [0.0_r8, -0.25_r8, 0.0_r8] / this%fluidRho(i) &
-            - this%body_force
+        this%gradP_dynamic_over_rho_cc(:,i) = 0.0_r8 ![0.0_r8, -0.25_r8, 0.0_r8] / this%fluidRho(i) &
+            !- this%body_force
       end do
     end if
 

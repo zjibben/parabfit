@@ -45,6 +45,7 @@ module scalar_func_factories
   public :: alloc_const_scalar_func
   public :: alloc_poly_scalar_func
   public :: alloc_mpoly_scalar_func
+  public :: alloc_piecewise_scalar_func
   public :: alloc_tabular_scalar_func
   public :: alloc_fptr_scalar_func
 
