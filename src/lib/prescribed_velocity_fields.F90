@@ -10,6 +10,7 @@
 !!
 
 module prescribed_velocity_fields
+
   use kinds, only: r8
   use logging_services
   implicit none
@@ -18,15 +19,16 @@ module prescribed_velocity_fields
   public :: prescribed_velocity
 
 contains
-
+  
   function prescribed_velocity (x, t, field)
+
     real(r8), intent(in) :: x(3), t
     integer , intent(in) :: field
     real(r8)             :: prescribed_velocity(3)
 
-    real(r8)            :: periodT
     real(r8), parameter :: PI = 4.0_r8 * atan(1.0_r8)
-
+    real(r8)            :: periodT
+    
     prescribed_velocity = 0.0_r8
     select case (field)
     case (1) ! deforming sphere

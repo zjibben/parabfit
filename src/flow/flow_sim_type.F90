@@ -167,10 +167,8 @@ contains
       call LS_fatal ('missing "sim-control" sublist parameter')
     end if
 
-    !! Set the initial flow field
-    write(*,*) 'initializing velocity field...'
+    !! set initial state
     call start_timer ('initial-state')
-    call this%ns_solver%set_initial_state ()
 
     !! Generate the initial material configuration
     write(*,*) 'initializing material layout...'
@@ -181,6 +179,10 @@ contains
     else
       call LS_fatal ('missing "initial-vof" sublist parameter')
     end if
+
+    !! Set the initial flow, pressure, density, fluidvof fields
+    write(*,*) 'initializing flow...'
+    call this%ns_solver%set_initial_state ()
 
     call stop_timer ('initial-state')
 

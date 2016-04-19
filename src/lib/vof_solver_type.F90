@@ -59,7 +59,7 @@ module vof_solver_type
   public :: parallel_interfaces_test, intersecting_interfaces_test
 
   ! TODO: this needs to be removed and replaced with use of the velocity_bc and pressure_bc variables
-  integer, allocatable :: boundary_flag(:,:)
+  integer, allocatable :: BC_flag(:,:)
 
   logical, parameter :: using_mic = .false.
 
@@ -131,17 +131,17 @@ contains
     ! this type of boundary handling ought to be refactored (it is already done nicely elsewhere)
     ! for right now, this just exists so that we can run simple tests,
     ! without removing the branches of code that deal with more complex scenarios
-    allocate(boundary_flag(nfc,this%mesh%ncell))
-    boundary_flag = 0
+    allocate(BC_flag(nfc,this%mesh%ncell))
+    BC_flag = 0
 
     ! when we prescribe the velocity field, velocity_bc will be unallocated
-    if (allocated(velocity_bc)) call assign_vel_bc_flags (boundary_flag, velocity_bc)
+    if (allocated(velocity_bc)) call assign_vel_bc_flags (BC_flag, velocity_bc)
     
   contains
 
-    subroutine assign_vel_bc_flags (boundary_flag, velocity_bc)
+    subroutine assign_vel_bc_flags (BC_flag, velocity_bc)
 
-      integer,           intent(inout) :: boundary_flag(:,:)
+      integer,           intent(inout) :: BC_flag(:,:)
       class(bndry_func), intent(in)    :: velocity_bc
 
       integer :: bndry_f, i, f, fid
@@ -152,7 +152,7 @@ contains
         i = gmesh%fcell(1,fid) ! id of cell attached to this face
         f = gmesh%flid(1,fid)  ! local id of the face
 
-        boundary_flag(f,i) = 2
+        BC_flag(f,i) = 2
       end do
 
     end subroutine assign_vel_bc_flags
@@ -548,86 +548,98 @@ contains
     logical,          intent(in)    :: matl_is_void(:)
     type(unstr_mesh), intent(in)    :: mesh
 
-    integer  :: m, n, void_m, vmc, nmat
-    real(r8) :: Ftot, Ftot_m1, void_volume, Delta_Vol(size(vof,dim=1))
+    integer  :: n, nmat
 
     nmat = size(vof,dim=1)
 
     !$omp do
     do n = 1,mesh%ncell
-      ! make sure individual material vofs are within bounds
-      do m = 1,nmat
-        if (Vof(m,n) > (1.0_r8-cutvof) .and. Vof(m,n) /= 1.0_r8) then
-          ! If volume fraction is > 1.0 - cutvof, round to one.
-          if (matl_is_void(m)) then
-            vof(m,n) = 1.0_r8
-          else 
-            call adjust_flux_matl (volume_flux_tot(m,:,n), Vof(m,n), 1.0_r8, mesh%volume(n), &
-                boundary_flag(:,n))
-            Vof(m,n) = 1.0_r8
-          end if
-        else if (Vof(m,n) < cutvof .and. Vof(m,n) /= 0.0_r8) then
-          ! If volume fraction is < cutvof; round to zero.
-          if (matl_is_void(m)) then
-            vof(m,n) = 0.0_r8
-          else if (vof(m,n) /= 0.0_r8) then
-            call adjust_flux_matl (volume_flux_tot(m,:,n), vof(m,n), 0.0_r8, mesh%volume(n), &
-                boundary_flag(:,n))
-            vof(m,n) = 0.0_r8
-          end if
-        end if
-      end do
-
-      ! make sure the sum of vofs is within bounds
-      Ftot = sum(vof(:,n))
-      if (Ftot == 1.0_r8) cycle
-
-      ! Renormalize the liquid volume fractions.
-
-      ! Check to see if void is already in the cell.
-      ! if so, grab the index of the last void material present
-      void_m = last_true_loc (matl_is_void .and. vof(:,n) > 0.0_r8)
-      if (any(matl_is_void) .and. void_m > 0) then
-        ! sum up the volume fraction taken up by void
-        void_volume = sum(vof(:,n), matl_is_void .and. vof(:,n)>0.0_r8)
-        if (Ftot > 1.0_r8) then ! if there is too much material in this cell
-          ! Is there enough to balance the cell?
-          if (void_volume > Ftot-1.0_r8) then ! There is enough void ...
-            Ftot_m1 = Ftot - 1.0_r8
-            do m = 1,nmat
-              if (.not.matl_is_void(m)) cycle
-              if (Vof(m,n) > Ftot_m1) then
-                Vof(m,n) = Vof(m,n) - Ftot_m1
-                exit
-              else
-                Ftot_m1 = Ftot_m1 - Vof(m,n)
-                Vof(m,n) = 0.0_r8
-              end if
-            end do
-          else ! There isn't enough void ...
-            do m = 1,nmat
-              if (matl_is_void(m)) then
-                Ftot = Ftot - Vof(m,n)
-                Vof(m,n) = 0.0_r8
-              end if
-            end do
-            call adjust_flux_total (volume_flux_tot(:,:,n), delta_vol, Ftot, mesh%volume(n), &
-                boundary_flag(:,n), matl_is_void)
-            vof(:,n) = vof(:,n) + delta_vol(:) / mesh%volume(n)
-          end if
-        else ! Ftot < 1, and there's void already in the cell
-          Vof(void_m,n) = Vof(void_m,n) + 1.0_r8 - Ftot
-        end if
-
-      else ! there's no void in this cell
-        call adjust_flux_total (Volume_Flux_Tot(:,:,n), delta_vol, Ftot, mesh%volume(n), &
-            boundary_flag(:,n), matl_is_void)
-        vof(:,n) = vof(:,n) + delta_vol(:) / mesh%volume(n)
-      end if
-    end do ! cells
+      call vof_bounds_cell (vof(:,n), volume_flux_tot(:,:,n), matl_is_void, mesh%volume(n), &
+          nmat, BC_flag(:,n))
+    end do
     !$omp end do nowait
 
   end subroutine vof_bounds
+
+  subroutine vof_bounds_cell (vof, volume_flux_tot, matl_is_void, volume, nmat, BC_flag)
+
+    use array_utils, only: last_true_loc
+
+    real(r8),         intent(inout) :: vof(:), volume_flux_tot(:,:)
+    real(r8),         intent(in)    :: volume
+    logical,          intent(in)    :: matl_is_void(:)
+    integer,          intent(in)    :: nmat, BC_flag(:)
+
+    integer  :: m, void_m
+    real(r8) :: Ftot, Ftot_m1, void_volume, delta_vol(size(vof,dim=1))
+
+    ! make sure individual material vofs are within bounds
+    do m = 1,nmat
+      if (vof(m) > 1.0_r8-cutvof .and. vof(m) /= 1.0_r8) then
+        ! if volume fraction is close to 1, round to 1
+        if (matl_is_void(m)) then
+          vof(m) = 1.0_r8
+        else 
+          call adjust_flux_matl (volume_flux_tot(m,:), vof(m), 1.0_r8, volume, BC_flag)
+          vof(m) = 1.0_r8
+        end if
+      else if (vof(m) < cutvof .and. vof(m) /= 0.0_r8) then
+        ! if volume fraction is close to 0, round to 0
+        if (matl_is_void(m)) then
+          vof(m) = 0.0_r8
+        else if (vof(m) /= 0.0_r8) then
+          call adjust_flux_matl (volume_flux_tot(m,:), vof(m), 0.0_r8, volume, BC_flag)
+          vof(m) = 0.0_r8
+        end if
+      end if
+    end do
+
+    ! make sure the sum of vofs is within bounds
+    Ftot = sum(vof)
+    if (Ftot == 1.0_r8) return
+
+    ! Renormalize the liquid volume fractions
+
+    ! Check to see if void is already in the cell.
+    ! if so, grab the index of the last void material present
+    void_m = last_true_loc (matl_is_void .and. vof > 0.0_r8)
+    if (any(matl_is_void) .and. void_m > 0) then
+      ! sum up the volume fraction taken up by void
+      void_volume = sum(vof, matl_is_void .and. vof > 0.0_r8) ! can the vof be <0?
+      if (Ftot > 1.0_r8) then ! if there is too much material in this cell
+        ! Is there enough to balance the cell?
+        if (void_volume > Ftot-1.0_r8) then ! There is enough void ...
+          Ftot_m1 = Ftot - 1.0_r8
+          do m = 1,nmat
+            if (.not.matl_is_void(m)) cycle
+            if (Vof(m) > Ftot_m1) then
+              Vof(m) = Vof(m) - Ftot_m1
+              exit
+            else
+              Ftot_m1 = Ftot_m1 - Vof(m)
+              Vof(m) = 0.0_r8
+            end if
+          end do
+        else ! There isn't enough void ...
+          do m = 1,nmat
+            if (matl_is_void(m)) then
+              Ftot = Ftot - Vof(m)
+              Vof(m) = 0.0_r8
+            end if
+          end do
+          call adjust_flux_total (volume_flux_tot, delta_vol, Ftot, volume, BC_flag, matl_is_void)
+          vof = vof + delta_vol / volume
+        end if
+      else ! Ftot < 1, and there's void already in the cell
+        vof(void_m) = vof(void_m) + 1.0_r8 - Ftot
+      end if
+
+    else ! there's no void in this cell
+      call adjust_flux_total (volume_flux_tot, delta_vol, Ftot, volume, BC_flag, matl_is_void)
+      vof = vof + delta_vol / volume
+    end if
+
+  end subroutine vof_bounds_cell
 
   ! Adjust the material volume fluxes on the faces of a single cell
   ! to match the evaluated material volume to a target value.
@@ -670,8 +682,8 @@ contains
       ! Adjust the volume changes.
       do f = 1,nfc
         ! Don't change dirichlet velocity BCs.
-        if (local_BC(f)/=2) &
-            Volume_Flux_Tot(f) = (1.0_r8-sign(1.0_r8,volume_flux_tot(f))*Change_Fraction)*Volume_Flux_Tot(f)
+        if (local_BC(f)/=2) volume_flux_tot(f) = &
+            (1.0_r8-sign(1.0_r8,volume_flux_tot(f))*Change_Fraction)*Volume_Flux_Tot(f)
       end do
 
     else ! there is some flow for this material
@@ -719,6 +731,7 @@ contains
     real(r8)       :: Inflow_Volume, Outflow_Volume, Volume_Change, Total_Flow, Change_Fraction
     character(128) :: message
 
+    delta_vol = 0.0_r8
     nmat = size(volume_flux_tot,dim=1)
 
     ! Determine total incoming and outgoing volumes changes
@@ -728,7 +741,7 @@ contains
         inflow_volume  = inflow_volume  + inflow  (volume_flux_tot(m,:), local_BC)
         outflow_volume = outflow_volume + outflow (volume_flux_tot(m,:), local_BC)
       end if
-    end do ! material loop
+    end do
 
     ! Calculate the fractional change needed to adjust the current volume 
     ! to the target value.  The same fractional increase/decrease is applied

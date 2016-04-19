@@ -31,6 +31,7 @@ module NS_solver_type
   use matl_props_type
   use logging_services
   use bndry_func_class
+  use scalar_func_class
   use projection_module
   use predictor_module
   implicit none
@@ -58,6 +59,7 @@ module NS_solver_type
     real(r8), allocatable :: gradP_dynamic_over_rho_cc(:,:), fluidVof(:), body_force(:)
     real(r8) :: viscous_implicitness, CFL_multiplier, max_dt
     class(bndry_func), public, allocatable :: pressure_bc, velocity_bc
+    class(scalar_func), allocatable :: pressure_init
     logical         :: boussinesq_approximation, inviscid
     logical, public :: use_prescribed_velocity
     integer, public :: prescribed_velocity_case
@@ -79,13 +81,14 @@ contains
 
     use consts, only: ndim,nfc
     use bc_factory_type
+    use scalar_func_factories
 
     class(NS_solver), intent(out) :: this
     type(unstr_mesh), intent(in), target :: mesh
     type(mesh_geom),  intent(in), target :: gmesh
     type(parameter_list) :: params
 
-    type(parameter_list), pointer :: plist
+    type(parameter_list), pointer :: plist, func_params
     character(:), allocatable :: context,errmsg
     integer :: stat
     type(bc_factory) :: bcfact
@@ -121,6 +124,9 @@ contains
       call params%get ('prescribed-velocity', this%prescribed_velocity_case, stat=stat, &
           errmsg=errmsg)
       if (stat /= 0) call LS_fatal (context//errmsg)
+
+      this%projection_solver_params => null()
+      this%prediction_solver_params => null()
       return
     end if
     
@@ -163,6 +169,18 @@ contains
       call bcfact%alloc_bc ('dirichlet-velocity', this%velocity_bc)
     else
       call LS_fatal (context//'missing "bc" sublist parameter')
+    end if
+
+    !! initialize initial condition functions
+    if (params%is_sublist('initial-condition')) then
+      plist => params%sublist('initial-condition')
+      
+      if (.not.plist%is_sublist('pressure')) call LS_fatal (context//'missing "initial-condition/pressure" sublist parameter')
+
+      func_params => plist%sublist('pressure')
+      call alloc_scalar_func (this%pressure_init, func_params)
+    else
+      call LS_fatal (context//'missing "initial-condition" sublist parameter')
     end if
 
   end subroutine init
@@ -218,21 +236,36 @@ contains
         !   this%pressure_cc(i) = this%mprop%density(1)*dot_product(this%body_force,this%gmesh%xc(:,i))
         ! end if
 
-        this%pressure_cc(i) = 1.0_r8 - this%gmesh%xc(2,i) / 4.0_r8 &
-            + this%mprop%density(1)*dot_product(this%body_force,this%gmesh%xc(:,i))
-        this%gradP_dynamic_over_rho_cc(:,i) = [0.0_r8, -0.25_r8, 0.0_r8] / this%mprop%density(1) &
-            - this%body_force
+
 
         ! this%pressure_cc(i) = 0.0_r8
         ! this%gradP_dynamic_over_rho_cc(:,i) = 0.0_r8
 
-        this%fluidRho(i) = 1.0_r8
-        this%fluidVof(i) = 1.0_r8
+        this%fluidVof(i) = sum(this%vof(:,i), mask=.not.this%mprop%is_immobile)
+
+        ! TODO: modify fluidRho with fluidDeltaRho, if following the Boussinesq approximation
+        this%fluidRho(i) = sum(this%vof(:,i)*this%mprop%density, mask=.not.this%mprop%is_immobile) &
+            / merge(this%fluidVof(i), 1.0_r8, this%fluidVof(i) > 0.0_r8)
+
+
+        this%pressure_cc(i) = this%pressure_init%eval(this%gmesh%xc(:,i)) & !1.0_r8 - this%gmesh%xc(2,i) / 4.0_r8 &
+            + this%fluidRho(i)*dot_product(this%body_force,this%gmesh%xc(:,i))
+
+        this%gradP_dynamic_over_rho_cc(:,i) = [0.0_r8, -0.25_r8, 0.0_r8] / this%fluidRho(i) &
+            - this%body_force
       end do
     end if
-    
-    call this%projection%init (this%mesh, this%gmesh, this%projection_solver_params)
-    call this%predictor%init  (this%mesh, this%gmesh, this%prediction_solver_params)
+
+    if (associated(this%projection_solver_params)) then
+      call this%projection%init (this%mesh, this%gmesh, this%projection_solver_params)
+    else
+      call this%projection%init (this%mesh, this%gmesh)
+    end if
+    if (associated(this%prediction_solver_params)) then
+      call this%predictor%init  (this%mesh, this%gmesh, this%prediction_solver_params)
+    else
+      call this%predictor%init  (this%mesh, this%gmesh)
+    end if
 
   end subroutine set_initial_state
 
@@ -341,11 +374,11 @@ contains
       ! update current/next timestep values from the recent interface advection update
       cellRho(i)  = sum(this%vof(:,i)*this%mprop%density) ! TODO: is this used anywhere?
       
+      this%fluidVof(i) = sum(this%vof(:,i), mask=.not.this%mprop%is_immobile)
+
       ! TODO: modify fluidRho with fluidDeltaRho, if following the Boussinesq approximation
       this%fluidRho(i) = sum(this%vof(:,i)*this%mprop%density, mask=.not.this%mprop%is_immobile) &
           / merge(this%fluidVof(i), 1.0_r8, this%fluidVof(i) > 0.0_r8)
-
-      this%fluidVof(i) = sum(this%vof(:,i),         mask=.not.this%mprop%is_immobile)
       
       ! vof of mobile and non-void materials
       real_fluidVof(i) = sum(this%vof(:,i), &

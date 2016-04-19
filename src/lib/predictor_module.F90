@@ -41,11 +41,11 @@ contains
     class(predictor_solver), intent(out) :: this
     type(unstr_mesh),        intent(in), target :: mesh
     type(mesh_geom),         intent(in), target :: gmesh
-    type(parameter_list),    intent(in), target :: params
+    type(parameter_list),    intent(in), target, optional :: params
 
     this%mesh => mesh
     this%gmesh => gmesh
-    this%params => params
+    if (present(params)) this%params => params
 
     call this%update_matrix ()
 

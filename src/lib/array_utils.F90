@@ -212,7 +212,8 @@ contains
 
     real(r8) :: tolh
 
-    tolh = merge(tol, 1e4_r8*alittle, present(tol))
+    tolh = 1e4_r8*alittle
+    if (present(tol)) tolh = tol
 
     isZero_r8 = abs(x) < tolh
   end function isZero_r8
@@ -224,7 +225,8 @@ contains
 
     real(r8) :: tolh
 
-    tolh = merge(tol, 1e4_r8*alittle, present(tol))    
+    tolh = 1e4_r8*alittle
+    if (present(tol)) tolh = tol
 
     isZero_r8a = abs(x) < tolh
   end function isZero_r8a
@@ -236,7 +238,8 @@ contains
 
     real(r8) :: tolh
 
-    tolh = merge(tol, 1e4_r8*alittle, present(tol))
+    tolh = 1e4_r8*alittle
+    if (present(tol)) tolh = tol
 
     isZero_r8aa = abs(x) < tolh
   end function isZero_r8aa

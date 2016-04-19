@@ -387,12 +387,12 @@ contains
     class(projection_solver), intent(out)        :: this
     type(unstr_mesh),         intent(in), target :: mesh
     type(mesh_geom),          intent(in), target :: gmesh
-    type(parameter_list),     intent(in), target :: params
+    type(parameter_list),     intent(in), target, optional :: params
 
     this%mesh => mesh
     this%gmesh => gmesh
-    this%params => params
-
+    if (present(params)) this%params => params
+    
     call this%update_matrix ()
 
   end subroutine init_projection_solver
@@ -420,7 +420,7 @@ contains
     type(projection_solver) :: this
     if (associated(this%g)) deallocate(this%g)
   end subroutine projection_solver_delete
-
+  
   ! update the cell centered and fluxing velocities
   subroutine velocity_projection (this, velocity_cc, pressure_cc, fluxing_velocity, &
       gradP_dynamic_over_rho_cc, rho_face, dP, dt, fluidRho, body_force, solid_face, &

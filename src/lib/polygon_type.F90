@@ -12,6 +12,7 @@
 !! 
 
 module polygon_type
+
   use kinds, only: r8
   use logging_services
   implicit none
@@ -131,8 +132,9 @@ contains
   end function intXdA
 
   function centroid (this)
+    use consts, only: ndim
     class(polygon), intent(in) :: this
-    real(r8)                   :: centroid(3)
+    real(r8)                   :: centroid(ndim)
     centroid = sum(this%x, dim=2) / real(this%nVerts,r8)
   end function centroid
 
@@ -142,14 +144,14 @@ contains
   ! then the angle of that vector with respect to the x-axis in that space.
   ! this angle is used to sort the vertices
   subroutine order (this,array)
-    use array_utils, only: insertion_sort,xrange,invert,magnitude,projectOnto
+    use array_utils, only: insertion_sort,xrange,invert,normalize,projectOnto,magnitude
 
     class(polygon),    intent(inout) :: this
     integer, optional, intent(inout) :: array(:)
     
-    real(r8) :: xc(3), t(this%nVerts), t2(this%nVerts), prjx(2), xl(3,this%nVerts), magxl1, q(3,2)
+    real(r8) :: xc(3), t(this%nVerts), t2(this%nVerts), prjx(2), xl(3,this%nVerts), q(3,2), tmp
     integer  :: i,ind(size(this%x,dim=2))
-
+    
     ! calculate the location of the centroid, and the vertex coordinates
     ! with respect to the centroid
     xc = this%centroid ()
@@ -158,10 +160,16 @@ contains
     end do
 
     ! the projection coordinate directions
-    ! WARNING: need to ensure the second vector here is not parallel to q1
-    q(:,1) = xl(:,1) / magnitude (xl(:,1))
-    q(:,2) = xl(:,2) - projectOnto (xl(:,2),q(:,1))
-    q(:,2) = q(:,2) / magnitude (q(:,2))
+    ! note the second coordinate must be linearly independent of q1
+    q(:,1) = normalize(xl(:,1))
+    do i = 2,this%nVerts
+      q(:,2) = xl(:,2) - projectOnto (xl(:,2),q(:,1))
+      tmp = magnitude(q(:,2))
+      if (tmp > 0.0_r8) then
+        q(:,2) = q(:,2) / tmp
+        exit
+      end if
+    end do
     
     ! calculate the rotation angle
     t(1) = 0.0_r8

@@ -581,6 +581,9 @@ contains
     else if (any(side>0) .and. any(side<0)) then
       intpoly = this%intersection_verts (P,v_assoc_pe)
       behind = this%polyhedron_on_side_of_plane (-1, side, intpoly, v_assoc_pe)
+    else
+      volume_behind_plane = 0.0_r8
+      return
     end if
 
     ! if any of the polyhedrons have a face with less than 3 vertices, throw an error
