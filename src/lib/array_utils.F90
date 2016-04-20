@@ -28,7 +28,7 @@ module array_utils
   end interface reorder
 
   interface insertion_sort
-    module procedure insertion_sort_3r8r8, insertion_sort_ir8
+    module procedure insertion_sort_3r8r8, insertion_sort_ir8, insertion_sort_r8
   end interface insertion_sort
 
   interface reverse
@@ -129,13 +129,10 @@ contains
       j = i
       do while (j>1)
         ! fortran doesn't guarantee short-circuiting, so we segfault if the two checks are together
-        if (key(j-1)>tmp) then
-          key(j) = key(j-1)
-          x(:,j) = x(:,j-1)
-          j = j-1
-        else
-          exit
-        end if
+        if (key(j-1) <= tmp) exit
+        key(j) = key(j-1)
+        x(:,j) = x(:,j-1)
+        j = j-1
       end do
       key(j) = tmp
       x(:,j) = tmpX
@@ -170,6 +167,26 @@ contains
     end do
 
   end subroutine insertion_sort_ir8
+
+  subroutine insertion_sort_r8 (key)
+    real(r8), intent(inout) :: key(:)
+
+    real(r8) :: tmp
+    integer  :: i,j
+
+    do i = 2,size(key)
+      tmp = key(i)
+      j = i
+      do while (j>1)
+        ! fortran doesn't guarantee short-circuiting, so we segfault if the two checks are together
+        if (key(j-1) <= tmp) exit
+        key(j) = key(j-1)
+        j = j-1
+      end do
+      key(j) = tmp
+    end do
+
+  end subroutine insertion_sort_r8
 
   ! reorder an array x based on a given order
   ! element i => element order(i)

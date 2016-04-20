@@ -12,6 +12,7 @@
 !! 
 
 module polyhedron_type
+
   use kinds,  only: r8
   use logging_services
   use polygon_type
@@ -404,7 +405,7 @@ contains
     ! (could just as easily be any other direction)
     volume = merge(this%vol, 0.0_r8, .not.ieee_is_nan(this%vol))
     
-    if (.not.allocated(this%x) .or. volume /= 0.0_r8) return
+    if (.not.allocated(this%x) .or. volume > 0.0_r8) return
     
     do f = 1,this%nFaces
       ! generate a polygon from this face
@@ -415,6 +416,11 @@ contains
       if (.not.isZero (face%norm(1))) volume = volume + face%norm(1) * face%intXdA (1)
     end do
     this%vol = volume
+
+    if (this%vol < 0.0_r8) then
+      call this%print_data (normalized=.true.)
+      call LS_fatal ("calculated negative polyhedron volume!")
+    end if
 
   end function volume
 
@@ -607,18 +613,25 @@ contains
     ! calculate the volume of the polyhedron behind the plane
     volume_behind_plane = behind%volume ()
 
-    if (ieee_is_nan(volume_behind_plane)) then
+    if (ieee_is_nan(volume_behind_plane) .or. volume_behind_plane < 0.0_r8) then
       write(*,*)
-      write(*,*) volume_behind_plane
+      write(*,*) 'parent:'
+      call this%print_data ()
+
+      write(*,*) 'child:'
+      call behind%print_data ()
+
+      write(*,*) 'other data:'
       write(*,'(9i3)') side
-      call this%print_data (normalized=.true.)
+      write(*,'(a,4es20.10)') 'plane n, rho: ',P%normal, P%rho
+
       if (allocated(intpoly%x)) then
-        do v = 1,size(intpoly%x,dim=2)
-          write(*,*) intpoly%x(:,v)
-        end do
+        write(*,*) 
+        call intpoly%print_data ()
+        write(*,*)
       end if
-      call behind%print_data (normalized=.true.)
-      call LS_fatal ('polyhedron volume is NaN')
+
+      call LS_fatal ('polyhedron split failed: invalid volume')
     end if
 
   end function volume_behind_plane
@@ -816,6 +829,13 @@ contains
 
           end if
         end if
+
+        ! ! if this face is invalid, delete it.
+        ! ! this line is here to counter a common, but easily fixable problem:
+        ! ! invalid (and unnecessary) faces generated when two edges are very close together (<2alpha).
+        ! ! WARNING: this is also a prime target for subtle errors, and should really be figured out
+        ! !          and handled in a more elegant manner
+        ! if (count(face_vid(:,nFaces)>0) < 3) nFaces = nFaces - 1
       end do
 
       ! add the new face from points lying on the plane

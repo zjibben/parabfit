@@ -39,7 +39,8 @@ contains
 
     type(multimat_cell) :: cube
     logical             :: success
-    real(r8)            :: vof(2), intnorm(3,2), posXflow(6), posxyzn(3), posxyn(3), posxn(3),tmp
+    real(r8)            :: vof(2), intnorm(3,2), posXflow(6), posxyzn(3), posxyn(3), posxn(3), &
+        posyn(3), tmp
 
     call cube%init (cube_v, hex_f, hex_e)
     
@@ -48,8 +49,9 @@ contains
 
     ! define normals
     posxyzn = [1.0_r8, 1.0_r8, 1.0_r8] / sqrt(3.0_r8) ! positive x-y-z
-    posxyn  = [1.0_r8, 1.0_r8, 0.0_r8] / sqrt(2.0_r8) ! positive x-y plane
     posxn   = [1.0_r8, 0.0_r8, 0.0_r8]                ! positive x-direction
+    posyn   = [0.0_r8, 1.0_r8, 0.0_r8]                ! positive y-direction
+    posxyn  = (posxn + posyn) / sqrt(2.0_r8) ! positive x-y plane
     
     write(*,*)
     write(*,*) 'MULTIMAT CELL TYPE'
@@ -113,6 +115,20 @@ contains
          0.0_r8,  0.0_r8], [2,6]) )
     write(*,*) 'passed cube 8/10ths filled in -x, fluxed in -x? ', success
 
+    ! cube 1/8th filled in y direction
+    vof = [0.125_r8, 0.875_r8]
+    intnorm(:,1) = posyn; intnorm(:,2) = -intnorm(:,1)
+    call cube%partition (vof, intnorm)
+
+    success = fluxing_unit_test (cube, 0.5_r8*posXflow, reshape([&
+         0.0_r8,  0.0_r8, &
+         0.0_r8,  0.0_r8, &
+         0.0_r8,  0.0_r8, &
+         0.0625_r8,  0.4375_r8, &
+         0.0_r8,  0.0_r8, &
+         0.0_r8,  0.0_r8], [2,6]) )
+    write(*,*) 'passed cube 1/8th filled in y, fluxed in +x?    ', success
+
     ! cube 1/8th filled along xy diagonal
     vof = [0.125_r8, 0.875_r8]
     intnorm(:,1) = posxyn; intnorm(:,2) = -intnorm(:,1)
@@ -157,6 +173,7 @@ contains
   end subroutine multimat_cell_unit_test_suite
 
   logical function fluxing_unit_test (cell, fluxing_velocity, volflux_ex)
+
     use consts,      only: cutvof,nfc
     use array_utils, only: isZero
 
@@ -176,8 +193,10 @@ contains
   ! given a set of VoFs, normals, and an order,
   ! create child polyhedra for each material
   subroutine partition (this, vof, norm)
+
     use consts, only: cutvof
     use locate_plane_nd_module
+    use logging_services
 
     class(multimat_cell), intent(inout) :: this
     real(r8),             intent(in)    :: vof(:), norm(:,:)
@@ -191,7 +210,7 @@ contains
 
     call remainder%init (this)
     
-    this%nmat = count(cutvof < vof(:))
+    this%nmat = count(vof > cutvof)
     nm = 0
 
     do m = 1,size(vof)
@@ -236,8 +255,10 @@ contains
   end function volumes_behind_plane
 
   function outward_volflux (this, adv_dt, fluxing_velocity, face_area)
+
     use consts, only: nfc,cutvof
     use plane_type
+    use logging_services
     
     class(multimat_cell), intent(inout) :: this !inout because of call to volume
     real(r8),             intent(in)    :: adv_dt, fluxing_velocity(:)
@@ -269,8 +290,23 @@ contains
         else
           outward_volflux(:,f) = this%volumes_behind_plane (flux_plane)
         end if
+
+        ! make sure we have a valid outward volume flux
+        if (any(outward_volflux(:,f) < 0.0_r8)) then
+          write(*,*)
+          write(*,'(a,i6,4es14.4)') 'f,volflux: ',f,outward_volflux(:,f)
+          write(*,'(a,es10.4)') 'correct tot volflux: ', adv_dt * fluxing_velocity(f) * face_area(f)
+
+          write(*,'(a,4es20.10)') 'flux plane n,p: ',flux_plane%normal, flux_plane%rho
+          write(*,*)
+
+          call this%print_data ()
+
+          call LS_fatal ("in nested dissection outward_volflux: negative fluxes calculated!")
+        end if
       end if
     end do
+
 
   end function outward_volflux
 

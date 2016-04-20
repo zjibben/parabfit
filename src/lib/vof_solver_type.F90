@@ -262,11 +262,8 @@ contains
 
     call start_timer ("volume tracking")
 
-    ! Zero the total flux array
-    this%volume_flux_tot = 0.0_r8
-
-    ! Set the advection timestep. this can be improved.
-    adv_dt = dt/real(this%volume_track_subcycles,r8)
+    this%volume_flux_tot = 0.0_r8                    ! Zero the total flux array
+    adv_dt = dt/real(this%volume_track_subcycles,r8) ! Set the advection timestep
     
 !!$omp parallel if(using_mic) default(private) shared(adv_dt, this, vof_n, volume_flux_sub, volume_track_subcycles)
     do p = 1,this%volume_track_subcycles
@@ -324,17 +321,27 @@ contains
     class(unstr_mesh), intent(in)    :: mesh
 
     integer :: n,ierr, j
+    real(r8), allocatable :: volume_flux_sub_cell(:,:)
 
     !$omp do
     do n = 1,mesh%ncell
+      volume_flux_sub_cell = volume_flux_sub(:,:,n)
       call renorm_cell (volume_flux_sub(:,:,n), volume_flux_tot(:,:,n), vof_n(:,n), &
           adv_dt*Fluxing_Velocity(:,n)*mesh%area(mesh%cface(:,n)), mesh%volume(n), ierr)
       if (ierr /= 0) then
         write(*,'(a,i10)')     'cell id:       ',n
         write(*,'(a,3f14.10)') 'cell centroid: ',sum(mesh%x(:,mesh%cnode(:,n)), dim=2) / 8.0_r8
-        write(*,'(a,3f14.4)')  'vof:           ',vof_n(:,n)
+        write(*,'(a,3es14.4)') 'vof:           ',vof_n(:,n)*mesh%volume(n)
+        write(*,'(a,3es14.4)') 'tot matl flx:  ',sum(volume_flux_sub_cell, dim=2)
+        write(*,'(a,3es14.4)') 'prv matl flx:  ',sum(volume_flux_tot(:,:,n), dim=2)
+        write(*,'(a,3es14.4)') 'tot flx:       ',sum(adv_dt*Fluxing_Velocity(:,n)*mesh%area(mesh%cface(:,n)))
         do j = 1,nfc
-          write(*,'(a,3f14.4)')  'volume flux:   ',volume_flux_sub(:,j,n)
+          write(*,'(a,3es14.4)')  'material flux: ',volume_flux_sub(:,j,n)
+        end do
+        write(*,*)
+        do j = 1,nfc
+          write(*,'(a,2es14.4)')  'volume flux:   ',sum(volume_flux_sub_cell(:,j)), &
+              adv_dt*mesh%area(mesh%cface(j,n))*fluxing_velocity(j,n)
         end do
         call LS_fatal ('FLUX_RENORM: cannot reassign face flux to any other material')
       end if
@@ -356,6 +363,8 @@ contains
   !           this loop again, and again, and again, and ... , until we're done.
   subroutine renorm_cell (volume_flux_sub, volume_flux_tot, vof_n, total_face_flux, cell_volume, &
       ierr)
+
+    use array_utils, only: isZero
 
     real(r8), intent(inout) :: volume_flux_sub(:,:)
     real(r8), intent(in)    :: volume_flux_tot(:,:), vof_n(:), total_face_flux(:), cell_volume
@@ -382,15 +391,15 @@ contains
       do m = 1,size(vof_n)
         ! volume of material m attempting to leave the cell in this volume_track_subcycle
         total_material_flux = sum(Volume_Flux_Sub(m,:)) 
-        if (total_material_flux == 0.0_r8) cycle
+        if (isZero(total_material_flux)) cycle
 
-        ! If the cumulative_outward_material_flux
-        ! exceeds the amount of material originally in the cell (from vof_n),
-        ! calculate the 'Ratio' of fluid material volume still allowed to be
-        ! fluxed to the flux volume, and note that we're not 'Done'
+        ! If the cumulative_outward_material_flux exceeds the amount of material
+        ! originally in the cell (from vof_n), calculate the 'Ratio' of fluid material volume
+        ! still allowed to be fluxed to the flux volume, and note that we're not 'Done'
         !if (.not.isImmobile(m)) then
         ! cumulative volume of material m that left the cell in previous subcycles
-        cumulative_outward_material_flux = sum(max(volume_flux_tot(m,:),0.0_r8))
+        cumulative_outward_material_flux = sum(volume_flux_tot(m,:), &
+            mask=volume_flux_tot(m,:) > 0.0_r8)
 
         ! ratio between the volume of original (from beginning of flow cycle) material remaining in the cell
         ! (material that has entered is disregarded)

@@ -78,10 +78,7 @@ contains
         i = i + 1
       end do
       if (i>this%nVerts .and. all(isZero(this%norm))) then
-        write(*,*) 'nVerts',this%nVerts
-        do j = 1,this%nVerts
-          write(*,'(a,i3,3es14.4)') 'vertex ',j,this%x(:,j)
-        end do
+        call this%print_data ()
         call LS_fatal ("polygon only consists of a line")
       end if
       if (present(norm)) norm = this%norm
@@ -144,7 +141,8 @@ contains
   ! then the angle of that vector with respect to the x-axis in that space.
   ! this angle is used to sort the vertices
   subroutine order (this,array)
-    use array_utils, only: insertion_sort,xrange,invert,normalize,projectOnto,magnitude
+
+    use array_utils, only: insertion_sort,xrange,invert,normalize,projectOnto,magnitude,isZero
 
     class(polygon),    intent(inout) :: this
     integer, optional, intent(inout) :: array(:)
@@ -163,11 +161,17 @@ contains
     ! note the second coordinate must be linearly independent of q1
     q(:,1) = normalize(xl(:,1))
     do i = 2,this%nVerts
-      q(:,2) = xl(:,2) - projectOnto (xl(:,2),q(:,1))
+      q(:,2) = xl(:,i) - projectOnto (xl(:,i),q(:,1))
       tmp = magnitude(q(:,2))
-      if (tmp > 0.0_r8) then
+      if (.not.isZero(tmp)) then
         q(:,2) = q(:,2) / tmp
         exit
+      end if
+
+      if (i==this%nVerts) then
+        write(*,*)
+        call this%print_data ()
+        call LS_fatal ("polygon ordering failed: unable to calculate polygon-plane coordinates")
       end if
     end do
     
@@ -175,8 +179,8 @@ contains
     t(1) = 0.0_r8
     do i = 2,this%nVerts
       ! get coordinates for the vertex in the 2D plane defined by the polygon
-      prjx(1) = sum(xl(:,i)*q(:,1))
-      prjx(2) = sum(xl(:,i)*q(:,2))
+      prjx(1) = dot_product(xl(:,i),q(:,1))
+      prjx(2) = dot_product(xl(:,i),q(:,2))
       
       ! find the angle made by this vertex with respect to the first vertex
       t(i) = atan2(prjx(2),prjx(1))
@@ -200,6 +204,7 @@ contains
   end subroutine order
 
   subroutine print_data (this)
+
     class(polygon), intent(in) :: this
 
     integer :: v
