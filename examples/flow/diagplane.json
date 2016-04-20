@@ -21,10 +21,14 @@
     },
     
     "ns-solver": {
-    	"prescribed-velocity": 4
+    	"prescribed-velocity": 4,
+        "cfl-multiplier": 0.25,
+        "max-dt": 1e-2
     },
     
     "vof-solver": {
+        "advection-method": 1,
+        "subcycles": 2,
         "materials": [1, 2],
     	"initial-vof": {
     	    "plane": {
