@@ -185,7 +185,9 @@ contains
 
     nmat = size(volflux_ex,dim=1)
 
-    outward_volflux = cell%outward_volflux (1.0_r8, fluxing_velocity)
+    write(*,*) 'WARNING: hardcoding face areas'
+    outward_volflux = cell%outward_volflux (1.0_r8, fluxing_velocity, &
+        [1.0_r8, 1.0_r8, 1.0_r8, 1.0_r8, 1.0_r8, 1.0_r8])
     fluxing_unit_test = all(isZero (outward_volflux-volflux_ex,cutvof))
     
   end function fluxing_unit_test
@@ -261,8 +263,8 @@ contains
     use logging_services
     
     class(multimat_cell), intent(inout) :: this !inout because of call to volume
-    real(r8),             intent(in)    :: adv_dt, fluxing_velocity(:)
-    real(r8), optional,   intent(in)    :: face_area(:)
+    real(r8),             intent(in)    :: adv_dt, fluxing_velocity(:), face_area(:)
+    !real(r8), optional,   intent(in)    :: face_area(:) ! WARNING: this isn't really optional, and maybe should be copied into the object
     real(r8)                            :: outward_volflux(size(this%mat_poly),nfc)
 
     type(plane) :: flux_plane
@@ -270,7 +272,8 @@ contains
     integer     :: f,nV,m
     
     do f = 1,nfc
-      if (fluxing_velocity(f) < cutvof*this%volume ()) then
+      if (fluxing_velocity(f)*adv_dt*face_area(f) < cutvof*this%volume()) then
+        ! if we would be fluxing very very little, don't flux anything
         outward_volflux(:,f) = 0.0_r8
       else
         ! find the plane equation for the back end of the flux volume
@@ -283,7 +286,7 @@ contains
         flux_plane%rho  = sum(xf*flux_plane%normal) + adv_dt * fluxing_velocity(f)
         
         ! find the volume of the materials behind the flux plane
-        if (this%nmat==1 .and. present(face_area)) then
+        if (this%nmat==1) then
           ! pure hex cells are easy, don't cut up polyhedrons to calculate the flux volume
           outward_volflux(:,f) = 0.0_r8
           outward_volflux(this%m,f) = adv_dt * fluxing_velocity(f) * face_area(f)
@@ -298,7 +301,7 @@ contains
           write(*,'(a,es10.4)') 'correct tot volflux: ', adv_dt * fluxing_velocity(f) * face_area(f)
 
           write(*,'(a,4es20.10)') 'flux plane n,p: ',flux_plane%normal, flux_plane%rho
-          write(*,*)
+          write(*,*) 'nmat ',this%nmat, this%m
 
           call this%print_data ()
 

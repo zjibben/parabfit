@@ -5,10 +5,11 @@
 !! interface normals from vof values
 !!
 !! Zechariah J. Jibben <zjibben@lanl.gov>
-!! Last revised 9 Nov 2012.
+!! Last revised April 2016.
 !!
 
 module int_norm_module
+
   use kinds,  only: r8
   use consts, only: alittle,nfc,ndim
   use unstr_mesh_type
@@ -20,14 +21,10 @@ module int_norm_module
 
 contains
 
-  !=======================================================================
-  ! Purpose(s):
-  !
-  !   This routine calculates the interface normal for each
-  !   material by computing the gradient of material volume fractions
-  !
-  !=======================================================================
+  ! This routine calculates the interface normal for each
+  ! material by computing the gradient of material volume fractions
   function interface_normal (vof, mesh, gmesh, do_onion_skin)
+
     use timer_tree_type
     use array_utils, only: first_true_loc,last_true_loc
 
@@ -37,44 +34,19 @@ contains
     logical,          intent(in) :: do_onion_skin
     real(r8)                     :: interface_normal(3,size(vof,dim=1),mesh%ncell)
 
-    integer :: m, n, mid(2), nmat, nmat_in_cell
+    integer :: m, n
 
     call start_timer ("normal calculation")
     
-    nmat = size(vof, dim=1)
-    
     ! Calculate the volume fraction gradient for each material
     ! recall interface normal is in opposite direction of gradient
-    do m = 1,nmat
+    do m = 1,size(vof, dim=1)
       interface_normal(:,m,:) = -gradient (vof(m,:), mesh, gmesh)
     end do
     
-    !$omp parallel do default(private) shared(interface_normal,vof,mesh,nmat,do_onion_skin)
+    !$omp parallel do default(private) shared(interface_normal,vof,mesh,do_onion_skin)
     do n = 1,mesh%ncell
-      nmat_in_cell = count(vof(:,n) > 0.0_r8)
-      if (nmat_in_cell > 2) then
-        ! If there are more than 2 materials in the cell and doing onion skin,
-        ! sum the gradients in priority order. This is equivalent to calculating the
-        ! interface normal for a material composed of the first few materials.
-        do m = 2,nmat
-          if (vof(m,n) > alittle .and. do_onion_skin) then
-            interface_normal(:,m,n) = interface_normal(:,m,n) + interface_normal(:,1,n)
-          else if (vof(m,n) <= alittle) then
-            interface_normal(:,m,n) =                           interface_normal(:,1,n)
-          end if
-        end do
-      else if (nmat_in_cell == 2) then
-        ! if there are only two materials in the cell, ensure the normals are consistent
-        ! identify the material IDs in the cells
-        mid(1) = first_true_loc (vof(:,n)>0.0_r8)
-        mid(2) =  last_true_loc (vof(:,n)>0.0_r8)
-        interface_normal(:,mid(2),n) = -interface_normal(:,mid(1),n)
-      end if
-      
-      do m = 1,nmat
-        call eliminate_noise (interface_normal(:,m,n))
-        call normalize       (interface_normal(:,m,n))
-      end do
+      call cell_gradients_to_normals (interface_normal(:,:,n), vof(:,n), do_onion_skin)
     end do
     !$omp end parallel do
 
@@ -84,6 +56,7 @@ contains
 
   ! calculate the interface normal in a single cell
   function interface_normal_cell (vof, n, mesh, gmesh, do_onion_skin) result(interface_normal)
+
     use timer_tree_type
     use array_utils, only: first_true_loc,last_true_loc
 
@@ -94,66 +67,98 @@ contains
     logical,          intent(in) :: do_onion_skin
     real(r8)                     :: interface_normal(3,size(vof,dim=1))
     
-    integer :: m, mid(2), nmat, nmat_in_cell
+    integer :: m
 
-    nmat = size(vof, dim=1)
-        
     ! Calculate the volume fraction gradient for each material
     ! recall interface normal is in opposite direction of gradient
-    do m = 1,nmat
+    do m = 1,size(vof, dim=1)
       interface_normal(:,m) = -gradient_cell (vof(m,:), n, mesh, gmesh)
     end do
+
+    call cell_gradients_to_normals (interface_normal, vof(:,n), do_onion_skin)
+    
+  end function interface_normal_cell
+
+  ! takes the collection of vof gradients in a cell, and ensures they are consistent,
+  ! performs onion skin (if requested), then normalizes and removes noise.
+  subroutine cell_gradients_to_normals (interface_normal, vof, do_onion_skin)
+
+    real(r8),         intent(inout) :: interface_normal(:,:)
+    real(r8),         intent(in) :: vof(:)
+    logical,          intent(in) :: do_onion_skin
+
+    integer :: m
+
+    call normal_matching_cell (interface_normal, vof, do_onion_skin)
+
+    do m = 1,size(interface_normal, dim=2)
+      call grad2norm (interface_normal(:,m))
+    end do
+
+  end subroutine cell_gradients_to_normals
+
+  ! when onion skin is requested, performs onion skin on interface normals
+  ! sets normals to materials which are not present
+  ! when exactly two materials are in a cell, ensures they are consistent
+  subroutine normal_matching_cell (interface_normal, vof, do_onion_skin)
+
+    use array_utils, only: first_true_loc,last_true_loc
+
+    real(r8),         intent(inout) :: interface_normal(:,:)
+    real(r8),         intent(in) :: vof(:)
+    logical,          intent(in) :: do_onion_skin
+    
+    integer :: m, nmat, nmat_in_cell
+    logical, allocatable :: matl_in_cell(:)
+
+    nmat = size(vof, dim=1)
 
     ! If there are more than 2 materials in the cell and we are doing onion skin,
     ! sum the gradients in priority order. This is equivalent to calculating the
     ! interface normal for a material composed of the first few materials
-    nmat_in_cell = count(vof(:,n) > 0.0_r8)
+    matl_in_cell = vof > 0.0_r8
+    nmat_in_cell = count(matl_in_cell)
     if (nmat_in_cell > 2) then
       do m = 2,nmat
-        if (vof(m,n) > alittle .and. do_onion_skin) then
+        if (vof(m) > alittle .and. do_onion_skin) then
           interface_normal(:,m) = interface_normal(:,m) + interface_normal(:,1)
-        else if (vof(m,n) <= alittle) then
-          interface_normal(:,m) =                         interface_normal(:,1)
+        else if (vof(m) <= alittle) then
+          interface_normal(:,m) = interface_normal(:,1)
         end if
       end do
     else if (nmat_in_cell == 2) then
-      ! if there are only two materials in the cell, ensure the normals are consistent
-      ! identify the material IDs in the cells
-      mid(1) = first_true_loc (vof(:,n)>0.0_r8)
-      mid(2) =  last_true_loc (vof(:,n)>0.0_r8)
-      interface_normal(:,mid(2)) = -interface_normal(:,mid(1))
+      ! if there are only two materials in the cell,
+      ! ensure the normals are consistent identify the material IDs in the cells
+      interface_normal(:,last_true_loc(matl_in_cell)) = &
+          -interface_normal(:,first_true_loc(matl_in_cell))
     end if
-
-    do m = 1,nmat
-      call eliminate_noise (interface_normal(:,m))
-      call normalize       (interface_normal(:,m))
-    end do
     
-  end function interface_normal_cell
-  
-  pure subroutine normalize (n)
+  end subroutine normal_matching_cell
+
+  ! convert a gradient to a normal by eliminating tiny components,
+  ! normalizing, and handling 0-gradients
+  !
+  ! note 1: The threshold here is higher, following what was done in Truchas.
+  !         With the threshold lower, we can get normals like [1.0, 1e-8, 1e-8].
+  !         This problem, along with planes barely touching polyhedron
+  !         vertices, sometimes results in invalid polyhedra in nested
+  !         dissection. -zjibben
+  pure subroutine grad2norm (n)
+
+    use array_utils, only: magnitude, eliminateNoise
 
     real(r8), intent(inout) :: n(:)
 
-    real(r8) :: tmp
+    real(r8) :: mag
     
-    tmp = sqrt(sum(n**2))              ! calculate the denominator
-    if (abs(tmp) > alittle)  n = n/tmp ! normalize when it won't blow up
-    call eliminate_noise (n)           ! set tiny components to zero
-    if (all(n == 0.0_r8)) n = 1.0_r8   ! set all components to 1.0 in pure cells
+    call eliminateNoise (n)          ! set tiny components to zero
+    mag = magnitude(n)               ! calculate the gradient magnitude
+    if (mag > alittle) n = n/mag     ! normalize when it won't blow up
+    call eliminateNoise (n, 1e-6_r8) ! set tiny components to zero (see note 1)
+    if (all(n == 0.0_r8)) n = 1.0_r8 ! set all components to 1.0 in pure cells
     
-  end subroutine normalize
+  end subroutine grad2norm
 
-  pure subroutine eliminate_noise (a)
-    real(r8), intent(inout) :: a(:)
-    if (abs(a(1)) < alittle) a(1) = 0.0_r8
-    if (abs(a(2)) < alittle) a(2) = 0.0_r8
-    if (abs(a(3)) < alittle) a(3) = 0.0_r8
-  end subroutine eliminate_noise
-
-  !=======================================================================
-  ! Purpose(s):
-  ! 
   !   Compute the cell-centered gradient (dPhi_dx,dPhi_dy,dPhi_dz) of a
   !   cell-centered scalar quantity Phi with the green-gauss method:
   !       With a discrete approximation to Gauss's theorem, whereby
@@ -168,10 +173,10 @@ contains
   !  note 1: Truchas does this with linear prop. It could also possibly
   !          be done locally just through the 2 cells sharing the face,
   !          using some flux function.
-  !
-  !=======================================================================
   function gradient (phi, mesh, gmesh)
+
     use timer_tree_type
+    use array_utils, only: eliminateNoise
 
     real(r8),         intent(in) :: phi(:)
     type(unstr_mesh), intent(in) :: mesh
@@ -186,7 +191,8 @@ contains
     ! compute face average of phi
     ! this is calculated through the average of node values at a face
     ! the node values are calculated through the average of neighboring cell values
-    ! this could be modified and moved inside the following loop, although some effort would be duplicated that way
+    ! this could be modified and moved inside the following loop,
+    ! although some effort would be duplicated that way
     phi_f = face_avg_global (vertex_avg_global (phi, mesh, gmesh), mesh)
     
     ! green-gauss method
@@ -198,11 +204,12 @@ contains
       ! Accumulate the dot product
       gradient(:,i) = 0.0_r8
       do f = 1,nfc
-        gradient(:,i) = gradient(:,i) + gmesh%outnorm(:,f,i)*mesh%area(mesh%cface(f,i))*phi_f(mesh%cface(f,i))
+        gradient(:,i) = gradient(:,i) + &
+            gmesh%outnorm(:,f,i)*mesh%area(mesh%cface(f,i))*phi_f(mesh%cface(f,i))
       end do
       gradient(:,i) = gradient(:,i) / mesh%volume(i) ! normalize by cell volume
 
-      call eliminate_noise (gradient(:,i))
+      call eliminateNoise (gradient(:,i))
     end do
     !$omp end parallel do
     
@@ -211,7 +218,9 @@ contains
   end function gradient
 
   function gradient_cell (phi, i, mesh, gmesh) !result(gradient)
+
     use timer_tree_type
+    use array_utils, only: eliminateNoise
 
     real(r8),         intent(in) :: phi(:)
     integer,          intent(in) :: i
@@ -228,11 +237,12 @@ contains
     ! Accumulate the dot product
     gradient_cell = 0.0_r8
     do f = 1,nfc
-      gradient_cell = gradient_cell + gmesh%outnorm(:,f,i)*mesh%area(mesh%cface(f,i))*face_avg (phi,mesh%cface(f,i), mesh, gmesh)
+      gradient_cell = gradient_cell + &
+          gmesh%outnorm(:,f,i)*mesh%area(mesh%cface(f,i))*face_avg (phi,mesh%cface(f,i), mesh, gmesh)
     end do
 
     gradient_cell = gradient_cell / mesh%volume(i) ! Normalize by cell volume
-    call eliminate_noise (gradient_cell)
+    call eliminateNoise (gradient_cell)
 
   end function gradient_cell
   
@@ -244,7 +254,8 @@ contains
 
     integer  :: v
 
-    ! loop through each vertex on the face, adding up the average value for the node (found through neighboring cells)
+    ! loop through each vertex on the face,
+    ! adding up the average value for the node (found through neighboring cells)
     face_avg = 0.0_r8
     do v = 1,4 
       face_avg = face_avg + vertex_avg (x_cell, mesh%fnode(v,f), mesh, gmesh)
@@ -269,14 +280,9 @@ contains
 
   end function face_avg_global
 
-  !=======================================================================
-  ! Purpose(s):
-  !
-  !   Compute a vertex-averaged quantity X_vertex from a cell-centered
-  !   quantity X_cell.  X_vertex is an inverse-volume-weighted average
-  !   of X_cell: X_vertex = SUM(X_cell/Vol)/SUM(1/Vol).
-  !
-  !=======================================================================
+  ! Compute a vertex-averaged quantity X_vertex from a cell-centered
+  ! quantity X_cell.  X_vertex is an inverse-volume-weighted average
+  ! of X_cell: X_vertex = SUM(X_cell/Vol)/SUM(1/Vol).
   function vertex_avg_global (x_cell, mesh, gmesh) result(x_vertex)
     real(r8),         intent(in) :: x_cell(:)
     type(unstr_mesh), intent(in) :: mesh

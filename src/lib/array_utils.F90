@@ -1,10 +1,10 @@
 !!
-!! array_utils
+!! ARRAY_UTILS
 !!
 !! This module contains a collection of utilities for arrays.
 !!
 !! Zechariah J. Jibben <zjibben@lanl.gov>
-!! October 2015
+!! April 2016
 !!
 
 module array_utils
@@ -17,7 +17,8 @@ module array_utils
   public :: first_true_loc,last_true_loc,xrange,reorder,insertion_sort,int2str,containsPair, &
       reverse,invert,isZero, index_of, &
       meanArithmetic, meanHarmonic, &
-      magnitude, magnitude2, normalize, projectOnto
+      magnitude, magnitude2, normalize, projectOnto, &
+      eliminateNoise
 
   ! interface append
   !   procedure append_polygon
@@ -348,6 +349,15 @@ contains
     real(r8)             :: normalize(size(v))
     normalize = v / magnitude(v)
   end function normalize
+
+  ! zeroes out components of an array that are below a certain threshold
+  pure subroutine eliminateNoise (a, limit)
+    real(r8), intent(inout) :: a(:)
+    real(r8), intent(in), optional :: limit
+    real(r8) :: limith
+    limith = merge(limit, alittle, present(limit))
+    where (abs(a) < limith) a = 0.0_r8
+  end subroutine eliminateNoise
 
   ! project vector x1 into the direction of vector x2 
   pure function projectOnto (x1, x2)

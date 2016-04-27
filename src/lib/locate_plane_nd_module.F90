@@ -259,6 +259,7 @@ contains
   end function func_eval
 
   real(r8) function func_signed_eval (this, x)
+
     use plane_type
 
     class(volume_error_func), intent(in) :: this
@@ -268,7 +269,7 @@ contains
 
     P%rho = x; P%normal = this%norm
     func_signed_eval = this%poly%volume_behind_plane (P) - this%tvol
-
+    
   end function func_signed_eval
   
 end module locate_plane_nd_module

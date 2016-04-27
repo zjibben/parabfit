@@ -13,6 +13,7 @@
 
 module polygon_type
 
+  use consts, only: ndim
   use kinds, only: r8
   use logging_services
   implicit none
@@ -20,8 +21,8 @@ module polygon_type
 
   type, public :: polygon
     integer               :: nVerts
-    real(r8), allocatable :: x(:,:)
-    real(r8)              :: norm(3)
+    real(r8), allocatable :: x(:,:) !, norm(:)
+    real(r8) :: norm(ndim)
   contains
     procedure          :: init => init_polygon
     procedure          :: intXdA
@@ -39,7 +40,6 @@ contains
     real(r8), optional, intent(inout) :: norm(:)
 
     this%nVerts = size(x, dim=2)
-    allocate(this%x(3,this%nVerts))
     this%x = x
 
     if (present(norm)) then
@@ -52,8 +52,10 @@ contains
 
   ! calculate the normal via cross product from vectors defined by 3 vertices
   subroutine update_plane_normal (this,norm)
+
+    use consts,        only: ndim
     use cell_geometry, only: cross_product
-    use array_utils,   only: isZero
+    use array_utils,   only: isZero,normalize
 
     class(polygon),     intent(inout) :: this
     real(r8), optional, intent(inout) :: norm(:) ! return the newly calculated norm if it wasn't known
@@ -66,6 +68,8 @@ contains
     if (present(norm)) then
       this%norm = norm
     else
+      !if (allocated(this%norm)) deallocate(this%norm)
+      !if (.not.allocated(this%norm)) allocate(this%norm(ndim))
       this%norm = 0.0_r8
     end if
 
@@ -73,8 +77,7 @@ contains
       i = 3
       ! make sure we pick 3 vertices that don't all lie in the same plane
       do while (all(isZero (this%norm)) .and. i<=this%nVerts)
-        this%norm = cross_product ( this%x(:,2) - this%x(:,1), this%x(:,i) - this%x(:,1))
-        this%norm = this%norm / sqrt(sum(this%norm**2)) ! normalize
+        this%norm = normalize(cross_product (this%x(:,2) - this%x(:,1), this%x(:,i) - this%x(:,1)))
         i = i + 1
       end do
       if (i>this%nVerts .and. all(isZero(this%norm))) then
@@ -93,10 +96,12 @@ contains
   ! Follows the algorithm proposed by [1].
   !
   real(r8) function intXdA (this,dir)
+
     class(polygon), intent(in) :: this
     integer,        intent(in) :: dir
 
     integer :: e,eN,nEdges,A,B,C
+    real(r8) :: term
 
     nEdges = size(this%x, dim=2)
 
@@ -209,13 +214,13 @@ contains
 
     integer :: v
 
-    write(*,*) 'POLYGON DATA'
+    write(*,*) 'POLYGON DATA:'
     do v = 1,this%nVerts
-      write(*,'(a,i3,a,3es20.10)') 'x ',v,':  ',this%x(:,v)
+      write(*,'(a,i3,a,3es35.25)') 'x ',v,':  ',this%x(:,v)
     end do
     write(*,*)
 
-    write(*,'(a,3f14.4)') 'norm ',this%norm
+    write(*,'(a,3f35.25)') 'norm ',this%norm
     write(*,*)
 
   end subroutine print_data

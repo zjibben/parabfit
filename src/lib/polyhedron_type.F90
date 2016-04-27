@@ -136,94 +136,9 @@ contains
           8,4],  &
          shape(cutcube_e))
 
-    !     real(r8)         :: pyr3_v(3,4) = [ &
-    !      [ 0.0_r8, 0.0_r8, 0.0_r8 ], & ! vertex positions
-    !      [ 0.0_r8, 1.0_r8, 0.0_r8 ], &
-    !      [ 1.0_r8, 0.0_r8, 0.0_r8 ], &
-    !      [ 0.0_r8, 0.0_r8, 1.0_r8 ]  &
-    !      ]
-    ! integer          :: pyr3_f(3,4) = [ &
-    !      [ 1,2,3 ], & ! face vertices
-    !      [ 1,4,2 ], &
-    !      [ 1,3,4 ], &
-    !      [ 4,3,2 ]  &
-    !      ]
-    ! integer          :: pyr3_e(2,6) = [ &
-    !      [ 1,2 ], & ! edge vertices
-    !      [ 2,3 ], &
-    !      [ 3,4 ], &
-    !      [ 1,3 ], &
-    !      [ 4,1 ], &
-    !      [ 4,2 ]  &
-    !      ]
-    ! real(r8)         :: pyr_v(3,5) = [ & ! pyramid with square bottom
-    !      [ 0.0_r8, 0.0_r8, 0.0_r8 ], & ! vertex positions
-    !      [ 1.0_r8, 0.0_r8, 0.0_r8 ], &
-    !      [ 1.0_r8, 1.0_r8, 0.0_r8 ], &
-    !      [ 0.0_r8, 1.0_r8, 0.0_r8 ], &
-    !      [ 0.5_r8, 0.5_r8, 0.5_r8 ]  &
-    !      ]
-    ! integer          :: pyr_f(4,5) = [ &
-    !      [ 1,2,3,4 ], & ! face vertices
-    !      [ 1,2,5,0 ], &
-    !      [ 2,3,5,0 ], &
-    !      [ 3,4,5,0 ], &
-    !      [ 4,1,5,0 ]  &
-    !      ]
-    ! integer          :: pyr_e(2,8) = [ &
-    !      [ 1,2 ], & ! edge vertices
-    !      [ 2,3 ], &
-    !      [ 3,4 ], &
-    !      [ 4,1 ], &
-    !      [ 1,5 ], &
-    !      [ 2,5 ], &
-    !      [ 3,5 ], &
-    !      [ 4,5 ]  &
-    !      ]
-    ! real(r8)         :: cutcube_v(3,10) = [ &
-    !      [ 0.9_r8, 0.0_r8, 0.0_r8 ], & ! cube cut with triangle face
-    !      [ 0.0_r8, 0.9_r8, 0.0_r8 ], &
-    !      [ 0.0_r8, 0.0_r8, 0.9_r8 ], &
-    !      [ 1.0_r8, 0.0_r8, 0.0_r8 ], &
-    !      [ 1.0_r8, 1.0_r8, 0.0_r8 ], &
-    !      [ 0.0_r8, 1.0_r8, 0.0_r8 ], &
-    !      [ 0.0_r8, 0.0_r8, 1.0_r8 ], &
-    !      [ 1.0_r8, 0.0_r8, 1.0_r8 ], &
-    !      [ 1.0_r8, 1.0_r8, 1.0_r8 ], &
-    !      [ 0.0_r8, 1.0_r8, 1.0_r8 ]  &
-    !      ]
-    ! integer :: cutcube_f(5,7) = [ &
-    !      [  3,2,1,0,0 ], &
-    !      [  7,3,1,4,8 ], &
-    !      [  4,5,9,8,0 ], &
-    !      [ 10,9,5,6,0 ], &
-    !      [ 10,6,2,3,7 ], &
-    !      [  1,2,6,5,4 ], &
-    !      [ 10,7,8,9,0 ]  &
-    !      ]
-    ! integer :: cutcube_e(2,15) = [ &
-    !      [  1,2 ], &
-    !      [  2,3 ], &
-    !      [  3,1 ], &
-    !      [  1,4 ], &
-    !      [  4,5 ], &
-    !      [  5,6 ], &
-    !      [  6,2 ], &
-    !      [  3,7 ], &
-    !      [  7,8 ], &
-    !      [  8,9 ], &
-    !      [ 10,9 ], &
-    !      [ 10,7 ], &
-    !      [ 10,6 ], &
-    !      [  9,5 ], &
-    !      [  8,4 ]  &
-    !      ]
-
-
     write(*,*)
     write(*,*) 'POLYHEDRON'
     write(*,*) '===================================================='
-
 
     ! calculate the volume of a unit cube (1)
     write(*,*) 'SHAPE VOLUMES'
@@ -235,6 +150,7 @@ contains
     call pyramid%init (pyr_v, pyr_f, pyr_e)
     volume = pyramid%volume ()
     write(*,*) 'pyramid volume?                  ', isZero (volume-1.0_r8/6.0_r8)
+    write(*,*) volume
     
     ! calculate the volume of a pyramid (1/6)
     call pyramid3%init (pyr3_v, pyr3_f, pyr3_e)
@@ -245,7 +161,7 @@ contains
     call cutcube%init (cutcube_v, cutcube_f, cutcube_e)
     volume = cutcube%volume ()
     write(*,*) 'cutcube volume?                  ', isZero (volume-(1.0_r8-0.9_r8**3/6.0_r8))
-
+    
     ! create a plane, and return coordinates it intersects with polyhedron edges
     write(*,*) 'SHAPE SPLITTING'
     P%normal = [ 1.0_r8, 0.0_r8, 0.0_r8 ]
@@ -391,22 +307,39 @@ contains
   ! integral of x over all faces, which is equal to the volume by the
   ! divergence theorem.
   !
+  ! note 1: this is done so we can find the volume of very tiny ones without hitting precision limits
+  !         in some cases, very tiny polyhedra (without this trick) would produce negative volumes
+  !         because their volume was on the order of floating point errors. Scaling the polyhedron
+  !         up to some normalized size before calculating the volume, then scaling back, seems to
+  !         counter this rather well, but seems a bit tricky. It might instead be worth just setting
+  !         the volume of a polyhedron to zero if it is calculated as below zero and very close to
+  !         zero. Note this occurs even though the polyhedra splitting routine is "robust" and will
+  !         not allow vertices to be within some distance alpha (=1e-9). These tiny distances can
+  !         still produce volumes on the order of e-27, far below the double precision limit of e-16.
   real(r8) function volume (this)
-    
+
+    use consts,          only: ndim
     use array_utils,     only: isZero
     use ieee_arithmetic, only: ieee_is_nan
 
     class(polyhedron), intent(inout) :: this
     
-    integer :: f,nV
+    integer :: f,nV,v
+    real(r8) :: x0(ndim), xl(ndim)
     type(polygon) :: face
     
-    ! sum up the integral of n_x*x over all faces
-    ! (could just as easily be any other direction)
     volume = merge(this%vol, 0.0_r8, .not.ieee_is_nan(this%vol))
-    
     if (.not.allocated(this%x) .or. volume > 0.0_r8) return
-    
+
+    ! ! scale the polyhedron (see note 1)
+    ! x0 = minval(this%x,dim=2)
+    ! xl = maxval(this%x,dim=2) - x0
+    ! do v = 1,this%nVerts
+    !   this%x(:,v) = (this%x(:,v)-x0)/xl
+    ! end do
+
+    ! sum up the integral of n_x*x over all faces (could just as easily be any other direction)
+    volume = 0.0_r8
     do f = 1,this%nFaces
       ! generate a polygon from this face
       nV = count(this%face_vid(:,f) /= 0) ! number of vertices on this face
@@ -415,10 +348,25 @@ contains
       ! calculate this face's contribution
       if (.not.isZero (face%norm(1))) volume = volume + face%norm(1) * face%intXdA (1)
     end do
+
+    ! ! if this polyhedron has a volume of almost zero, make it zero
+    ! ! this seems to be necessary for very tiny polyhedrons,
+    ! ! where floating point errors may make the volume calculation drop below zero
+    ! if (volume < 0.0_r8 .and. isZero(volume)) then
+    !   volume = 0.0_r8
+    !   deallocate(this%x)
+    ! end if
+
+    ! ! rescale the polyhedron
+    ! do v = 1,this%nVerts
+    !   this%x(:,v) = this%x(:,v)*xl + x0
+    ! end do
+    ! volume = volume * product(xl)
+
     this%vol = volume
 
     if (this%vol < 0.0_r8) then
-      call this%print_data (normalized=.true.)
+      call this%print_data ()
       call LS_fatal ("calculated negative polyhedron volume!")
     end if
 
@@ -515,6 +463,7 @@ contains
   ! the first element returned is in front of the plane
   ! the second element returned is behind the plane
   function split (this,P)
+
     use consts, only: alpha
     use plane_type
     
@@ -524,7 +473,7 @@ contains
 
     integer       :: v, v_assoc_pe(this%nEdges),side(this%nVerts)
     type(polygon) :: intpoly
-    real(r8)      :: dist
+    real(r8)      :: dist, tmp1, tmp2
 
     ! check which side of the plane each vertex lies
     ! vertices within distance alpha of the plane are considered to lie on it
@@ -555,12 +504,39 @@ contains
       call LS_fatal ("polyhedron split failed--one of the children has an invalid face")
     end if
 
+    tmp1 = split(1)%volume()
+    tmp2 = split(2)%volume()
+    if (tmp1 < 0.0_r8 .or. tmp2 < 0.0_r8) then
+      write(*,*)
+      write(*,*) 'parent:'
+      call this%print_data ()
+
+      write(*,*) 'child1:'
+      call split(1)%print_data ()
+
+      write(*,*) 'child2:'
+      call split(2)%print_data ()
+
+      write(*,*) 'other data:'
+      write(*,'(9i3)') side
+      write(*,'(a,4es35.25)') 'plane n, rho: ',P%normal, P%rho
+
+      if (allocated(intpoly%x)) then
+        write(*,*) 
+        call intpoly%print_data ()
+        write(*,*)
+      end if
+      
+      write(*,*) 'problematic vols: ',tmp1,tmp2
+      call LS_fatal ('polyhedron split failed: invalid volume')
+    end if
+
   end function split
 
   ! return the volume behind (opposite normal) a plane and inside the polyhedron
   real(r8) function volume_behind_plane (this,P)
 
-    use consts, only: alpha
+    use consts,          only: alpha
     use ieee_arithmetic, only: ieee_is_nan
     use plane_type
 
@@ -631,6 +607,7 @@ contains
         write(*,*)
       end if
 
+      write(*,*) 'problematic vol: ',volume_behind_plane
       call LS_fatal ('polyhedron split failed: invalid volume')
     end if
 
@@ -736,7 +713,7 @@ contains
           else
             new_edge = [p2c_vid(this%edge_vid(2,e)),nParVerts+v_assoc_pe(e)]
           end if
-
+          
           ! if this edge isn't already listed, add it
           ! the edge might already be listed in cases where we have very close vertices (O(alpha)),
           ! which are then combined in the new polyhedron.
@@ -884,11 +861,11 @@ contains
         x0 = minval(this%x,dim=2)
         xl = maxval(this%x,dim=2) - x0
         do v = 1,this%nVerts
-          write(*,'(a,i3,a,3es20.10)') 'x ',v,':  ',(this%x(:,v)-x0)/xl
+          write(*,'(a,i3,a,3es25.15)') 'x ',v,':  ',(this%x(:,v)-x0)/xl
         end do
       else
         do v = 1,this%nVerts
-          write(*,'(a,i3,a,3es20.10)') 'x ',v,':  ',this%x(:,v)
+          write(*,'(a,i3,a,3es35.25)') 'x ',v,':  ',this%x(:,v)
         end do
       end if
       write(*,*)
@@ -904,6 +881,13 @@ contains
     if (allocated(this%face_vid)) then
       do f = 1,this%nFaces
         write(*,'(a,i3,a,10i4)') 'face ',f,':  ',this%face_vid(:,f)
+      end do
+      write(*,*)
+    end if
+
+    if (allocated(this%face_normal)) then
+      do f = 1,this%nFaces
+        write(*,'(a,i3,a,3es35.25)') 'norm ',f,':  ',this%face_normal(:,f)
       end do
       write(*,*)
     end if
