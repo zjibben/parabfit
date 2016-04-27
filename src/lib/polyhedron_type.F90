@@ -331,12 +331,12 @@ contains
     volume = merge(this%vol, 0.0_r8, .not.ieee_is_nan(this%vol))
     if (.not.allocated(this%x) .or. volume > 0.0_r8) return
 
-    ! ! scale the polyhedron (see note 1)
-    ! x0 = minval(this%x,dim=2)
-    ! xl = maxval(this%x,dim=2) - x0
-    ! do v = 1,this%nVerts
-    !   this%x(:,v) = (this%x(:,v)-x0)/xl
-    ! end do
+    ! scale the polyhedron (see note 1)
+    x0 = minval(this%x,dim=2)
+    xl = maxval(this%x,dim=2) - x0
+    do v = 1,this%nVerts
+      this%x(:,v) = (this%x(:,v)-x0)/xl
+    end do
 
     ! sum up the integral of n_x*x over all faces (could just as easily be any other direction)
     volume = 0.0_r8
@@ -357,11 +357,11 @@ contains
     !   deallocate(this%x)
     ! end if
 
-    ! ! rescale the polyhedron
-    ! do v = 1,this%nVerts
-    !   this%x(:,v) = this%x(:,v)*xl + x0
-    ! end do
-    ! volume = volume * product(xl)
+    ! rescale the polyhedron
+    do v = 1,this%nVerts
+      this%x(:,v) = this%x(:,v)*xl + x0
+    end do
+    volume = volume * product(xl)
 
     this%vol = volume
 
