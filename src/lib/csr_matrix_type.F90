@@ -100,6 +100,8 @@
 !!
 !!  GRAPH() returns a TYPE(CRS_GRAPH) pointer to the sparse matrix graph.
 !!
+!!  MATVEC(X) returns a vector y = A*x
+!!
 
 #include "f90_assert.fpp"
 
@@ -140,6 +142,7 @@ module csr_matrix_type
     procedure :: project_out => csr_matrix_project_out
     procedure :: get_row_view => csr_matrix_get_row_view
     procedure :: get_diag_copy => csr_matrix_get_diag_copy
+    procedure :: matvec => csr_matrix_matvec
     final :: csr_matrix_delete
   end type csr_matrix
 
@@ -301,6 +304,23 @@ contains
       end do
     end do
   end subroutine csr_matrix_get_diag_copy
+
+  function csr_matrix_matvec (this, x) result(y)
+
+    class(csr_matrix), intent(in) :: this
+    real(r8), intent(in) :: x(:)
+
+    real(r8) :: y(this%nrow)
+    integer :: i
+    real(r8), pointer :: values(:)
+    integer, pointer :: indices(:)
+
+    do i = 1,this%nrow
+      call this%get_row_view (i, values, indices)
+      y(i) = sum(values*x(indices))
+    end do
+
+  end function csr_matrix_matvec
 
   !! Auxillary function that computes the index within the compressed
   !! value array corresponding to the specified matrix element.

@@ -17,7 +17,7 @@ module array_utils
   public :: first_true_loc,last_true_loc,xrange,reorder,insertion_sort,int2str,containsPair, &
       reverse,invert,isZero, index_of, &
       meanArithmetic, meanHarmonic, &
-      magnitude, magnitude2, normalize, projectOnto, &
+      magnitude, magnitude2, normalize, normalizeIfNonzero, projectOnto, &
       eliminateNoise
 
   ! interface append
@@ -232,7 +232,7 @@ contains
 
     tolh = 1e4_r8*alittle
     if (present(tol)) tolh = tol
-
+    
     isZero_r8 = abs(x) < tolh
   end function isZero_r8
 
@@ -349,6 +349,13 @@ contains
     real(r8)             :: normalize(size(v))
     normalize = v / magnitude(v)
   end function normalize
+
+  pure subroutine normalizeIfNonzero (v)
+    real(r8), intent(inout) :: v(:)
+    real(r8) :: mag
+    mag = magnitude(v)
+    if (mag > alittle) v = v/mag
+  end subroutine normalizeIfNonzero
 
   ! zeroes out components of an array that are below a certain threshold
   pure subroutine eliminateNoise (a, limit)

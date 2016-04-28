@@ -12,6 +12,7 @@ module projection_module
   use mesh_geom_type
   use parameter_list_type
   use bndry_func_class
+  use fischer_guess_type
   use logging_services
   use timer_tree_type
   implicit none
@@ -30,6 +31,7 @@ module projection_module
 
     type(csr_graph), pointer :: g => null()
     type(csr_matrix) :: lhs
+    type(fischer_guess) :: fischer
   contains
     procedure :: init => init_projection_solver
     procedure :: solve
@@ -95,8 +97,7 @@ contains
     class(bndry_func), intent(in) :: velocity_bc, pressure_bc
 
     real(r8) :: rhs(this%mesh%ncell)
-    integer :: i,f,i_ngbr,fid, stat
-    type(hypre_hybrid) :: solver
+    integer :: i,f,i_ngbr,fid
 
     call start_timer ('pressure poisson')
 
@@ -146,16 +147,7 @@ contains
     end do
     call stop_timer ('internal')
 
-    ! TODO: put a better initial guess here later, and thread it
-    dP = 0.0_r8
-    
-    ! solve the system
-    call start_timer ('solver')
-    call solver%init (this%lhs, this%params)
-    call solver%setup ()
-    call solver%solve (rhs, dP, stat)
-    if (stat /= 0) call LS_fatal ("projection solver failed")
-    call stop_timer ('solver')
+    call linear_solve (dP, this%lhs, rhs, this%fischer, this%params)
 
     ! re-normalize pressure when not using dirichlet pressure BCs
     if ((.not.allocated(pressure_bc%index) .or. size(pressure_bc%index)==0) &
@@ -168,6 +160,40 @@ contains
     call stop_timer ('pressure poisson')
     
   contains
+
+    subroutine linear_solve (dP, lhs, rhs, fischer, params)
+
+      use consts, only: alittle
+
+      real(r8),             intent(out)   :: dP(:)
+      type(csr_matrix),     intent(in)    :: lhs
+      real(r8),             intent(in)    :: rhs(:)
+      type(fischer_guess),  intent(inout) :: fischer
+      type(parameter_list), pointer       :: params
+
+      type(hypre_hybrid) :: solver
+      integer :: stat
+
+      call start_timer ('solver')
+
+      call solver%init (lhs, params)
+      call solver%setup ()
+
+      ! initial guess
+      if (sum(abs(rhs)) > alittle) then
+        call fischer%guess (dP, rhs)
+      else
+        dP = 1.0_r8
+      end if
+
+      call solver%solve (rhs, dP, stat)
+      if (stat /= 0) call LS_fatal ("projection solver failed")
+
+      call fischer%update (dP, rhs, this%lhs)
+      
+      call stop_timer ('solver')
+
+    end subroutine linear_solve
 
     subroutine apply_velocity_bcs (fluxing_velocity, rho_face, rhs, velocity_bc, &
         pressure_cc, fluidRho, min_face_fraction, min_fluidRho, dt, solid_face, is_pure_immobile, &
@@ -394,6 +420,8 @@ contains
     if (present(params)) this%params => params
     
     call this%update_matrix ()
+
+    call this%fischer%init (this%mesh%ncell)
 
   end subroutine init_projection_solver
 
