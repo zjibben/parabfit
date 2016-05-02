@@ -474,6 +474,7 @@ contains
     integer       :: v, v_assoc_pe(this%nEdges),side(this%nVerts)
     type(polygon) :: intpoly
     real(r8)      :: dist, tmp1, tmp2
+    logical       :: failed
 
     ! check which side of the plane each vertex lies
     ! vertices within distance alpha of the plane are considered to lie on it
@@ -497,13 +498,19 @@ contains
     end if
 
     ! if any of the polyhedrons have a face with less than 3 vertices, throw an error
-    if (any(count(split(1)%face_vid /= 0, dim=1) < 3) .or. &
-        any(count(split(2)%face_vid /= 0, dim=1) < 3)) then
-      call split(1)%print_data (normalized=.true.)
-      call split(2)%print_data (normalized=.true.)
-      call LS_fatal ("polyhedron split failed--one of the children has an invalid face")
-    end if
+    failed = .false.
+    do v = 1,2
+      if (allocated(split(v)%face_vid)) then
+        if (any(count(split(v)%face_vid /= 0, dim=1) < 3)) then
+          call split(v)%print_data (normalized=.true.)
+          failed = .true.
+        end if
+      end if
+    end do
+    if (failed) call LS_fatal ("polyhedron split failed--one of the children has an invalid face")
 
+    ! if either of the volumes are less than zero, throw an error
+    ! TODO: this is a more expensive check. might be worth skipping when sufficiently confident.
     tmp1 = split(1)%volume()
     tmp2 = split(2)%volume()
     if (tmp1 < 0.0_r8 .or. tmp2 < 0.0_r8) then

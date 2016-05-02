@@ -62,7 +62,9 @@ contains
     use unstr_mesh_factory
     use unstr_mesh_func
     use vof_init
+#ifdef _OPENMP
     use omp_lib, only: omp_get_max_threads
+#endif
 
     class(flow_sim), intent(out) :: this
     type(parameter_list) :: params
@@ -139,10 +141,12 @@ contains
       call LS_fatal ('missing "vof-solver" sublist parameter')
     end if
 
-    ! print plane reconstructions (should grab from input file, currently set to true)
-    ! also only dump interface reconstruction if running in serial (TODO: fix this)
-    this%dump_intrec = .true. .and. omp_get_max_threads() == 1
-
+    ! print plane reconstructions 
+    this%dump_intrec = .true. ! TODO: grab from input file
+#ifdef _OPENMP
+    ! only dump interface reconstruction if running in serial
+    this%dump_intrec = this%dump_intrec .and. omp_get_max_threads() == 1
+#endif
     call stop_timer ('vof-solver')
 
     !! Simulation control parameters

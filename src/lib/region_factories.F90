@@ -89,7 +89,7 @@ contains
     case default
       call LS_fatal (context//'unknown "type" value: '//rtype)
     end select
-    ASSERT(allocated(f))
+    ASSERT(allocated(r))
 
   end subroutine alloc_region
 

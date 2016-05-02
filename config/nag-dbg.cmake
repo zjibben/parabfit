@@ -5,4 +5,5 @@ set(CMAKE_Fortran_COMPILER nagfor CACHE STRING "Fortran Compiler")
 # depend on the compiler ID and build type.  Not so for Fortran Flags -- we
 # must specify them (or get none).
 set(CMAKE_BUILD_TYPE Debug CACHE STRING "Build type")
-set(CMAKE_Fortran_FLAGS "-u -C -C=dangling -g90 -gline -nan" CACHE STRING "Fortran compile flags")
+#set(CMAKE_Fortran_FLAGS "-u -C -C=dangling -g90 -gline -nan" CACHE STRING "Fortran compile flags")
+set(CMAKE_Fortran_FLAGS "-ieee=full" CACHE STRING "Fortran compile flags")

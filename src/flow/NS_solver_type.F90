@@ -82,6 +82,7 @@ contains
     use consts, only: ndim,nfc
     use bc_factory_type
     use scalar_func_factories
+    use parameter_list_type ! intel 15 needs this here, seems like it might be a bug
 
     class(NS_solver), intent(out) :: this
     type(unstr_mesh), intent(in), target :: mesh
@@ -227,7 +228,7 @@ contains
       this%velocity_cc = 0.0_r8
       this%fluxing_velocity = 0.0_r8
 
-      write(*,*) 'WARNING: hard-coded initial condition'
+      write(*,*) 'WARNING: hard-coded initial condition (gradp)'
       do i = 1,this%mesh%ncell
         this%fluidVof(i) = sum(this%vof(:,i), mask=.not.this%mprop%is_immobile)
 
