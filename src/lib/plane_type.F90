@@ -8,7 +8,10 @@
 !! October 2015
 !!
 
+#include "f90_assert.fpp"
+
 module plane_type
+
   use kinds,  only: r8
   use logging_services
   use polygon_type
@@ -17,8 +20,7 @@ module plane_type
 
   ! dot(n,x) - rho = 0
   type, public :: plane
-    real(r8) :: rho       ! interface plane constant
-    real(r8) :: normal(3) ! interface normal
+    real(r8) :: rho, normal(3) ! plane constant and normal
   contains
     procedure :: signed_distance
     procedure :: intersects
@@ -29,12 +31,14 @@ contains
 
   ! calculates the signed distance from a plane
   real(r8) function signed_distance (this,x)
+
     use consts, only: alpha
 
     class(plane), intent(in) :: this
-    real(r8),     intent(in) :: x(3)
+    real(r8),     intent(in) :: x(:)
+    ASSERT(size(x)==size(this%normal))
 
-    signed_distance = sum(x*this%normal) - this%rho
+    signed_distance = dot_product(x,this%normal) - this%rho
 
     ! set distance to zero if it lies within alpha of the plane
     signed_distance = merge(signed_distance, 0.0_r8, abs(signed_distance) > alpha)
@@ -45,10 +49,13 @@ contains
     use array_utils, only: isZero
 
     class(plane), intent(in) :: this
-    real(r8),     intent(in) :: x(3,2) ! tuple of x positions
+    real(r8),     intent(in) :: x(:,:) ! tuple of x positions
 
     real(r8) :: d1,d2
 
+    ASSERT(size(x, dim=1)==size(this%normal))
+    ASSERT(size(x, dim=2)==2)
+    
     d1 = this%signed_distance(x(:,1))
     d2 = this%signed_distance(x(:,2))
     

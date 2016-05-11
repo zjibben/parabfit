@@ -231,6 +231,8 @@ contains
 
   subroutine init_polyhedron (this, x, face_v, edge_v, vol, face_normal)
 
+    use consts, only: ndim
+
     class(polyhedron),  intent(out) :: this
     real(r8),           intent(in)  :: x(:,:)
     integer,            intent(in)  :: face_v(:,:), edge_v(:,:)
@@ -247,10 +249,10 @@ contains
     if (allocated(this%edge_vid))    deallocate(this%edge_vid)
     if (allocated(this%face_normal)) deallocate(this%face_normal)
     
-    allocate(this%x(3,this%nVerts),& !this%face(this%nFaces),&
+    allocate(this%x(ndim,this%nVerts),& !this%face(this%nFaces),&
          this%face_vid(size(face_v,dim=1),this%nFaces),&
          this%edge_vid(size(edge_v,dim=1),this%nEdges),&
-         this%face_normal(3,this%nFaces))
+         this%face_normal(ndim,this%nFaces))
     
     this%x = x
     this%edge_vid = edge_v
@@ -318,7 +320,7 @@ contains
   !         still produce volumes on the order of e-27, far below the double precision limit of e-16.
   real(r8) function volume (this)
 
-    use consts,          only: ndim
+    use consts,          only: ndim,alittle
     use array_utils,     only: isZero
     use ieee_arithmetic, only: ieee_is_nan
 
@@ -349,14 +351,6 @@ contains
       if (.not.isZero (face%norm(1))) volume = volume + face%norm(1) * face%intXdA (1)
     end do
 
-    ! ! if this polyhedron has a volume of almost zero, make it zero
-    ! ! this seems to be necessary for very tiny polyhedrons,
-    ! ! where floating point errors may make the volume calculation drop below zero
-    ! if (volume < 0.0_r8 .and. isZero(volume)) then
-    !   volume = 0.0_r8
-    !   deallocate(this%x)
-    ! end if
-
     ! rescale the polyhedron
     do v = 1,this%nVerts
       this%x(:,v) = this%x(:,v)*xl + x0
@@ -366,8 +360,18 @@ contains
     this%vol = volume
 
     if (this%vol < 0.0_r8) then
-      call this%print_data ()
-      call LS_fatal ("calculated negative polyhedron volume!")
+      if (isZero(this%vol, 1e5_r8*alittle)) then
+        ! if this polyhedron has a volume of almost zero, make it zero
+        ! this seems to be necessary for very tiny polyhedrons,
+        ! where floating point errors may make the volume calculation drop below zero
+        volume = 0.0_r8
+        this%vol = 0.0_r8
+        deallocate(this%x)
+        this%nVerts = 0
+      else
+        call this%print_data ()
+        call LS_fatal ("calculated negative polyhedron volume!")
+      end if
     end if
 
   end function volume
@@ -436,6 +440,7 @@ contains
           do e = 1,size(v_assoc_pe)
             if (v_assoc_pe(e)>0) v_assoc_pe(e) = Nintersections - v_assoc_pe(e)+1
           end do
+          
         end if
         call intersection_verts%update_plane_normal ()
       end if
@@ -471,11 +476,11 @@ contains
     class(plane),      intent(in) :: P
     type(polyhedron)              :: split(2)
 
-    integer       :: v, v_assoc_pe(this%nEdges),side(this%nVerts)
+    integer       :: v, v_assoc_pe(this%nEdges),side(this%nVerts), ierr
     type(polygon) :: intpoly
     real(r8)      :: dist, tmp1, tmp2
     logical       :: failed
-
+    
     ! check which side of the plane each vertex lies
     ! vertices within distance alpha of the plane are considered to lie on it
     !  dist  >  alpha => side =  1
@@ -493,8 +498,8 @@ contains
     else
       intpoly = this%intersection_verts (P,v_assoc_pe)
 
-      split(1) = this%polyhedron_on_side_of_plane ( 1, side, intpoly, v_assoc_pe)
-      split(2) = this%polyhedron_on_side_of_plane (-1, side, intpoly, v_assoc_pe)
+      split(1) = this%polyhedron_on_side_of_plane (P,  1, side, intpoly, v_assoc_pe, ierr)
+      split(2) = this%polyhedron_on_side_of_plane (P, -1, side, intpoly, v_assoc_pe, ierr)
     end if
 
     ! if any of the polyhedrons have a face with less than 3 vertices, throw an error
@@ -541,7 +546,7 @@ contains
   end function split
 
   ! return the volume behind (opposite normal) a plane and inside the polyhedron
-  real(r8) function volume_behind_plane (this,P)
+  real(r8) function volume_behind_plane (this,P,ierr)
 
     use consts,          only: alpha
     use ieee_arithmetic, only: ieee_is_nan
@@ -549,11 +554,14 @@ contains
 
     class(polyhedron), intent(in) :: this
     class(plane),      intent(in) :: P
+    integer,           intent(out) :: ierr
 
     real(r8)         :: dist
     integer          :: v, side(this%nVerts), v_assoc_pe(this%nEdges)
     type(polyhedron) :: behind, split(2)
     type(polygon)    :: intpoly
+
+    ierr = 0
 
     ! check which side of the plane each vertex lies
     ! vertices within distance alpha of the plane are considered to lie on it
@@ -569,34 +577,40 @@ contains
       behind = this
     else if (any(side>0) .and. any(side<0)) then
       intpoly = this%intersection_verts (P,v_assoc_pe)
-      behind = this%polyhedron_on_side_of_plane (-1, side, intpoly, v_assoc_pe)
+      behind = this%polyhedron_on_side_of_plane (P, -1, side, intpoly, v_assoc_pe,ierr)
+      if (ierr /= 0) then
+        call dumpData ()
+        write(*,*) 'volume_behind_plane: polyhedron split failed'
+        volume_behind_plane = 0.0_r8
+        return
+        call LS_fatal ("polyhedron split failed")
+      end if
     else
       volume_behind_plane = 0.0_r8
       return
     end if
-
+    
     ! if any of the polyhedrons have a face with less than 3 vertices, throw an error
-    if (any(count(behind%face_vid /= 0, dim=1) < 3)) then
-      write(*,*) 'parent polyhedron'
-      call this%print_data () !(normalized=.true.)
-      write(*,*) side
-
-      write(*,'(a,4es20.10)') 'plane rho, n: ',P%rho, P%normal
-      write(*,*)
-
-      write(*,*) 'intersecting polygon'
-      call intpoly%print_data ()
-
-      write(*,*) 'new polyhedron'
-      call behind%print_data () !(normalized=.true.)
-
-      call LS_fatal ("polyhedron split failed: invalid face")
+    if (allocated(behind%face_vid)) then
+      if (any(count(behind%face_vid /= 0, dim=1) < 3)) then
+        call dumpData ()
+        call LS_fatal ("polyhedron split failed: invalid face")
+      end if
     end if
 
     ! calculate the volume of the polyhedron behind the plane
     volume_behind_plane = behind%volume ()
 
     if (ieee_is_nan(volume_behind_plane) .or. volume_behind_plane < 0.0_r8) then
+      call dumpData ()
+      write(*,*) 'problematic vol: ',volume_behind_plane
+      call LS_fatal ('polyhedron split failed: invalid volume')
+    end if
+    
+  contains
+
+    subroutine dumpData ()
+
       write(*,*)
       write(*,*) 'parent:'
       call this%print_data ()
@@ -613,74 +627,108 @@ contains
         call intpoly%print_data ()
         write(*,*)
       end if
-
-      write(*,*) 'problematic vol: ',volume_behind_plane
-      call LS_fatal ('polyhedron split failed: invalid volume')
-    end if
+      
+    end subroutine dumpData
 
   end function volume_behind_plane
 
   ! WARNING: need to update this routine to pass face normals down to the child polyhedron
   ! Reference [1]
-  type(polyhedron) function polyhedron_on_side_of_plane (this,valid_side,side,intpoly,v_assoc_pe)
+  ! note 1: In this case, the polyhedron may not have been clearly all within the half-space.
+  !         Some vertices on the face may have landed on each side of the plane, but if
+  !         more than three landed on the plane itself, we consider this equivalent to
+  !         the entire face landing on the plane.
+  type(polyhedron) function polyhedron_on_side_of_plane (this,P,valid_side,side,intpoly,v_assoc_pe,ierr)
+
     use array_utils, only: xrange,first_true_loc
+    use plane_type
 
     class(polyhedron), intent(in) :: this
-    integer,           intent(in) :: side(:)       ! lists which vertices are on the chosen side of the plane
+    type(plane),       intent(in) :: P
+    integer,           intent(in) :: side(:)       ! gives which side of the plane vertices lie on
     integer,           intent(in) :: valid_side    ! +/- 1, indicating the side of the plane we want
     type(polygon),     intent(in) :: intpoly       ! polygon of intersection coordinates
     integer,           intent(in) :: v_assoc_pe(:) ! intersection polygon vertex id for a given parent edge id
+    integer,           intent(out) :: ierr
 
-    integer       :: e,v,f, nV, nVerts, nParVerts, nEdges, nFaces, tmp, invalid_side, new_v, &
-         p2c_vid(this%nVerts), &                   ! parent to child vertex id (given parent vertex id, give the child's id)
-         edge_vid(2,this%nEdges+intpoly%nVerts), & ! could have intpoly%nVerts more edges than parent polyhedron
-         face_vid(size(this%face_vid,dim=1)+2,this%nFaces+1),& ! could have 1 more face and faces could be 2 longer than parent
-         edge_cont_verts(this%nEdges,this%nEdges)
-    ! note: an updated planar face can only include 1 more node than the original, but I'm not sure if there is a limit
-    !       to how many nodes the entirely new face can have. For cubes the number is 2.
+    integer :: pcf, nVerts, nParVerts, nEdges, nFaces, tmp, invalid_side, &
+         p2c_vid(this%nVerts), & ! parent to child vertex id conversion table for cases they correspond
+         edge_vid(2,this%nEdges+intpoly%nVerts), & ! can have intpoly%nVerts more edges than parent
+         face_vid(size(this%face_vid,dim=1)+2,this%nFaces+1) ! could have 1 more face and faces could be 2 longer than parent
+    
+    ! note: an updated planar face can only include 1 more node than the original,
+    !       but I'm not sure if there is a limit to how many nodes the entirely new face can have.
+    !       For cubes the number is 2.
     real(r8)      :: x(3,this%nVerts+intpoly%nVerts)
 
     invalid_side = -valid_side
 
-    ! make a list of vertices for the new polyhedron
-    call generate_new_verts (x,p2c_vid,nVerts,nParVerts, this,side,valid_side)
-    
-    ! find new edges, knowing the original structure and the interface polygon
-    call find_edges (edge_vid,nEdges, this,side,valid_side,p2c_vid,nParVerts,nVerts,v_assoc_pe)
-    
-    ! construct a set of faces from the edge information
-    edge_cont_verts = 0
-    do e = 1,this%nEdges
-      edge_cont_verts(this%edge_vid(1,e),this%edge_vid(2,e)) = e
-      edge_cont_verts(this%edge_vid(2,e),this%edge_vid(1,e)) = e
-    end do
+    if (.not.any(side==-valid_side)) then ! the entire polyhedron is within the plane
+      polyhedron_on_side_of_plane = this
+    else if (count(side/=-valid_side)>0) then ! the polyhedron is split
+      pcf = plane_coinciding_face(this,side,valid_side)
+      if (pcf > 0) then
+        ! the polyhedron really landed entirely inside or entirely outside the half-space (see note 1)
+        if (dot_product(this%face_normal(:,pcf), P%normal) > 0.0_r8) &
+            polyhedron_on_side_of_plane = this
+      else
+        ! make a list of vertices for the new polyhedron
+        call generate_new_verts (x,p2c_vid,nVerts,nParVerts, this,side,v_assoc_pe,valid_side)
 
-    ! note these will not be in a particular order, like pececillo would expect for hexes
-    call find_faces (face_vid,nFaces, this,side,valid_side,p2c_vid,nParVerts,nVerts,&
-        v_assoc_pe,edge_cont_verts)
+        ! find new edges, knowing the original structure and the interface polygon
+        call find_edges (edge_vid,nEdges, this,side,valid_side,p2c_vid,nParVerts,nVerts,v_assoc_pe)
 
-    ! initialize final polyhedron
-    tmp = maxval(count(face_vid(:,:) /= 0,dim=1)) ! the maximum number of vertices on a face
-    if (nVerts < 3) then
-      call LS_fatal ("not enough vertices for a polygon!")
+        ! construct a set of faces from the edge information
+        ! note these will not be in a particular order, like pececillo would expect for hexes
+        call find_faces (face_vid,nFaces, this,side,valid_side,p2c_vid,nParVerts,nVerts,v_assoc_pe,ierr)
+        if (ierr /= 0) return
+
+        ! initialize final polyhedron
+        tmp = maxval(count(face_vid(:,:) /= 0,dim=1)) ! the maximum number of vertices on a face
+        if (nVerts < 3) call LS_fatal ("not enough vertices for a polygon!")
+        call polyhedron_on_side_of_plane%init (x(:,1:nVerts), face_vid(1:tmp,1:nFaces), &
+            edge_vid(:,1:nEdges))
+
+        !write(*,*) 'poly', nVerts, tmp, nFaces, nEdges
+      end if
     end if
-    call polyhedron_on_side_of_plane%init (x(:,1:nVerts), face_vid(1:tmp,1:nFaces), &
-        edge_vid(:,1:nEdges))
-
-    !write(*,*) 'poly', nVerts, tmp, nFaces, nEdges
 
   contains
-    
-    subroutine generate_new_verts (x,p2c_vid,nVerts,nParVerts, this,side,valid_side)
+
+    ! finds the polyhedron face which coincides with the face, if one exists
+    integer function plane_coinciding_face (this,side,valid_side)
+
+      class(polyhedron), intent(in) :: this
+      integer, intent(in) :: side(:), valid_side
+
+      integer :: nV
+
+      do plane_coinciding_face = 1,this%nFaces
+        nV = count(this%face_vid(:,plane_coinciding_face) > 0)
+        ! the face coincides with the plane if at least 3 of its vertices lie on the plane
+        if (count(side(this%face_vid(1:nV,plane_coinciding_face))==0)>=3) return
+      end do
+      plane_coinciding_face = -1
+
+    end function plane_coinciding_face
+
+    ! note 1: these are added entirely at the end, rather than including the parent vertices
+    !         that lie on the plane in the above loop because having all these vertices together
+    !         makes it easy for constructing the new face later.
+    subroutine generate_new_verts (x,p2c_vid,nVerts,nParVerts, this,side,v_assoc_pe,valid_side)
+
+      use array_utils, only: magnitude,isZero
 
       real(r8),         intent(out) :: x(:,:)
       integer,          intent(out) :: p2c_vid(:), nVerts, nParVerts
       type(polyhedron), intent(in)  :: this
-      integer,          intent(in)  :: side(:), valid_side
+      integer,          intent(in)  :: side(:), v_assoc_pe(:), valid_side
 
-      integer :: v
+      integer :: v,iv
 
       nVerts = 0; p2c_vid = 0
+
+      ! first get the vertices fully on the valid side of the intersection plane
       do v = 1,this%nVerts
         if (side(v)==valid_side) then
           nVerts = nVerts+1
@@ -688,9 +736,26 @@ contains
           p2c_vid(v) = nVerts ! parent to child vertex id
         end if
       end do
-      nParVerts = nVerts                                    ! number of vertices acquired from parent
-      x(:,nParVerts+1:nParVerts+intpoly%nVerts) = intpoly%x ! add vertices from plane-polyhedron intersections
+      nParVerts = nVerts ! number of vertices acquired from parent
+
+      ! then get the vertices from the plane-polyhedron intersection (see note 1)
+      x(:,nParVerts+1:nParVerts+intpoly%nVerts) = intpoly%x
       nVerts = nVerts + intpoly%nVerts
+
+      ! update the parent to child vertex id table with vertices that lie on the plane
+      do v = 1,this%nVerts
+        if (side(v)==0) then
+          ! search for the interface polygon vertex which coincides with this vertex
+          do iv = 1,intpoly%nVerts
+            !if (isZero(magnitude(this%x(:,v) - intpoly%x(:,iv)))) then
+            if (all(isZero(this%x(:,v) - intpoly%x(:,iv)))) then
+              p2c_vid(v) = nParVerts + iv
+              exit
+            end if
+          end do
+          if (p2c_vid(v)==0) call LS_fatal ("parent point not found in intersecting polygon")
+        end if
+      end do
 
     end subroutine generate_new_verts
 
@@ -705,22 +770,23 @@ contains
 
       integer :: e, v, n_on_valid_side, new_edge(2)
 
-      nEdges = 0
+      nEdges = 0; edge_vid = 0
       do e = 1,this%nEdges
         ! how many of the edge vertices are on the valid side of the plane?
         n_on_valid_side = count(side(this%edge_vid(:,e))==valid_side)
-        
-        if (n_on_valid_side==2) then      ! this entire edge is on the valid side of the plane
-          nEdges = nEdges + 1
-          edge_vid(:,nEdges) = p2c_vid(this%edge_vid(:,e))
-        else if (n_on_valid_side==1) then ! this edge was divided (or one of the vertices lies on the plane)
-          ! the edge consists of the vertex on this side of the plane and the intersection point
-          if (side(this%edge_vid(1,e))==valid_side) then
-            new_edge = [p2c_vid(this%edge_vid(1,e)),nParVerts+v_assoc_pe(e)]
-          else
-            new_edge = [p2c_vid(this%edge_vid(2,e)),nParVerts+v_assoc_pe(e)]
+
+        if (n_on_valid_side>0) then
+          if (n_on_valid_side==2) then ! this entire edge is on the valid side of the plane
+            new_edge = p2c_vid(this%edge_vid(:,e))
+          else if (n_on_valid_side==1) then ! this edge was divided (or one of the vertices lies on the plane)
+            ! the edge consists of the vertex on this side of the plane and the intersection point
+            if (side(this%edge_vid(1,e))==valid_side) then
+              new_edge = [p2c_vid(this%edge_vid(1,e)),nParVerts+v_assoc_pe(e)]
+            else
+              new_edge = [p2c_vid(this%edge_vid(2,e)),nParVerts+v_assoc_pe(e)]
+            end if
           end if
-          
+
           ! if this edge isn't already listed, add it
           ! the edge might already be listed in cases where we have very close vertices (O(alpha)),
           ! which are then combined in the new polyhedron.
@@ -741,21 +807,37 @@ contains
 
     end subroutine find_edges
 
+    ! note 1: There may not be a valid edge between the previously found vertex and this one.
+    !         This particularly happens when there are multiple vertices on this face which
+    !         also lie on the plane. In that case, we loop through those points, adding them
+    !         until we find an edge between one and the next vertex.
     subroutine find_faces (face_vid,nFaces, this,side,valid_side,p2c_vid,nParVerts,nVerts,&
-        v_assoc_pe,edge_cont_verts)
-      
+        v_assoc_pe,ierr)
+
+      use array_utils, only: containsPair,containsValue,index_of
+
       integer,          intent(out) :: face_vid(:,:),nFaces
       type(polyhedron), intent(in)  :: this
       integer,          intent(in)  :: side(:), valid_side, p2c_vid(:), nParVerts, nVerts, &
-          v_assoc_pe(:),edge_cont_verts(:,:)
+          v_assoc_pe(:)
+      integer,          intent(out) :: ierr
 
-      integer :: nV,f,tmp,new_v
+      integer :: v,nV,f,cvid,new_v, ecv, e, pv, edge_cont_verts(this%nVerts,this%nVerts)
 
-      nFaces = 0; face_vid = 0
+      ! first make a lookup table for finding the edge associated with a pair of vertices
+      edge_cont_verts = 0
+      do e = 1,this%nEdges
+        edge_cont_verts(this%edge_vid(1,e),this%edge_vid(2,e)) = e
+        edge_cont_verts(this%edge_vid(2,e),this%edge_vid(1,e)) = e
+      end do
+
+      nFaces = 0; face_vid = 0; ierr = 0
+
+      ! loop over all of the parent's faces, adding, modifying, or ignoring it's faces as needed
       do f = 1,this%nFaces
-        ! if any vertices for this original face are on the valid side of the
-        ! plane, then the face structure can be preserved. Otherwise, it is
-        ! thrown out
+        ! if any vertices for this original face are on the valid side of the plane,
+        ! then the face structure can be preserved or modified.
+        ! Otherwise, it is thrown out since the entire face is behind the plane.
         nV = count(this%face_vid(:,f) /= 0) ! number of vertices on this face
         if (any(side(this%face_vid(1:nV,f))==valid_side)) then
           nFaces = nFaces + 1
@@ -764,33 +846,82 @@ contains
             ! this face is preserved exactly
             face_vid(1:nV,nFaces) = p2c_vid(this%face_vid(1:nV,f))
           else
-            ! if some vertices are on the valid side of the face,
-            ! this face is modified
+            ! if some vertices are on the valid side of the face, this face is modified
 
             ! start with the first valid vertex
             v = first_true_loc (side(this%face_vid(1:nV,f))==valid_side)
 
-            ! add all valid vertices in sequence, stop when we hit one that is invalid
+            ! add all the parent's valid vertices in sequence, stop when we hit one that is invalid
             ! this stopping point indicates an edge that was cut by the plane
-            tmp = 1
+            cvid = 1
             do while (v<=nV)
               if (side(this%face_vid(v,f))/=valid_side) exit
-              face_vid(tmp,nFaces) = p2c_vid(this%face_vid(v,f))
-              v = v+1; tmp = tmp+1
+              face_vid(cvid,nFaces) = p2c_vid(this%face_vid(v,f))
+              !write(*,*) '1',face_vid(cvid,nFaces)
+              v = v+1; cvid = cvid+1
             end do
 
             ! add the new vertices associated with this face
             ! the first is the one that cuts the edge we just stopped on
             ! new_v = nParVerts + &
             !     v_assoc_pe(this%edge_containing_vertices ([this%face_vid(mod(v-2,nV)+1,f),this%face_vid(mod(v-1,nV)+1,f)]))
-            new_v = nParVerts + v_assoc_pe(&
-                edge_cont_verts(this%face_vid(mod(v-2,nV)+1,f),this%face_vid(mod(v-1,nV)+1,f)))
-            if (.not.any(face_vid(1:tmp-1,nFaces)==new_v)) then
-              face_vid(tmp  ,nFaces) = new_v
-              tmp = tmp+1
+            ecv = edge_cont_verts(this%face_vid(mod(v-2,nV)+1,f),this%face_vid(mod(v-1,nV)+1,f))
+            if (ecv < 1) then
+              write(*,*)
+              write(*,*) 'find faces failed: edge missing'
+              write(*,*) 'vertices: ',this%face_vid(mod(v-2,nV)+1,f),this%face_vid(mod(v-1,nV)+1,f)
+              do e = 1,size(edge_vid, dim=2)
+                write(*,*) 'edge: ',e, edge_vid(:,e)
+              end do
+              write(*,*)
+              ierr = 1
+              return
+            end if
+            !if (any(side(this%edge_vid(:,ecv))==0)) write(*,*) 'edge lies on plane',side(this%edge_vid(:,ecv)),this%edge_vid(:,ecv)
+            new_v = nParVerts + v_assoc_pe(ecv)
+            ! new_v = nParVerts + v_assoc_pe(&
+            !     edge_cont_verts(this%face_vid(mod(v-2,nV)+1,f),this%face_vid(mod(v-1,nV)+1,f)))
+            if (.not.any(face_vid(1:cvid-1,nFaces)==new_v)) then
+              ! if this vertex was not already added, add it
+              face_vid(cvid,nFaces) = new_v
+              !write(*,*) '2',face_vid(cvid,nfaces), v_assoc_pe(ecv)
+              cvid = cvid+1
             end if
 
+            ! if this is a parent point which lies on the plane,
+            ! add any other parent points that also lie on the plane
+            ! before moving on to the next intersected edge
+            ! if (count(side(this%face_vid(1:nV,f))==0)>1 .and. containsValue(new_v, p2c_vid)) then
+            !   if (side(index_of(new_v, p2c_vid))==0) then
+            !     write(*,*) 'vert',new_v,'was on plane'
+            !     write(*,*) side(this%face_vid(v:nV,f))
+            !     write(*,*) side(this%face_vid(v,f))
+            !     write(*,*) side(this%face_vid(mod(v-1,nV)+1,f))
+            !     write(*,*) v, nV, mod(v-1,nV)+1
+                
+            !     ! ! find the next valid vertex
+            !     ! do while (side(this%face_vid(mod(v-1,nV)+1,f))==0)
+            !     !   v = v+1
+            !     ! end do
+            !   end if
+            ! end if
+            ! if (count(side(this%face_vid(1:nV,f))==0)>1 &
+            !     .and. side(this%face_vid(mod(v-1,nV)+1,f))==0) then
+            !   !write(*,*) 'vert',new_v,'was on plane',side(this%face_vid(v:nV,f))
+
+            !   ! find all other vertices on this face which also lie on the plane
+            !   v = v+1
+            !   do while (side(this%face_vid(mod(v-1,nV)+1,f))==0)
+            !     !write(*,*) 'cvid',cvid
+            !     face_vid(cvid,nFaces) = p2c_vid(this%face_vid(mod(v-1,nV)+1,f))
+            !     !write(*,*) '4',face_vid(cvid,nfaces)
+            !     cvid = cvid+1
+            !     v = v+1
+            !   end do
+            ! end if
+            
             ! find the next valid vertex
+            pv = v
             do while (side(this%face_vid(mod(v-1,nV)+1,f))/=valid_side)
               v = v+1
             end do
@@ -800,18 +931,61 @@ contains
             !     v_assoc_pe(this%edge_containing_vertices ([this%face_vid(mod(v-2,nV)+1,f),this%face_vid(mod(v-1,nV)+1,f)]))
             new_v = nParVerts + v_assoc_pe(&
                 edge_cont_verts(this%face_vid(mod(v-2,nV)+1,f),this%face_vid(mod(v-1,nV)+1,f)))
-            if (.not.any(face_vid(1:tmp-1,nFaces)==new_v)) then
-              face_vid(tmp  ,nFaces) = new_v
-              tmp = tmp+1
+            if (.not.any(face_vid(1:cvid-1,nFaces)==new_v)) then
+              if (count(side(this%face_vid(1:nV,f))==0)>1 &
+                  .and. side(this%face_vid(mod(pv-1,nV)+1,f))==0) then
+                ! find other vertices on this face which also lie on the plane (see note 1)
+                pv = pv+1
+                do while (.not.containsPair([new_v,face_vid(cvid-1,nFaces)],edge_vid(:,1:nEdges)) &
+                    .and. side(this%face_vid(mod(pv-1,nV)+1,f))==0)
+                  !write(*,*) 'cvid',cvid
+                  face_vid(cvid,nFaces) = p2c_vid(this%face_vid(mod(pv-1,nV)+1,f))
+                  !write(*,*) '4',face_vid(cvid,nfaces)
+                  cvid = cvid+1
+                  pv = pv+1
+                end do
+              end if
+              
+              face_vid(cvid,nFaces) = new_v
+              !write(*,*) '3',face_vid(cvid,nfaces)
+              cvid = cvid+1
             end if
-
+            
             ! continue adding vertices that were part of the original face
             do while (v<=nV)
-              face_vid(tmp,nFaces) = p2c_vid(this%face_vid(v,f))
-              v = v+1; tmp = tmp+1
+              face_vid(cvid,nFaces) = p2c_vid(this%face_vid(v,f))
+              !write(*,*) '4',face_vid(cvid,nfaces)
+              v = v+1; cvid = cvid+1
             end do
-
           end if
+
+          ! check that the face is valid by making sure each pair of points
+          ! corresponds to an edge
+          do v = 1,count(face_vid(:,nFaces)/=0)-1
+            if (.not.containsPair(face_vid(v:v+1,nFaces),edge_vid(:,1:nEdges))) then
+              write(*,*)
+              write(*,*) "face contains edge that doesn't exist"
+              write(*,'(a,12i3)') 'face: ',face_vid(:,nFaces)
+              write(*,*) 'copied face from parent? ',all(side(this%face_vid(1:nV,f))==valid_side)
+              write(*,*) 'valid_side: ',valid_side
+              write(*,'(a,15i3)') 'parent vertex sides ',side
+              write(*,'(a,15i3)') 'parent face vertices ',this%face_vid(1:nV,f)
+              write(*,'(a,15i3)') 'parent face vertex sides ',side(this%face_vid(1:nV,f))
+              write(*,'(a,15i3)') 'p2c_vid ',p2c_vid(this%face_vid(1:nV,f))
+              write(*,'(a,15i3)') 'p2c_vid ',p2c_vid
+              write(*,*) 'vertices: ',face_vid(v:v+1,nFaces)
+              do e = 1,nEdges
+                write(*,'(a,i3,a,2i3)') 'edge ',e,': ', edge_vid(:,e)
+              end do
+              do e = 1,nVerts
+                write(*,'(a,i3,a,3es35.25)') 'x ',e,':  ',x(:,e)
+              end do
+              write(*,*)
+              ierr = 1
+              return
+            end if
+          end do
+          !write(*,*)
         end if
 
         ! ! if this face is invalid, delete it.
@@ -833,22 +1007,6 @@ contains
     end subroutine find_faces
 
   end function polyhedron_on_side_of_plane
-
-  ! ! return the edge associated with a pair of vertices
-  ! integer function edge_containing_vertices (this,v)
-  !   use array_utils, only: reverse
-
-  !   class(polyhedron), intent(in) :: this
-  !   integer,           intent(in) :: v(2)
-    
-  !   do edge_containing_vertices = 1,this%nEdges
-  !     if ( all(this%edge_vid(:,edge_containing_vertices)==v) .or. &
-  !          all(this%edge_vid(:,edge_containing_vertices)==reverse (v))) &
-  !          return
-  !   end do
-  !   edge_containing_vertices = 0 ! result for edge not found
-
-  ! end function edge_containing_vertices
 
   subroutine print_data (this,normalized)
 

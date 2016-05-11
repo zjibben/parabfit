@@ -9,24 +9,35 @@
 !!
 
 module locate_plane_nd_module
+
   use kinds, only: r8
   use plane_type
   use polyhedron_type
   use brent_module
+  use logging_services
   implicit none
   private
 
   public :: locate_plane_nd, locate_plane_nd_unit_test_suite
 
   ! define type for error function
-  type, extends(brent_func) :: volume_error_func
-    real(r8)         :: tvol,norm(3)
+  ! type, extends(brent_func) :: volume_error_func
+  !   real(r8)         :: tvol,norm(3)
+  !   type(polyhedron) :: poly
+  ! contains
+  !   procedure        :: init => func_init
+  !   procedure        :: eval => func_eval
+  !   procedure        :: signed_eval => func_signed_eval
+  ! end type volume_error_func
+  
+  type, extends(brent_func) :: vof_error_func
+    real(r8)         :: tvol,norm(3),parvol
     type(polyhedron) :: poly
   contains
     procedure        :: init => func_init
     procedure        :: eval => func_eval
     procedure        :: signed_eval => func_signed_eval
-  end type volume_error_func
+  end type vof_error_func
   
 contains
 
@@ -121,13 +132,13 @@ contains
     use consts,      only: cutvof
     use array_utils, only: isZero
 
-    type(polyhedron), intent(in) :: poly
+    type(polyhedron), intent(inout) :: poly
     type(plane),      intent(in) :: P
     real(r8),         intent(in) :: vol
 
     type(plane) :: P_out
     
-    P_out = locate_plane_nd (poly, P%normal, vol)
+    P_out = locate_plane_nd (poly, P%normal, vol, poly%volume())
     locate_plane_nd_unit_test = isZero (P%rho - P_out%rho, cutvof)
     
   end function locate_plane_nd_unit_test
@@ -136,26 +147,26 @@ contains
   ! and return a plane type
   ! Alternatively, should we return the two polyhedra? If they are already
   ! calculated, it would save resplitting the input polyhedron.
-  type(plane) function locate_plane_nd (poly, norm, vol)
+  type(plane) function locate_plane_nd (poly, norm, vol, cell_volume)
     use consts, only: cutvof
     use polyhedron_type
     use plane_type
     
     type(polyhedron), intent(in) :: poly
-    real(r8),         intent(in) :: norm(:), vol
+    real(r8),         intent(in) :: norm(:), vol, cell_volume
     
-    real(r8)                 :: rho_min,rho_mid,rho_max
-    type(volume_error_func)  :: volume_error
+    real(r8)              :: rho_min,rho_mid,rho_max
+    type(vof_error_func)  :: vof_error
     
     ! initialize error function
-    call volume_error%init (norm, poly, vol)
+    call vof_error%init (norm, poly, vol, cell_volume)
 
     ! get bounds for Brent's method
-    call rho_bracket (rho_min, rho_mid, rho_max, norm, poly, volume_error)
+    call rho_bracket (rho_min, rho_mid, rho_max, norm, poly, vof_error)
     
     ! start Brent's method
     locate_plane_nd%normal = norm
-    locate_plane_nd%rho = brent (volume_error, rho_min, rho_mid, rho_max, cutvof/2.0_r8, 100)
+    locate_plane_nd%rho = brent (vof_error, rho_min, rho_mid, rho_max, cutvof/2.0_r8, 10)
 
   end function locate_plane_nd
 
@@ -168,10 +179,10 @@ contains
     real(r8),                intent(out) :: rho_min, rho_mid, rho_max
     real(r8),                intent(in)  :: norm(:)
     type(polyhedron),        intent(in)  :: poly ! we could instead just pass in poly%x
-    type(volume_error_func), intent(in)  :: volume_error
+    type(vof_error_func), intent(in)  :: volume_error
 
     real(r8)                             :: err_min,err_max,err, rho
-    integer                              :: i
+    integer                              :: i, ierr
     integer, parameter                   :: iter_max = 10
 
     type(plane) :: P
@@ -205,7 +216,8 @@ contains
         rho = sum(poly%x(:,i)*norm)
         err = volume_error%signed_eval(rho)
         P%rho = rho
-        write(*,'(a,i3,3es14.4)') 'vertex, rho, error, vol: ', i, rho, err, poly%volume_behind_plane (P)
+        write(*,'(a,i3,3es14.4)') 'vertex, rho, error, vol: ', i, rho, err, &
+            poly%volume_behind_plane (P,ierr)
       end do
       write(*,'(a,2es14.4)') 'rho min,max: ', rho_min, rho_max
       call LS_fatal ('rho bounds not set')
@@ -237,38 +249,40 @@ contains
 
   ! error function procedures
 
-  subroutine func_init (this, norm_in,poly_in,tvol_in)
+  subroutine func_init (this, norm,poly,tvol,parvol)
     use polyhedron_type
 
-    class(volume_error_func), intent(out) :: this
-    real(r8),                 intent(in)  :: norm_in(:), tvol_in
-    type(polyhedron),         intent(in)  :: poly_in
+    class(vof_error_func), intent(out) :: this
+    real(r8),                 intent(in)  :: norm(:), tvol, parvol
+    type(polyhedron),         intent(in)  :: poly
 
-    this%norm = norm_in
-    this%poly = poly_in
-    this%tvol = tvol_in
+    this%norm   = norm
+    this%poly   = poly
+    this%tvol   = tvol
+    this%parvol = parvol
     
   end subroutine func_init
 
   real(r8) function func_eval (this, x)
-    class(volume_error_func), intent(in) :: this
-    real(r8),                 intent(in) :: x
-    
+    class(vof_error_func), intent(in) :: this
+    real(r8), intent(in) :: x
     func_eval = abs(this%signed_eval (x))
-
   end function func_eval
 
   real(r8) function func_signed_eval (this, x)
 
     use plane_type
 
-    class(volume_error_func), intent(in) :: this
+    class(vof_error_func), intent(in) :: this
     real(r8),                 intent(in) :: x
 
     type(plane) :: P
+    integer :: ierr
 
     P%rho = x; P%normal = this%norm
-    func_signed_eval = this%poly%volume_behind_plane (P) - this%tvol
+    func_signed_eval = (this%poly%volume_behind_plane (P,ierr) - this%tvol) / this%parvol
+    
+    if (ierr /= 0) call LS_fatal ("func_signed_eval failed")
     
   end function func_signed_eval
   

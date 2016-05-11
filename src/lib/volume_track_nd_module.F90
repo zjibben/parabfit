@@ -9,7 +9,9 @@
 !!
 
 module volume_track_nd_module
+
   use kinds, only: r8
+  use logging_services
   implicit none
   private
 
@@ -51,7 +53,7 @@ contains
 
     ! do some tests
     write(*,*)
-    write(*,*) 'POLYHEDRON'
+    write(*,*) 'VOLUME TRACK ND'
     write(*,*) '===================================================='
 
     call volume_track_nd (volflux, 0.01_r8, mesh, gmesh, vof, fluxing_velocity, fluidRho, intrec, .false.)
@@ -158,7 +160,7 @@ contains
     real(r8)                     :: cell_outward_volflux(size(vof),nfc)
     
     type(multimat_cell) :: cell
-    integer :: m
+    integer :: m, ierr
     
     ! send cell data to the multimat_cell type
     call cell%init (x, hex_f, hex_e, vol, outnorm)
@@ -174,7 +176,21 @@ contains
     end if
 
     ! calculate the outward volume flux
-    cell_outward_volflux = cell%outward_volflux (adv_dt, fluxing_velocity, farea)
+    cell_outward_volflux = cell%outward_volflux (adv_dt, fluxing_velocity, farea, ierr)
+    if (ierr /= 0) then
+      write(*,*) 'cell_outward_volflux failed'
+      write(*,'(a,10es20.10)') 'vof: ',vof
+      write(*,'(a, 6es20.10)') 'flx: ',fluxing_velocity
+      write(*,*) 'dt: ',adv_dt
+      do m = 1,size(int_norm, dim=2)
+        write(*,'(a,i3,3es20.10)') 'int_norm: ', m, int_norm(:,m)
+      end do
+
+      write(*,*) 'cell dimensions: '
+      call cell%print_data ()
+
+      call LS_fatal ("cell_outward_volflux failed")
+    end if
 
   end function cell_outward_volflux
   

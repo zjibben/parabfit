@@ -31,7 +31,6 @@ module locate_plane_module
   implicit none
   private
 
-  integer,  parameter :: volume_track_iter_max = 10
   real(r8), parameter :: volume_track_iter_tol = 1.0d-8
 
   public :: locate_plane_unit_test_suite
@@ -166,7 +165,7 @@ contains
     ! Compute Rho, which parameterizes the plane
     ! characterized by the equation Normal*X - Rho = 0
     ! using Brents method iteration
-    call this%rho_brent (iter, Rho_Min, Rho_Max, V_Min, V_Max, trunc_vol)
+    call this%rho_brent (iter, Rho_Min, Rho_Max, V_Min, V_Max, trunc_vol, 100)
 
     !call stop_timer("Locate Plane")
 
@@ -265,17 +264,17 @@ contains
   !   Recipes (Press, Flannery, Teukolsky and Vetterling; Cambridge
   !   University Press, 1986), p. 253
   !=======================================================================
-  subroutine rho_brent (this, iter, Rho_Min, Rho_Max, V_Min, V_Max, trunc_vol)
+  subroutine rho_brent (this, iter, Rho_Min, Rho_Max, V_Min, V_Max, trunc_vol, iter_max)
     use truncate_volume_module, only: truncate_volume, truncvol_data
 
     class(locate_plane_hex), intent(inout) :: this
     integer,                 intent(out)   :: iter
     real(r8),                intent(in)    :: Rho_Min, Rho_Max, V_Min, V_Max
     type(truncvol_data),     intent(in)    :: trunc_vol(:)
+    integer,                 intent(in)    :: iter_max
 
     integer :: i
-    real(r8) :: Rho_a, Rho_b, Rho_c, Rho_d, Rho_e, Rho_mid, Rho_tol, V_a, &
-         V_b, V_c, P, Q, R, S
+    real(r8) :: Rho_a, Rho_b, Rho_c, Rho_d, Rho_e, Rho_mid, Rho_tol, V_a, V_b, V_c, P, Q, R, S
 
     ! Initialize values before the iteration loop
     i = 0; iter = 0
@@ -287,7 +286,8 @@ contains
     V_c = V_b
     
     ! Main iteration loop
-    do while (abs(V_b/max(this%Volume,alittle)) > volume_track_iter_tol .and. i < volume_track_iter_Max)
+    do while (abs(V_b/max(this%Volume,alittle)) > volume_track_iter_tol &
+        .and. i < iter_Max)
       if (V_b*V_c > 0.0_r8) then
         Rho_c = Rho_a
         V_c = V_a
@@ -354,6 +354,13 @@ contains
     end do
 
     this%P%Rho = Rho_b
+
+    ! if (i==iter_max) then
+    !   ! too many iterations if we get here
+    !   ! write(*,'(a,2es14.4)') 'error:  ',fx,x
+    !   ! write(*,'(a,3es14.4)') 'bounds: ',x_min,x_mid,x_max
+    !   call LS_fatal('too many brent iterations!')
+    ! end if
   end subroutine rho_brent
 
 end module locate_plane_module

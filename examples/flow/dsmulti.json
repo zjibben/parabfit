@@ -26,24 +26,33 @@
     },
     
     "vof-solver": {
-        "advection-method": 1,
+        "advection-method": 2,
         "subcycles": 2,
 	"materials": [1, 2, 3],
     	"initial-vof": {
-    	    "half-sphere": {
+            "mat3": {
     		"material-id": 3,
-                "normal": [1.0, 0.0, 0.0],
-    		"center": [0.35, 0.35, 0.35],
-    		"radius": 0.15
+                "region": {
+                    "type": "half-sphere",
+                    "normal": [1.0, 0.0, 0.0],
+    		    "center": [0.35, 0.35, 0.35],
+    		    "radius": 0.15
+                }
     	    },
-	    "sphere": {
-    	        "material-id": 2,
-                //"normal": [-1.0, 0.0, 0.0],
-    	        "center": [0.35, 0.35, 0.35],
-    	        "radius": 0.15
+            "mat2": {
+    		"material-id": 2,
+                "region": {
+                    "type": "sphere",
+                    //"normal": [-1.0, 0.0, 0.0],
+    		    "center": [0.35, 0.35, 0.35],
+    		    "radius": 0.15
+                }
     	    },
-            "all": {
-    		"material-id": 1
+	    "mat1": {
+    		"material-id": 1,
+                "region": {
+                    "type": "fill"
+                }
             }
     	}
     }

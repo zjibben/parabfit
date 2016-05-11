@@ -12,14 +12,12 @@
 module brent_module
 
   use kinds,  only: r8
-  use consts, only: alittle,cutvof
+  use consts, only: alittle
   implicit none
   private
 
   public :: brent
   
-  real(r8), parameter :: cgold = 1.0_r8 - 2.0_r8/(1.0_r8 + sqrt(5.0_r8))
-
   type, abstract, public :: brent_func
   contains
     procedure(eval), deferred :: eval
@@ -29,7 +27,7 @@ module brent_module
     function eval (this, x)
       import r8, brent_func
       class(brent_func), intent(in) :: this
-      real(r8),          intent(in) :: x
+      real(r8), intent(in) :: x
       real(r8) :: eval
     end function eval
   end interface
@@ -45,6 +43,7 @@ contains
     real(r8),          intent(in) :: x_min,x_mid,x_max,tol
     integer,           intent(in) :: iter_max
 
+    real(r8), parameter :: cgold = 1.0_r8 - 2.0_r8/(1.0_r8 + sqrt(5.0_r8))
     real(r8) :: a,b, fu,fv,fw,fx, u,v,w,x,xm, p,q,r,tol1,tol2, d,e
     integer  :: iter
 
@@ -57,7 +56,7 @@ contains
       xm = 0.5_r8 * (a+b)
       tol1 = tol*abs(x) + alittle
       tol2 = 2.0_r8 * tol1
-      if (abs(x-xm) <= tol2-0.5_r8*(b-a)) return
+      if (abs(x-xm) <= tol2-0.5_r8*(b-a) .and. abs(fx) <= tol) return !.and. abs(fx) <= tol
 
       ! interpolate the polynomial
       if (abs(e) > tol1) then
@@ -109,10 +108,10 @@ contains
       end if
     end do
 
-    ! too many iterations if we get here
-    write(*,'(a,2es14.4)') 'error:  ',fx,x
-    write(*,'(a,3es14.4)') 'bounds: ',x_min,x_mid,x_max
-    call LS_fatal('too many brent iterations!')
+    ! ! too many iterations if we get here
+    ! write(*,'(a,2es14.4)') 'error:  ',fx,x
+    ! write(*,'(a,3es14.4)') 'bounds: ',x_min,x_mid,x_max
+    ! call LS_fatal('too many brent iterations!')
 
   end function brent
   

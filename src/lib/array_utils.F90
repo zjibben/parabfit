@@ -14,10 +14,11 @@ module array_utils
   implicit none
   private
 
-  public :: first_true_loc,last_true_loc,xrange,reorder,insertion_sort,int2str,containsPair, &
+  public :: first_true_loc,last_true_loc,xrange,reorder,insertion_sort,int2str,&
+      containsPair, containsValue, &
       reverse,invert,isZero, index_of, &
       meanArithmetic, meanHarmonic, &
-      magnitude, magnitude2, normalize, normalizeIfNonzero, projectOnto, &
+      magnitude, magnitude2, normalize, normalizeIfNonzero, projectOnto, orthonormalBasis, &
       eliminateNoise
 
   ! interface append
@@ -117,6 +118,11 @@ contains
     end do
     
   end function containsPair
+
+  pure logical function containsValue (n, array)
+    integer, intent(in) :: n, array(:)
+    containsValue = index_of(n, array) > 0
+  end function containsValue
 
   subroutine insertion_sort_3r8r8 (x,key)
     real(r8), intent(inout) :: x(:,:),key(:)
@@ -308,7 +314,7 @@ contains
 
   ! returns the index of the first entry of value n in array
   ! returns -1 if not found
-  integer function index_of (n, array)
+  pure integer function index_of (n, array)
     integer, intent(in) :: n, array(:)
 
     do index_of = 1,size(array)
@@ -374,5 +380,36 @@ contains
     n2 = normalize(x2)
     projectOnto = dot_product(x1, n2) * n2
   end function projectOnto
+
+  ! given a set of vectors x, return an orthonormal basis q for the same space using Gram-Schmidt
+  function orthonormalBasis (x) result(q)
+
+    use consts, only: ndim
+
+    real(r8), intent(in) :: x(:,:)
+    real(r8), allocatable :: q(:,:)
+
+    integer :: i,j,n
+    real(r8) :: tmp, v(size(x,dim=1)), vs(size(x,dim=1),size(x,dim=2))
+
+    n = 1
+    vs(:,1) = normalize(x(:,1))
+
+    do i = 2,size(x,dim=2)
+      v = x(:,i)
+      do j = 1,n
+        v = v - projectOnto(v,vs(:,j))
+      end do
+
+      tmp = magnitude(v)
+      if (.not.isZero(tmp)) then
+        n = n+1
+        vs(:,n) = v / tmp
+      end if
+    end do
+
+    q = vs(:,1:n)
+
+  end function orthonormalBasis
 
 end module array_utils

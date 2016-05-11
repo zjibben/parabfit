@@ -19,6 +19,8 @@ module polygon_type
   implicit none
   private
 
+  public :: polygon_unit_test
+
   type, public :: polygon
     integer               :: nVerts
     real(r8), allocatable :: x(:,:) !, norm(:)
@@ -33,6 +35,37 @@ module polygon_type
   end type polygon
   
 contains
+
+  subroutine polygon_unit_test ()
+
+    use array_utils, only: xrange
+
+    type(polygon) :: pg
+    integer, allocatable :: verts(:)
+
+    write(*,*)
+    write(*,*) 'POLYGON'
+    write(*,*) '===================================================='
+
+    call pg%init (reshape([&
+        5.9375E-01_r8, 6.1179385469195579627665893E-01_r8, 0.0_r8,&
+        5.9375E-01_r8, 6.1179385471097824655828390E-01_r8, 0.0_r8,&
+        6.2500E-01_r8, 6.1455516841502266789376563E-01_r8, 0.0_r8,&
+        6.2500E-01_r8, 6.1455516843936131010650570E-01_r8, 0.0_r8],&
+        [3,4]))
+
+    verts = xrange(1,4)
+    call pg%order (verts)
+
+    call pg%print_data ()
+    write(*,*) verts
+
+    call LS_fatal ("temporarily killed testing")
+
+    write(*,*) '===================================================='
+    write(*,*)
+
+  end subroutine polygon_unit_test
 
   subroutine init_polygon (this, x, norm)
     class(polygon),     intent(out)   :: this
@@ -147,48 +180,60 @@ contains
   ! this angle is used to sort the vertices
   subroutine order (this,array)
 
-    use array_utils, only: insertion_sort,xrange,invert,normalize,projectOnto,magnitude,isZero
+    use array_utils, only: insertion_sort,xrange,invert,normalize,projectOnto,magnitude,isZero,&
+        orthonormalBasis
 
     class(polygon),    intent(inout) :: this
-    integer, optional, intent(inout) :: array(:)
-    
-    real(r8) :: xc(3), t(this%nVerts), t2(this%nVerts), prjx(2), xl(3,this%nVerts), q(3,2), tmp
+    integer, optional, intent(inout) :: array(:) ! an array that gets sorted along with the polygon
+
+    real(r8), allocatable :: q(:,:)
+    real(r8) :: xc(3), t(this%nVerts), t2(this%nVerts), prjx(2), xl(3,this%nVerts), tmp !,q(3,2)
     integer  :: i,ind(size(this%x,dim=2))
     
-    ! calculate the location of the centroid, and the vertex coordinates
-    ! with respect to the centroid
+    ! calculate the location of the centroid, and the vertex coordinates with respect to the centroid
     xc = this%centroid ()
     do i = 1,this%nVerts
       xl(:,i) = this%x(:,i) - xc(:)
     end do
 
     ! the projection coordinate directions
-    ! note the second coordinate must be linearly independent of q1
-    q(:,1) = normalize(xl(:,1))
-    do i = 2,this%nVerts
-      q(:,2) = xl(:,i) - projectOnto (xl(:,i),q(:,1))
-      tmp = magnitude(q(:,2))
-      if (.not.isZero(tmp)) then
-        q(:,2) = q(:,2) / tmp
-        exit
-      end if
+    ! WARNING: problems will occur here if the vertices are slightly non-planar
+    q = orthonormalBasis(xl)
+    if (.not.all(shape(q) >= [3,2])) then
+      write(*,*)
+      write(*,*) shape(q)
+      call this%print_data ()
+      call LS_fatal ("polygon ordering failed: unable to calculate polygon-plane coordinates")
+    end if
+    !allocate(q(3,2))
+    ! q(:,1) = normalize(xl(:,1))
+    ! do i = 2,this%nVerts
+    !   q(:,2) = xl(:,i) - projectOnto (xl(:,i),q(:,1))
+    !   tmp = magnitude(q(:,2))
+    !   if (.not.isZero(tmp)) then
+    !     q(:,2) = q(:,2) / tmp
+    !     exit
+    !   end if
 
-      if (i==this%nVerts) then
-        write(*,*)
-        call this%print_data ()
-        call LS_fatal ("polygon ordering failed: unable to calculate polygon-plane coordinates")
-      end if
-    end do
+    !   if (i==this%nVerts) then
+    !     write(*,*)
+    !     call this%print_data ()
+    !     call LS_fatal ("polygon ordering failed: unable to calculate polygon-plane coordinates")
+    !   end if
+    ! end do
     
     ! calculate the rotation angle
-    t(1) = 0.0_r8
-    do i = 2,this%nVerts
+    ! write(*,*) 'q',q(:,1)
+    ! write(*,*) 'q',q(:,2)
+    !t(1) = 0.0_r8
+    do i = 1,this%nVerts
       ! get coordinates for the vertex in the 2D plane defined by the polygon
       prjx(1) = dot_product(xl(:,i),q(:,1))
       prjx(2) = dot_product(xl(:,i),q(:,2))
       
       ! find the angle made by this vertex with respect to the first vertex
       t(i) = atan2(prjx(2),prjx(1))
+      !write(*,'(i6, 3es20.10)') i, prjx, t(i)
     end do
     
     ! sort based on angle

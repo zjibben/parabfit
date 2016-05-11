@@ -6,6 +6,7 @@ program unit_test
 
   use volume_track_module,    only: volume_track_unit_test_suite
   use volume_track_nd_module, only: volume_track_nd_unit_test
+  use polygon_type,        only: polygon_unit_test
   use polyhedron_type,        only: polyhedron_unit_test
   use surface_type,           only: surface_unit_test
   use locate_plane_module,    only: locate_plane_unit_test_suite
@@ -21,6 +22,7 @@ program unit_test
   call volume_track_unit_test_suite ()
   
   ! test polyhedrons and surfaces
+  call polygon_unit_test ()
   call polyhedron_unit_test ()
   call surface_unit_test ()
 

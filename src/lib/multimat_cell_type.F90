@@ -10,8 +10,10 @@
 !!
 
 module multimat_cell_type
+
   use kinds, only: r8
   use polyhedron_type
+  use logging_services
   implicit none
   private
 
@@ -27,7 +29,7 @@ module multimat_cell_type
     type(polyhedron), allocatable :: mat_poly(:)
   contains
     procedure :: partition
-    procedure :: volumes_behind_plane
+    procedure, private :: volumes_behind_plane
     procedure :: outward_volflux
     procedure :: interface_polygon
   end type multimat_cell
@@ -39,13 +41,15 @@ contains
 
     type(multimat_cell) :: cube
     logical             :: success
-    real(r8)            :: vof(2), intnorm(3,2), posXflow(6), posxyzn(3), posxyn(3), posxn(3), &
+    real(r8)            :: posXflow(6), posZflow(6), posxyzn(3), posxyn(3), posxn(3), &
         posyn(3), tmp
+    real(r8), allocatable :: vof(:), intnorm(:,:)
 
     call cube%init (cube_v, hex_f, hex_e)
     
     ! define face velocities [+y, -y, -x, +x, -z, +z]
-    posXflow = [ 0.0_r8, 0.0_r8, -1.0_r8, 1.0_r8, 0.0_r8, 0.0_r8 ]
+    posXflow = [ 0.0_r8, 0.0_r8, -1.0_r8, 1.0_r8,  0.0_r8, 0.0_r8 ]
+    posZflow = [ 0.0_r8, 0.0_r8,  0.0_r8, 0.0_r8, -1.0_r8, 1.0_r8 ]
 
     ! define normals
     posxyzn = [1.0_r8, 1.0_r8, 1.0_r8] / sqrt(3.0_r8) ! positive x-y-z
@@ -70,6 +74,7 @@ contains
     write(*,*) 'FLUXING'
 
     ! cube 8/10ths filled in x direction
+    allocate(intnorm(3,2))
     vof = [0.8_r8, 0.2_r8]
     intnorm(:,1) = posxn; intnorm(:,2) = -intnorm(:,1)
     call cube%partition (vof, intnorm)
@@ -167,6 +172,36 @@ contains
          0.0_r8, 0.0_r8], [2,6]) )
     write(*,*) 'passed cube 1/8th filled in xyz, fluxed in +x?  ', success
 
+    ! cube with 3-matls, one very small
+    call cube%init (reshape([&
+        2.8125E-01_r8,    5.6250E-01_r8,    2.8125E-01_r8,&
+        3.1250E-01_r8,    5.6250E-01_r8,    2.8125E-01_r8,&
+        3.1250E-01_r8,    5.9375E-01_r8,    2.8125E-01_r8,&
+        2.8125E-01_r8,    5.9375E-01_r8,    2.8125E-01_r8,&
+        2.8125E-01_r8,    5.6250E-01_r8,    3.1250E-01_r8,&
+        3.1250E-01_r8,    5.6250E-01_r8,    3.1250E-01_r8,&
+        3.1250E-01_r8,    5.9375E-01_r8,    3.1250E-01_r8,&
+        2.8125E-01_r8,    5.9375E-01_r8,    3.1250E-01_r8],&
+        [3,8]), hex_f, hex_e)
+    vof = [8.7485114822E-01_r8,    1.2514879878E-01_r8,    5.2994441145E-08_r8]
+    intnorm = reshape([&
+         9.8094153325E-01_r8,   -1.1866987389E-01_r8,   -1.5385437718E-01_r8,&
+        -9.8094153821E-01_r8,    1.1866966066E-01_r8,    1.5385451003E-01_r8,&
+        -4.6914971675E-01_r8,    7.9578595328E-01_r8,   -3.8291416771E-01_r8], [3,3])
+    
+    !call cube%partition (vof, intnorm)
+    success = partition_unit_test (cube, vof, intnorm)
+    ! success = fluxing_unit_test (cube, 2.692080062668622E-003*2.2845404866E-01_r8*posZflow, &
+    !     reshape([&
+    !      0.0_r8, 0.0_r8, 0.0_r8, &
+    !      0.0_r8, 0.0_r8, 0.0_r8, &
+    !      0.0_r8, 0.0_r8, 0.0_r8, &
+    !      0.0_r8, 0.0_r8, 0.0_r8, &
+    !      0.0_r8, 0.0_r8, 0.0_r8, &
+    !      0.0_r8, 0.0_r8, 0.0_r8], [3,6]) )
+
+    write(*,*) '3-matl cube? ', success
+
     write(*,*) '===================================================='
     write(*,*)
 
@@ -181,28 +216,59 @@ contains
     real(r8),            intent(in)    :: fluxing_velocity(:),volflux_ex(:,:)
 
     real(r8) :: outward_volflux(size(volflux_ex,dim=1),nfc)
-    integer  :: nmat
-
+    integer  :: nmat, ierr
+    
     nmat = size(volflux_ex,dim=1)
 
     write(*,*) 'WARNING: hardcoding face areas'
     outward_volflux = cell%outward_volflux (1.0_r8, fluxing_velocity, &
-        [1.0_r8, 1.0_r8, 1.0_r8, 1.0_r8, 1.0_r8, 1.0_r8])
+        [1.0_r8, 1.0_r8, 1.0_r8, 1.0_r8, 1.0_r8, 1.0_r8],ierr)
+    if (ierr /= 0) then
+      call LS_fatal ("outward volflux failed")
+    end if
     fluxing_unit_test = all(isZero (outward_volflux-volflux_ex,cutvof))
     
   end function fluxing_unit_test
+
+  logical function partition_unit_test (cell, vof, intnorm)
+
+    use consts, only: cutvof
+    use array_utils, only: isZero
+
+    type(multimat_cell), intent(inout) :: cell
+    real(r8),            intent(in)    :: vof(:), intnorm(:,:)
+
+    real(r8) :: vof_result
+    integer :: m
+
+    call cell%partition (vof, intnorm)
+
+    partition_unit_test = .true.
+    do m = 1,size(vof)
+      vof_result = cell%mat_poly(m)%volume() / cell%volume()
+      write(*,*) 'mv', m, vof_result, vof(m)
+      if (.not.isZero(vof(m) - vof_result, cutvof)) then
+        write(*,*) 'partition test failed on material: ',m
+        write(*,'(a,4es20.10)') 'vof, vof_result, error: ',vof(m), vof_result, abs(vof(m)-vof_result)
+        write(*,'(a,4es20.10)') 'remaining vof: ',1.0_r8 - sum(vof(:m))
+        partition_unit_test = .false.
+      end if
+    end do
+
+  end function partition_unit_test
 
   ! given a set of VoFs, normals, and an order,
   ! create child polyhedra for each material
   subroutine partition (this, vof, norm)
 
     use consts, only: cutvof
+    use array_utils, only: isZero
     use locate_plane_nd_module
-    use logging_services
 
     class(multimat_cell), intent(inout) :: this
     real(r8),             intent(in)    :: vof(:), norm(:,:)
 
+    type(plane)      :: interface_plane
     type(polyhedron) :: tmp(2),remainder
     integer          :: m,nm
 
@@ -222,8 +288,8 @@ contains
       ! reconstruct the plane from the remaining free space
       ! use the plane to generate the polyhedron for this material,
       ! and update the free-space polyhedron
-
-      if (nm==this%nmat .or. (1.0_r8-cutvof)*remainder%volume () < vof(m)*this%volume ()) then
+      if (nm==this%nmat .or. (1.0_r8-cutvof)*remainder%volume() < vof(m)*this%volume() .or. &
+          isZero(remainder%volume())) then
         ! if this is the final material in the cell,
         ! it gets the entire remainder of the polyhedron
         this%mat_poly(m) = remainder
@@ -231,46 +297,95 @@ contains
         exit
       else
         ! if this is not the final material in the cell, split the cell
-        tmp = remainder%split (locate_plane_nd (remainder, norm(:,m), vof(m)*this%volume ()))
+        interface_plane = locate_plane_nd (remainder, norm(:,m), vof(m)*this%volume(), this%volume())
+        tmp = remainder%split (interface_plane)
+
+        ! this check ensures the partitions give their vofs within the requested cutvof
+        ! it will fail if the Brent's iterations did not converge within the maximum
+        ! number of allowed iterations
+        ! if (.not.isZero(tmp(1)%volume() / this%volume() - (1.0_r8 - sum(vof(:m))), cutvof)) &
+        !     call partitionError ()
+
         remainder = tmp(1)
         this%mat_poly(m) = tmp(2)
       end if
     end do
-    
+
+  contains
+
+    subroutine partitionError ()
+      write(*,*)
+      write(*,*) 'partition error!'
+      write(*,*) 'remainder polyhedron volume does not match remaining volume from vof'
+
+      write(*,*) 'material id: ',m
+      write(*,'(a,es20.10)') 'remainder polyhedron vof: ',tmp(1)%volume() / this%volume()
+      write(*,'(a,es20.10)') 'exact remaining vof:      ',1.0_r8 - sum(vof(:m))
+      write(*,'(a,es20.10)') 'error:                    ',&
+          abs(tmp(1)%volume() / this%volume() - (1.0_r8 - sum(vof(:m))))
+      
+      write(*,*)
+      write(*,*) 'previous remainder polyhedron data: '
+      call remainder%print_data ()
+
+      
+      write(*,*)
+      write(*,*) 'material ',m,' cutout: '
+      call tmp(2)%print_data ()
+
+      write(*,*)
+      write(*,*) 'remainder polyhedron data: '
+      call tmp(1)%print_data ()
+
+      write(*,'(a,4es20.10)') 'interface plane n,p: ',interface_plane%normal, interface_plane%rho
+
+      write(*,*)
+
+      call LS_fatal ("partition error")
+    end subroutine partitionError
+
   end subroutine partition
 
   ! given a plane, find the volumes of each
   ! material behind that plane (flux volumes)
-  function volumes_behind_plane (this, P) result(vol)
+  function volumes_behind_plane (this, P, ierr) result(vol)
+
     use plane_type
     
     class(multimat_cell), intent(in) :: this
     class(plane),         intent(in) :: P
+    integer,              intent(out) :: ierr
     real(r8)                         :: vol(size(this%mat_poly))
 
     integer                          :: m
-    
+
+    ierr = 0
     do m = 1,size(this%mat_poly)
-      vol(m) = this%mat_poly(m)%volume_behind_plane (P)
+      vol(m) = this%mat_poly(m)%volume_behind_plane (P,ierr)
+      if (ierr /= 0) then
+        write(*,*) 'volumes_behind_plane failed on material ',m
+        return
+      end if
     end do
 
   end function volumes_behind_plane
 
-  function outward_volflux (this, adv_dt, fluxing_velocity, face_area)
+  function outward_volflux (this, adv_dt, fluxing_velocity, face_area, ierr)
 
     use consts, only: nfc,cutvof
     use plane_type
-    use logging_services
     
     class(multimat_cell), intent(inout) :: this !inout because of call to volume
     real(r8),             intent(in)    :: adv_dt, fluxing_velocity(:), face_area(:)
     !real(r8), optional,   intent(in)    :: face_area(:) ! WARNING: this isn't really optional, and maybe should be copied into the object
+    integer, intent(out) :: ierr
     real(r8)                            :: outward_volflux(size(this%mat_poly),nfc)
 
     type(plane) :: flux_plane
     real(r8)    :: xf(3)
     integer     :: f,nV,m
-    
+
+    ierr = 0
     do f = 1,nfc
       if (fluxing_velocity(f)*adv_dt*face_area(f) < cutvof*this%volume()) then
         ! if we would be fluxing very very little, don't flux anything
@@ -291,7 +406,11 @@ contains
           outward_volflux(:,f) = 0.0_r8
           outward_volflux(this%m,f) = adv_dt * fluxing_velocity(f) * face_area(f)
         else
-          outward_volflux(:,f) = this%volumes_behind_plane (flux_plane)
+          outward_volflux(:,f) = this%volumes_behind_plane (flux_plane,ierr)
+          if (ierr /= 0) then
+            write(*,*) 'outward_volflux failed on face ',f
+            return
+          end if
         end if
 
         ! make sure we have a valid outward volume flux
