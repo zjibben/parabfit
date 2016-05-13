@@ -7,6 +7,8 @@
 !! April 2016
 !!
 
+#include "f90_assert.fpp"
+
 module array_utils
 
   use kinds,  only: r8
@@ -15,7 +17,7 @@ module array_utils
   private
 
   public :: first_true_loc,last_true_loc,xrange,reorder,insertion_sort,int2str,&
-      containsPair, containsValue, &
+      containsPair, containsValue, containsPoint, pointIndex, &
       reverse,invert,isZero, index_of, &
       meanArithmetic, meanHarmonic, &
       magnitude, magnitude2, normalize, normalizeIfNonzero, projectOnto, orthonormalBasis, &
@@ -104,7 +106,7 @@ contains
     end do
 
   end function xrange
-
+  
   pure logical function containsPair (pair,list)
 
     integer, intent(in) :: pair(:), list(:,:)
@@ -116,8 +118,33 @@ contains
       containsPair = containsPair .or. &
           all(list(:,i)==pair) .or. all(list(:,i)==reverse(pair))
     end do
-    
+
   end function containsPair
+
+  pure logical function containsPoint (x,list)
+
+    real(r8), intent(in) :: x(:), list(:,:)
+
+    integer :: i
+
+    containsPoint = .false.
+    do i = 1,size(list, dim=2)
+      containsPoint = containsPoint .or. all(isZero(x - list(:,i)))
+      if (containsPoint) return
+    end do
+
+  end function containsPoint
+
+  pure integer function pointIndex(x,list)
+
+    real(r8), intent(in) :: x(:), list(:,:)
+
+    do pointIndex = 1,size(list,dim=2)
+      if (all(isZero(x - list(:,pointIndex)))) return
+    end do
+    pointIndex = -1
+
+  end function pointIndex
 
   pure logical function containsValue (n, array)
     integer, intent(in) :: n, array(:)
@@ -382,19 +409,19 @@ contains
   end function projectOnto
 
   ! given a set of vectors x, return an orthonormal basis q for the same space using Gram-Schmidt
-  function orthonormalBasis (x) result(q)
+  subroutine orthonormalBasis (q,x)
 
     use consts, only: ndim
 
+    real(r8), allocatable, intent(out) :: q(:,:)
     real(r8), intent(in) :: x(:,:)
-    real(r8), allocatable :: q(:,:)
 
     integer :: i,j,n
     real(r8) :: tmp, v(size(x,dim=1)), vs(size(x,dim=1),size(x,dim=2))
 
     n = 1
     vs(:,1) = normalize(x(:,1))
-
+    
     do i = 2,size(x,dim=2)
       v = x(:,i)
       do j = 1,n
@@ -407,9 +434,9 @@ contains
         vs(:,n) = v / tmp
       end if
     end do
-
+    
     q = vs(:,1:n)
-
-  end function orthonormalBasis
+    
+  end subroutine orthonormalBasis
 
 end module array_utils

@@ -276,12 +276,13 @@ contains
     if (allocated(this%mat_poly)) deallocate(this%mat_poly)
     allocate(this%mat_poly(size(vof)))
     this%mat_poly(:)%nVerts = 0
-
+    this%m = 0
+    
     call remainder%init (this)
     
     this%nmat = count(vof > cutvof)
     nm = 0
-
+    
     do m = 1,size(vof)
       if (vof(m) < cutvof) cycle
       nm = nm+1 ! update the counter of how many materials we've seen thus far
@@ -312,7 +313,7 @@ contains
         this%mat_poly(m) = tmp(2)
       end if
     end do
-
+    
   contains
 
     subroutine partitionError ()

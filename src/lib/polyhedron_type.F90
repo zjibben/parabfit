@@ -398,18 +398,17 @@ contains
 
     use consts, only: ndim
     use plane_type
-    use array_utils, only: reverse,first_true_loc,isZero
+    use array_utils, only: reverse, containsPoint, pointIndex
 
     class(polyhedron), intent(in)  :: this
     class(plane),      intent(in)  :: P
     integer, optional, intent(out) :: v_assoc_pe(:)
 
-    logical  :: pteq(this%nEdges)
     integer  :: e,Nintersections
     real(r8) :: x(ndim,this%nEdges),intx(ndim)
 
     if (present(v_assoc_pe)) v_assoc_pe = 0
-
+    
     ! loop through all edges
     Nintersections = 0
     do e = 1,this%nEdges
@@ -418,13 +417,8 @@ contains
         ! if it does, find the point where they intersect
         intx = P%intersection_point (this%x(:,this%edge_vid(:,e)))
 
-        ! check if the point is already in the list
-        pteq(1:Nintersections) = isZero (intx(1)-x(1,1:Nintersections)) &
-             .and.               isZero (intx(2)-x(2,1:Nintersections)) &
-             .and.               isZero (intx(3)-x(3,1:Nintersections))
-        
         ! if this point wasn't already found, store it
-        if (.not.any(pteq(1:Nintersections))) then
+        if (Nintersections==0 .or. .not.containsPoint(intx, x(:,1:Nintersections))) then
           Nintersections = Nintersections + 1
           x(:,Nintersections) = intx
           if (present(v_assoc_pe)) v_assoc_pe(e) = Nintersections
@@ -432,7 +426,7 @@ contains
           ! if the point was already found,
           ! note that this edge intersects with that found point
           ! this particularly comes into effect when we intersect a vertex
-          v_assoc_pe(e) = first_true_loc (pteq(1:Nintersections))
+          v_assoc_pe(e) = pointIndex(intx, x(:,1:Nintersections))
         end if
       end if
     end do
@@ -440,24 +434,25 @@ contains
     ! pass the intersection points to the polygon constructor
     if (Nintersections>2) then
       call intersection_verts%init (x(:,1:Nintersections))
-
+      
       ! this probably doesn't need to be called every time this function is used
       if (present(v_assoc_pe)) then
         call intersection_verts%order (v_assoc_pe)
       else
         call intersection_verts%order ()
       end if
-
+      
       ! make sure the vertices are ordered counter-clockwise
       if (sum(intersection_verts%norm*P%normal)<0.0_r8) then
         ! reverse both x and v_assoc_pe
         intersection_verts%x = reverse (intersection_verts%x)
+        
         if (present(v_assoc_pe)) then
           do e = 1,size(v_assoc_pe)
             if (v_assoc_pe(e)>0) v_assoc_pe(e) = Nintersections - v_assoc_pe(e)+1
           end do
-          
         end if
+        
         call intersection_verts%update_plane_normal ()
       end if
     end if

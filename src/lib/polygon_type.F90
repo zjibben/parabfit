@@ -35,15 +35,9 @@ module polygon_type
     procedure :: order
     procedure :: update_plane_normal
     procedure :: print_data
-    final :: polygon_delete
   end type polygon
   
 contains
-
-  subroutine polygon_delete (this)
-    type(polygon) :: this
-    if (allocated(this%x)) deallocate(this%x)
-  end subroutine polygon_delete
 
   subroutine polygon_unit_test ()
 
@@ -197,7 +191,7 @@ contains
     integer, optional, intent(inout) :: array(:) ! an array that gets sorted along with the polygon
 
     real(r8), allocatable :: q(:,:)
-    real(r8) :: xc(3), t(this%nVerts), t2(this%nVerts), prjx(2), xl(3,this%nVerts), tmp !,q(3,2)
+    real(r8) :: xc(ndim), t(this%nVerts), t2(this%nVerts), prjx(2), xl(ndim,this%nVerts), tmp
     integer  :: i,ind(size(this%x,dim=2))
     
     ! calculate the location of the centroid, and the vertex coordinates with respect to the centroid
@@ -205,36 +199,18 @@ contains
     do i = 1,this%nVerts
       xl(:,i) = this%x(:,i) - xc(:)
     end do
-
+    
     ! the projection coordinate directions
     ! WARNING: problems will occur here if the vertices are slightly non-planar
-    q = orthonormalBasis(xl)
+    call orthonormalBasis(q,xl)
     if (.not.all(shape(q) >= [3,2])) then
       write(*,*)
       write(*,*) shape(q)
       call this%print_data ()
       call LS_fatal ("polygon ordering failed: unable to calculate polygon-plane coordinates")
     end if
-    !allocate(q(3,2))
-    ! q(:,1) = normalize(xl(:,1))
-    ! do i = 2,this%nVerts
-    !   q(:,2) = xl(:,i) - projectOnto (xl(:,i),q(:,1))
-    !   tmp = magnitude(q(:,2))
-    !   if (.not.isZero(tmp)) then
-    !     q(:,2) = q(:,2) / tmp
-    !     exit
-    !   end if
-
-    !   if (i==this%nVerts) then
-    !     write(*,*)
-    !     call this%print_data ()
-    !     call LS_fatal ("polygon ordering failed: unable to calculate polygon-plane coordinates")
-    !   end if
-    ! end do
-    
+        
     ! calculate the rotation angle
-    ! write(*,*) 'q',q(:,1)
-    ! write(*,*) 'q',q(:,2)
     !t(1) = 0.0_r8
     do i = 1,this%nVerts
       ! get coordinates for the vertex in the 2D plane defined by the polygon
@@ -245,7 +221,7 @@ contains
       t(i) = atan2(prjx(2),prjx(1))
       !write(*,'(i6, 3es20.10)') i, prjx, t(i)
     end do
-    
+
     ! sort based on angle
     if (present(array)) then
       t2 = t
@@ -256,9 +232,9 @@ contains
         if (array(i)>0) array(i) = ind(array(i))
       end do
     end if
-
+    
     call insertion_sort (this%x,t)
-
+    
     call this%update_plane_normal ()
 
   end subroutine order

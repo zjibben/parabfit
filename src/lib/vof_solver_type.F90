@@ -852,14 +852,16 @@ contains
         ! send cell data to the multimat_cell type
         call ndcell%init (this%mesh%x(:,this%mesh%cnode(:,i)), hex_f, hex_e, this%mesh%volume(i), &
             this%gmesh%outnorm(:,:,i))
-
+        
         ! partition the cell based on vofs and norms
         call ndcell%partition (this%vof(:,i), int_norm(:,:,i))
-
+        
         ! dump the interface reconstruction, if requested
         do ni = 1,size(this%intrec)
           call this%intrec(ni)%append (ndcell%interface_polygon (ni))
         end do
+      case default
+        call LS_fatal('unknown partition type')
       end select
     end do
 

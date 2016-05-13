@@ -10,7 +10,9 @@
 #include "f90_assert.fpp"
 
 module hex_types
+
   use kinds, only: r8
+  use consts, only: ndim, nfc, nvc
   use material_geometry_type
   use logging_services
   use plane_type
@@ -19,7 +21,7 @@ module hex_types
 
   ! hex type to make divide and conquer algorithm simpler
   type, public :: base_hex
-    real(r8) :: node(3,8), volume
+    real(r8) :: node(ndim,nvc), volume
   contains
     procedure :: calc_volume
     ! procedure         :: cell_center
@@ -30,7 +32,7 @@ module hex_types
   end type base_hex
 
   type, extends(base_hex), public :: cell_data
-    real(r8) :: face_area(6), face_normal(3,6)
+    real(r8) :: face_area(nfc), face_normal(ndim,nfc)
   contains
     procedure :: init => init_cell_data
     procedure :: calc_face_areas_and_normals

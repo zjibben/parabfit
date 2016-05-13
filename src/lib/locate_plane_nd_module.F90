@@ -13,6 +13,7 @@
 module locate_plane_nd_module
 
   use kinds, only: r8
+  use consts, only: ndim
   use plane_type
   use polyhedron_type
   use brent_module
@@ -33,7 +34,7 @@ module locate_plane_nd_module
   ! end type volume_error_func
   
   type, extends(brent_func) :: vof_error_func
-    real(r8)         :: tvol,norm(3),parvol
+    real(r8)         :: tvol,norm(ndim),parvol
     type(polyhedron) :: poly
   contains
     procedure        :: init => func_init
@@ -171,7 +172,7 @@ contains
     
     ! start Brent's method
     locate_plane_nd%normal = norm
-    locate_plane_nd%rho = brent (vof_error, rho_min, rho_mid, rho_max, cutvof/2.0_r8, 10)
+    locate_plane_nd%rho = brent (vof_error, rho_min, rho_mid, rho_max, cutvof/2.0_r8, 100)
 
   end function locate_plane_nd
 
