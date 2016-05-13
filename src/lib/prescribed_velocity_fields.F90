@@ -9,6 +9,8 @@
 !! June 2015
 !!
 
+#include "f90_assert.fpp"
+
 module prescribed_velocity_fields
 
   use kinds, only: r8
@@ -22,12 +24,16 @@ contains
   
   function prescribed_velocity (x, t, field)
 
-    real(r8), intent(in) :: x(3), t
+    use consts, only: ndim
+
+    real(r8), intent(in) :: x(:), t
     integer , intent(in) :: field
-    real(r8)             :: prescribed_velocity(3)
+    real(r8)             :: prescribed_velocity(ndim)
 
     real(r8), parameter :: PI = 4.0_r8 * atan(1.0_r8)
     real(r8)            :: periodT
+
+    ASSERT(size(x)==ndim)
     
     prescribed_velocity = 0.0_r8
     select case (field)

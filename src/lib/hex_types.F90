@@ -7,6 +7,8 @@
 !! June 2015
 !!
 
+#include "f90_assert.fpp"
+
 module hex_types
   use kinds, only: r8
   use material_geometry_type
@@ -89,12 +91,18 @@ module hex_types
 contains
 
   subroutine init_cell_data (this, node, volume, face_area, face_normal, cfpar)
+
+    use consts, only: ndim,nvc,nfc
+    use array_utils, only: normalize
+
     class(cell_data),   intent(out) :: this
-    real(r8),           intent(in)  :: node(3,8)
-    real(r8), optional, intent(in)  :: volume, face_area(6), face_normal(3,6)
+    real(r8),           intent(in)  :: node(:,:)
+    real(r8), optional, intent(in)  :: volume, face_area(:), face_normal(:,:)
     integer,  optional, intent(in)  :: cfpar
 
     integer :: f
+
+    ASSERT(all(shape(node)==[ndim,nvc]))
     
     this%node = node
 
@@ -105,9 +113,12 @@ contains
     end if
     
     if (present(face_area) .and. present(face_normal) .and. present(cfpar)) then
+      ASSERT(size(face_area)==nfc)
+      ASSERT(all(shape(face_normal)==[ndim,nfc]))
       this%face_area = face_area
-      do f = 1,6
-        this%face_normal(:,f) = face_normal(:,f) / sqrt(sum(face_normal(:,f)**2)) ! normalize the input
+      do f = 1,nfc
+        !this%face_normal(:,f) = face_normal(:,f) / sqrt(sum(face_normal(:,f)**2)) ! normalize the input
+        this%face_normal(:,f) = normalize(face_normal(:,f))
         if (btest(cfpar,f)) this%face_normal(:,f) = -this%face_normal(:,f) ! ensure the normals are outward facing
       end do
     else

@@ -13,6 +13,7 @@
 module plane_type
 
   use kinds,  only: r8
+  use consts, only: ndim
   use logging_services
   use polygon_type
   implicit none
@@ -20,7 +21,7 @@ module plane_type
 
   ! dot(n,x) - rho = 0
   type, public :: plane
-    real(r8) :: rho, normal(3) ! plane constant and normal
+    real(r8) :: rho, normal(ndim) ! plane constant and normal
   contains
     procedure :: signed_distance
     procedure :: intersects
@@ -66,13 +67,16 @@ contains
 
   ! return the point where the line between x1 & x2 intersect with the given plane
   function intersection_point (this,x)
+
     use array_utils, only: isZero
 
     class(plane), intent(in) :: this
-    real(r8),     intent(in) :: x(3,2)
-    real(r8)                 :: intersection_point(3)
+    real(r8),     intent(in) :: x(:,:)
+    real(r8)                 :: intersection_point(ndim)
 
-    real(r8)                 :: dx(3),d1,d2
+    real(r8)                 :: dx(ndim),d1,d2
+
+    ASSERT(all(shape(x)==[ndim,2]))
 
     if (.not.this%intersects (x)) call LS_fatal('edge does not intersect plane')
 

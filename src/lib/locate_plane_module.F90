@@ -22,6 +22,7 @@
 !
 !=======================================================================
 
+#include "f90_assert.fpp"
 
 module locate_plane_module
   use kinds,     only: r8
@@ -93,9 +94,11 @@ contains
     use consts,      only: cutvof
 
     class(locate_plane_hex), intent(out) :: this
-    real(r8), intent(in) :: normal(3), vof, rhoex
+    real(r8), intent(in) :: normal(:), vof, rhoex
 
     integer  :: iter
+
+    ASSERT(size(normal)==ndim)
 
     ! set the nodes
     this%node(:,1) = [0.0_r8, 0.0_r8, 0.0_r8]
@@ -121,7 +124,10 @@ contains
 
   subroutine init_locate_plane_hex (this, norm, vof, volume, node)
     class(locate_plane_hex), intent(out) :: this
-    real(r8),                intent(in)  :: norm(3), vof, volume, node(3,8)
+    real(r8),                intent(in)  :: norm(:), vof, volume, node(:,:)
+
+    ASSERT(size(norm)==ndim)
+    ASSERT(all(shape(node)==[ndim,nvc]))
 
     this%P%normal = norm
     this%vof      = vof

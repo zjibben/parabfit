@@ -263,6 +263,7 @@ contains
 
     use consts, only: cutvof
     use array_utils, only: isZero
+    use plane_type
     use locate_plane_nd_module
 
     class(multimat_cell), intent(inout) :: this
@@ -298,7 +299,8 @@ contains
       else
         ! if this is not the final material in the cell, split the cell
         interface_plane = locate_plane_nd (remainder, norm(:,m), vof(m)*this%volume(), this%volume())
-        tmp = remainder%split (interface_plane)
+        !tmp = remainder%split (interface_plane)
+        call remainder%split (interface_plane,tmp)
 
         ! this check ensures the partitions give their vofs within the requested cutvof
         ! it will fail if the Brent's iterations did not converge within the maximum

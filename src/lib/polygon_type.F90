@@ -8,8 +8,11 @@
 !! October 2015
 !!
 !! References:
-!!     1. Mirtich. Fast and Accurate Computation of Polehedral Mass Properties. Journal of Graphics Tools, 1996.
+!!     1. Mirtich. Fast and Accurate Computation of Polehedral Mass Properties.
+!!        Journal of Graphics Tools, 1996.
 !! 
+
+#include "f90_assert.fpp"
 
 module polygon_type
 
@@ -22,19 +25,25 @@ module polygon_type
   public :: polygon_unit_test
 
   type, public :: polygon
-    integer               :: nVerts
+    integer :: nVerts
     real(r8), allocatable :: x(:,:) !, norm(:)
     real(r8) :: norm(ndim)
   contains
-    procedure          :: init => init_polygon
-    procedure          :: intXdA
-    procedure          :: centroid
-    procedure          :: order
-    procedure          :: update_plane_normal
-    procedure          :: print_data
+    procedure :: init => init_polygon
+    procedure :: intXdA
+    procedure :: centroid
+    procedure :: order
+    procedure :: update_plane_normal
+    procedure :: print_data
+    final :: polygon_delete
   end type polygon
   
 contains
+
+  subroutine polygon_delete (this)
+    type(polygon) :: this
+    if (allocated(this%x)) deallocate(this%x)
+  end subroutine polygon_delete
 
   subroutine polygon_unit_test ()
 
@@ -94,11 +103,12 @@ contains
     real(r8), optional, intent(inout) :: norm(:) ! return the newly calculated norm if it wasn't known
     
     integer :: i,j
-
+    
     ! the direction of the normal is assumed from the node ordering (and assuming convex)
 
     ! if the polygon has >3 verteces, it could be non-planar and we should subdivide
     if (present(norm)) then
+      ASSERT(size(norm)==ndim)
       this%norm = norm
     else
       !if (allocated(this%norm)) deallocate(this%norm)
@@ -260,10 +270,12 @@ contains
     integer :: v
 
     write(*,*) 'POLYGON DATA:'
-    do v = 1,this%nVerts
-      write(*,'(a,i3,a,3es35.25)') 'x ',v,':  ',this%x(:,v)
-    end do
-    write(*,*)
+    if (allocated(this%x)) then
+      do v = 1,this%nVerts
+        write(*,'(a,i3,a,3es35.25)') 'x ',v,':  ',this%x(:,v)
+      end do
+      write(*,*)
+    end if
 
     write(*,'(a,3f35.25)') 'norm ',this%norm
     write(*,*)

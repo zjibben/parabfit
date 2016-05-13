@@ -11,6 +11,8 @@
 !!     1. Hopcroft and Kahn. A Paradigm for Robust Geometric Algorithms. Algorithmica, 1992
 !! 
 
+#include "f90_assert.fpp"
+
 module polyhedron_type
 
   use kinds,  only: r8
@@ -31,7 +33,8 @@ module polyhedron_type
   contains
     procedure, private :: init_polyhedron
     procedure, private :: init_polyhedron_copy
-    generic            :: init => init_polyhedron, init_polyhedron_copy
+    procedure, private :: init_polyhedron_null
+    generic            :: init => init_polyhedron, init_polyhedron_copy, init_polyhedron_null
     procedure          :: volume
     procedure          :: intersection_verts
     procedure          :: split
@@ -39,9 +42,18 @@ module polyhedron_type
     procedure          :: print_data
     !procedure, private :: edge_containing_vertices
     procedure, private :: polyhedron_on_side_of_plane
+    !final :: polyhedron_delete
   end type polyhedron
 
 contains
+  
+  ! subroutine polyhedron_delete (this)
+  !   type(polyhedron) :: this
+  !   if (allocated(this%x)) deallocate(this%x)
+  !   if (allocated(this%face_normal)) deallocate(this%face_normal)
+  !   if (allocated(this%face_vid)) deallocate(this%face_vid)
+  !   if (allocated(this%edge_vid)) deallocate(this%edge_vid)
+  ! end subroutine polyhedron_delete
 
   subroutine polyhedron_unit_test ()
     use plane_type
@@ -176,49 +188,49 @@ contains
 
     ! split the cube vertically down the center
     !write(*,*) 'cube split volumes'
-    tmp = cube%split (P)
+    call cube%split (P,tmp)
     success = isZero (tmp(1)%volume ()-0.5_r8) .and. isZero (tmp(2)%volume ()-0.5_r8)
     write(*,*) 'vertical cut?                    ',success
 
     ! split the cube at an angle
     P%normal = [ 1.0_r8, 1.0_r8, 0.0_r8 ] / sqrt(2.0_r8)
     P%rho    = 1.5_r8 / sqrt(2.0_r8)
-    tmp = cube%split (P)
+    call cube%split (P,tmp)
     success = isZero (tmp(1)%volume ()-0.125_r8) .and. isZero (tmp(2)%volume ()-0.875_r8)
     write(*,*) 'xy-angle off-center cut?         ',success
 
     ! split the cube at an angle through the center
     P%normal = [ 1.0_r8, 1.0_r8, 0.0_r8 ] / sqrt(2.0_r8)
     P%rho    = 1.0_r8 / sqrt(2.0_r8)
-    tmp = cube%split (P)
+    call cube%split (P,tmp)
     success = isZero (tmp(1)%volume ()-0.5_r8) .and. isZero (tmp(2)%volume ()-0.5_r8)
     write(*,*) 'center xy-angle cut?             ',success
 
     ! split the cube at an angle through the center
     P%normal = [ 1.0_r8, 1.0_r8, 1.0_r8 ] / sqrt(3.0_r8)
     P%rho    = 1.5_r8 / sqrt(3.0_r8)
-    tmp = cube%split (P)
+    call cube%split (P,tmp)
     success = isZero (tmp(1)%volume ()-0.5_r8) .and. isZero (tmp(2)%volume ()-0.5_r8)
     write(*,*) 'center xyz-angle cut?            ',success
 
     ! split the cube at an angle through an offset
     P%normal = [ 1.0_r8, 1.0_r8, 1.0_r8 ] / sqrt(3.0_r8)
     P%rho    = 0.5_r8/sqrt(3.0_r8)
-    tmp = cube%split (P)
+    call cube%split (P,tmp)
     success = isZero (tmp(1)%volume ()-47.0_r8/48.0_r8) .and. isZero (tmp(2)%volume ()-1.0_r8/48.0_r8)
     write(*,*) 'off-center xyz-angle cut?        ',success
 
     ! split the pyramid in the x direction
     P%normal = -[ 1.0_r8, 0.0_r8, 0.0_r8 ]
     P%rho    = -0.8_r8
-    tmp = pyramid3%split (P)
+    call pyramid3%split (P,tmp)
     success = isZero (tmp(1)%volume ()-0.992_r8/6.0_r8) .and. isZero (tmp(2)%volume ()-4e-3_r8/3.0_r8)
     write(*,*) 'pyramid3 cut?                    ',success
 
     ! split the cutcube
     P%normal = -[ 1.0_r8, 0.0_r8, 0.0_r8 ]
     P%rho    = -0.8_r8
-    tmp = cutcube%split (P)
+    call cutcube%split (P,tmp)
     tmpr1 = 1.0_r8-0.9_r8**3/6.0_r8
     tmpr2 = 0.2_r8 - 0.1_r8**3/6.0_r8
     success = isZero (tmp(1)%volume ()-(tmpr1-tmpr2)) .and. isZero (tmp(2)%volume ()-tmpr2)
@@ -277,6 +289,14 @@ contains
     
   end subroutine init_polyhedron
 
+  subroutine init_polyhedron_null (this)
+    class(polyhedron),  intent(out) :: this
+    this%nVerts = 0
+    this%nEdges = 0
+    this%nFaces = 0
+    this%vol = 0.0_r8
+  end subroutine init_polyhedron_null
+
   subroutine init_polyhedron_copy (this,poly)
     class(polyhedron), intent(out) :: this
     class(polyhedron), intent(in)  :: poly
@@ -287,14 +307,9 @@ contains
     this%vol    = poly%vol
 
     if (allocated(this%x))           deallocate(this%x)
-    if (allocated(this%face_vid))    deallocate(this%face_vid)
     if (allocated(this%edge_vid))    deallocate(this%edge_vid)
+    if (allocated(this%face_vid))    deallocate(this%face_vid)
     if (allocated(this%face_normal)) deallocate(this%face_normal)
-
-    allocate( this%x(3,this%nVerts), & !this%face(this%nFaces), &
-         this%face_vid(size(poly%face_vid,dim=1),this%nFaces),&
-         this%edge_vid(size(poly%edge_vid,dim=1),this%nEdges),&
-         this%face_normal(3,this%nFaces) )
 
     this%x = poly%x
     this%edge_vid = poly%edge_vid
@@ -303,7 +318,6 @@ contains
 
   end subroutine init_polyhedron_copy
 
-  !
   ! This function calculates the volume of a polehedron following the
   ! algorithm presented by [1]. It calculates the sum of the surface
   ! integral of x over all faces, which is equal to the volume by the
@@ -381,6 +395,8 @@ contains
   ! points where the plane intersects the polyhedron edges
   !
   type(polygon) function intersection_verts (this,P,v_assoc_pe)
+
+    use consts, only: ndim
     use plane_type
     use array_utils, only: reverse,first_true_loc,isZero
 
@@ -388,9 +404,9 @@ contains
     class(plane),      intent(in)  :: P
     integer, optional, intent(out) :: v_assoc_pe(:)
 
-    logical       :: pteq(this%nEdges)
-    integer       :: e,Nintersections
-    real(r8)      :: x(3,this%nEdges),intx(3)
+    logical  :: pteq(this%nEdges)
+    integer  :: e,Nintersections
+    real(r8) :: x(ndim,this%nEdges),intx(ndim)
 
     if (present(v_assoc_pe)) v_assoc_pe = 0
 
@@ -467,19 +483,21 @@ contains
   ! return two polyhedrons produced by dividing a given polyhedron with a plane
   ! the first element returned is in front of the plane
   ! the second element returned is behind the plane
-  function split (this,P)
+  subroutine split (this,P,split_poly)
 
     use consts, only: alpha
     use plane_type
     
     class(polyhedron), intent(in) :: this
     class(plane),      intent(in) :: P
-    type(polyhedron)              :: split(2)
+    type(polyhedron), intent(out) :: split_poly(:)
 
     integer       :: v, v_assoc_pe(this%nEdges),side(this%nVerts), ierr
     type(polygon) :: intpoly
     real(r8)      :: dist, tmp1, tmp2
     logical       :: failed
+
+    ASSERT(size(split_poly)==2)
     
     ! check which side of the plane each vertex lies
     ! vertices within distance alpha of the plane are considered to lie on it
@@ -492,22 +510,24 @@ contains
     end do
 
     if (all(side>=0)) then
-      split(1) = this
+      split_poly(1) = this
+      call split_poly(2)%init ()
     else if (all(side<=0)) then
-      split(2) = this
+      split_poly(2) = this
+      call split_poly(1)%init ()
     else
       intpoly = this%intersection_verts (P,v_assoc_pe)
 
-      split(1) = this%polyhedron_on_side_of_plane (P,  1, side, intpoly, v_assoc_pe, ierr)
-      split(2) = this%polyhedron_on_side_of_plane (P, -1, side, intpoly, v_assoc_pe, ierr)
+      split_poly(1) = this%polyhedron_on_side_of_plane (P,  1, side, intpoly, v_assoc_pe, ierr)
+      split_poly(2) = this%polyhedron_on_side_of_plane (P, -1, side, intpoly, v_assoc_pe, ierr)
     end if
 
     ! if any of the polyhedrons have a face with less than 3 vertices, throw an error
     failed = .false.
     do v = 1,2
-      if (allocated(split(v)%face_vid)) then
-        if (any(count(split(v)%face_vid /= 0, dim=1) < 3)) then
-          call split(v)%print_data (normalized=.true.)
+      if (allocated(split_poly(v)%face_vid)) then
+        if (any(count(split_poly(v)%face_vid /= 0, dim=1) < 3)) then
+          call split_poly(v)%print_data (normalized=.true.)
           failed = .true.
         end if
       end if
@@ -516,18 +536,18 @@ contains
 
     ! if either of the volumes are less than zero, throw an error
     ! TODO: this is a more expensive check. might be worth skipping when sufficiently confident.
-    tmp1 = split(1)%volume()
-    tmp2 = split(2)%volume()
+    tmp1 = split_poly(1)%volume()
+    tmp2 = split_poly(2)%volume()
     if (tmp1 < 0.0_r8 .or. tmp2 < 0.0_r8) then
       write(*,*)
       write(*,*) 'parent:'
       call this%print_data ()
 
       write(*,*) 'child1:'
-      call split(1)%print_data ()
+      call split_poly(1)%print_data ()
 
       write(*,*) 'child2:'
-      call split(2)%print_data ()
+      call split_poly(2)%print_data ()
 
       write(*,*) 'other data:'
       write(*,'(9i3)') side
@@ -543,7 +563,7 @@ contains
       call LS_fatal ('polyhedron split failed: invalid volume')
     end if
 
-  end function split
+  end subroutine split
 
   ! return the volume behind (opposite normal) a plane and inside the polyhedron
   real(r8) function volume_behind_plane (this,P,ierr)
@@ -660,6 +680,8 @@ contains
     !       but I'm not sure if there is a limit to how many nodes the entirely new face can have.
     !       For cubes the number is 2.
     real(r8)      :: x(3,this%nVerts+intpoly%nVerts)
+
+    call polyhedron_on_side_of_plane%init ()
 
     invalid_side = -valid_side
 

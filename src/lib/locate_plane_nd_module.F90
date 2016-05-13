@@ -8,6 +8,8 @@
 !! Last revised 4 Nov 2012.
 !!
 
+#include "f90_assert.fpp"
+
 module locate_plane_nd_module
 
   use kinds, only: r8
@@ -148,7 +150,8 @@ contains
   ! Alternatively, should we return the two polyhedra? If they are already
   ! calculated, it would save resplitting the input polyhedron.
   type(plane) function locate_plane_nd (poly, norm, vol, cell_volume)
-    use consts, only: cutvof
+
+    use consts, only: cutvof,ndim
     use polyhedron_type
     use plane_type
     
@@ -157,7 +160,9 @@ contains
     
     real(r8)              :: rho_min,rho_mid,rho_max
     type(vof_error_func)  :: vof_error
-    
+
+    ASSERT(size(norm)==ndim)
+
     ! initialize error function
     call vof_error%init (norm, poly, vol, cell_volume)
 
