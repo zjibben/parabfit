@@ -823,7 +823,7 @@ contains
     class(vof_solver), intent(inout) :: this
 
     real(r8)               :: int_norm(3,this%nmat,this%mesh%ncell), vofint
-    integer                :: i,ni,locate_plane_niters
+    integer                :: i,ni,locate_plane_niters, ierr
     type(locate_plane_hex) :: plane_cell
     type(multimat_cell)    :: ndcell
     type(polyhedron)       :: poly
@@ -844,14 +844,16 @@ contains
             call plane_cell%init (int_norm(:,ni,i), vofint, this%mesh%volume(i), &
                 this%mesh%x(:,this%mesh%cnode(:,i)))
             call plane_cell%locate_plane (locate_plane_niters)
-            call poly%init (plane_cell%node, hex_f, hex_e)
+            call poly%init (ierr, plane_cell%node, hex_f, hex_e)
+            if (ierr /= 0) call LS_fatal ('plane reconstruction dump failed')
             call this%intrec(ni)%append (poly%intersection_verts (plane_cell%P))
           end if
         end do
       case (NESTED_DISSECTION)
         ! send cell data to the multimat_cell type
-        call ndcell%init (this%mesh%x(:,this%mesh%cnode(:,i)), hex_f, hex_e, this%mesh%volume(i), &
-            this%gmesh%outnorm(:,:,i))
+        call ndcell%init (ierr, this%mesh%x(:,this%mesh%cnode(:,i)), hex_f, hex_e, &
+            this%mesh%volume(i), this%gmesh%outnorm(:,:,i))
+        if (ierr /= 0) call LS_fatal ('plane reconstruction dump failed')
         
         ! partition the cell based on vofs and norms
         call ndcell%partition (this%vof(:,i), int_norm(:,:,i))
@@ -887,6 +889,7 @@ contains
     allocate(vof_slv%matl_id(vof_slv%nmat), vof_slv%vof(vof_slv%nmat,mesh%ncell), &
         vof_slv%intrec(vof_slv%nmat-1))
     vof_slv%matl_id = [1,2,3]
+    vof_slv%advect_method = ONION_SKIN
     vof_slv%mesh  => mesh
     vof_slv%gmesh => gmesh
 
@@ -952,6 +955,7 @@ contains
     allocate(vof_slv%matl_id(vof_slv%nmat), vof_slv%vof(vof_slv%nmat,mesh%ncell), &
         vof_slv%intrec(vof_slv%nmat))
     vof_slv%matl_id = [1,2,3]
+    vof_slv%advect_method = ONION_SKIN
     vof_slv%mesh  => mesh
     vof_slv%gmesh => gmesh
 

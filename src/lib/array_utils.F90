@@ -380,7 +380,9 @@ contains
   pure function normalize (v)
     real(r8), intent(in) :: v(:)
     real(r8)             :: normalize(size(v))
-    normalize = v / magnitude(v)
+    real(r8) :: mag
+    mag = magnitude(v)
+    normalize = v / merge(mag, huge(1.0_r8), mag > 0.0_r8)
   end function normalize
 
   pure subroutine normalizeIfNonzero (v)

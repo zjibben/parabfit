@@ -220,7 +220,7 @@ contains
 
     real(r8)                       :: Vofint, vp, dvol
     real(r8)                       :: flux_vol_sum(nfc)
-    integer                        :: ni,f,locate_plane_niters,nlast, nint
+    integer                        :: ni,f,locate_plane_niters,nlast, nint, ierr
     logical                        :: is_mixed_donor_cell
     type(locate_plane_hex)         :: plane_cell
     type(polyhedron)               :: poly
@@ -247,7 +247,8 @@ contains
         call plane_cell%init (int_norm(:,ni), vofint, cell%volume, cell%node)
         call plane_cell%locate_plane (locate_plane_niters)
         if (dump_intrec) then
-          call poly%init (plane_cell%node, hex_f, hex_e)
+          call poly%init (ierr, plane_cell%node, hex_f, hex_e)
+          if (ierr /= 0) call LS_fatal ('failed plane reconstruction dump')
           call intrec(ni)%append (poly%intersection_verts (plane_cell%P))
         end if
       end if

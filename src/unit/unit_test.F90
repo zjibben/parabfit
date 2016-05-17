@@ -4,6 +4,8 @@
 
 program unit_test
 
+  use,intrinsic :: iso_fortran_env, only: output_unit
+  use logging_services
   use volume_track_module,    only: volume_track_unit_test_suite
   use volume_track_nd_module, only: volume_track_nd_unit_test
   use polygon_type,        only: polygon_unit_test
@@ -14,6 +16,8 @@ program unit_test
   use vof_solver_type,        only: parallel_interfaces_test, intersecting_interfaces_test
   use multimat_cell_type,     only: multimat_cell_unit_test_suite
   implicit none
+
+  call LS_initialize ([output_unit]) !, LS_VERB_NOISY)
 
   ! locate plane
   call locate_plane_unit_test_suite ()

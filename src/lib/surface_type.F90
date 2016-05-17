@@ -45,10 +45,10 @@ contains
     type(polyhedron) :: cube
     type(plane)      :: P
     type(polygon)    :: element
-    integer          :: f,nV
+    integer          :: f,nV, ierr
 
     ! generate a cube and use its faces as the definition of a surface, then print to file
-    call cube%init (cube_v, hex_f, hex_e)
+    call cube%init (ierr, cube_v, hex_f, hex_e)
 
     do f = 1,cube%nfaces
       nV = count(cube%face_vid(:,f) /= 0) ! number of vertices on this face

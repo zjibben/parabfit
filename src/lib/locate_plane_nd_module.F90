@@ -52,10 +52,11 @@ contains
     type(polyhedron) :: cube
     type(plane)      :: P
     real(r8)         :: vol
+    integer          :: ierr
 
     ! just working with a cube for now
     ! need either more later, or tests on nested polyhedrons
-    call cube%init (cube_v, hex_f, hex_e)
+    call cube%init (ierr, cube_v, hex_f, hex_e)
 
     write(*,*)
     write(*,*) 'LOCATE PLANE NESTED DISSECTION'
@@ -172,7 +173,8 @@ contains
     
     ! start Brent's method
     locate_plane_nd%normal = norm
-    locate_plane_nd%rho = brent (vof_error, rho_min, rho_mid, rho_max, cutvof/2.0_r8, 100)
+    locate_plane_nd%rho = brent (vof_error, rho_min, rho_mid, rho_max, cutvof/2.0_r8, 30)
+    ! note ~30 iterations seem to be necessary to pass current unit tests
 
   end function locate_plane_nd
 

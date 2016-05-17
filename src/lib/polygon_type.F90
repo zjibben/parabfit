@@ -50,20 +50,26 @@ contains
     write(*,*) 'POLYGON'
     write(*,*) '===================================================='
 
+    ! call pg%init (reshape([&
+    !     5.9375E-01_r8, 6.1179385469195579627665893E-01_r8, 0.0_r8,&
+    !     5.9375E-01_r8, 6.1179385471097824655828390E-01_r8, 0.0_r8,&
+    !     6.2500E-01_r8, 6.1455516841502266789376563E-01_r8, 0.0_r8,&
+    !     6.2500E-01_r8, 6.1455516843936131010650570E-01_r8, 0.0_r8],&
+    !     [3,4]))
+
+    ! verts = xrange(1,4)
+    ! call pg%order (verts)
+
+    ! call pg%print_data ()
+    ! write(*,*) verts
+
     call pg%init (reshape([&
-        5.9375E-01_r8, 6.1179385469195579627665893E-01_r8, 0.0_r8,&
-        5.9375E-01_r8, 6.1179385471097824655828390E-01_r8, 0.0_r8,&
-        6.2500E-01_r8, 6.1455516841502266789376563E-01_r8, 0.0_r8,&
-        6.2500E-01_r8, 6.1455516843936131010650570E-01_r8, 0.0_r8],&
-        [3,4]))
-
-    verts = xrange(1,4)
-    call pg%order (verts)
-
-    call pg%print_data ()
-    write(*,*) verts
-
-    call LS_fatal ("temporarily killed testing")
+        3.5830184068639514E-01_r8, 3.750023012842075842E-01_r8, 2.65625000000000000E-01_r8,&
+        3.5830184068639514E-01_r8, 3.750000000000000000E-01_r8, 2.65537669284851618E-01_r8,&
+        3.5830184068639514E-01_r8, 3.750023012853020421E-01_r8, 2.65625000000000000E-01_r8], [3,3]))
+    call pg%order ()
+    
+    !call LS_fatal ("temporarily killed testing")
 
     write(*,*) '===================================================='
     write(*,*)
@@ -91,7 +97,7 @@ contains
 
     use consts,        only: ndim
     use cell_geometry, only: cross_product
-    use array_utils,   only: isZero,normalize
+    use array_utils,   only: isZero,normalize, magnitude
 
     class(polygon),     intent(inout) :: this
     real(r8), optional, intent(inout) :: norm(:) ! return the newly calculated norm if it wasn't known
@@ -195,9 +201,10 @@ contains
     integer  :: i,ind(size(this%x,dim=2))
     
     ! calculate the location of the centroid, and the vertex coordinates with respect to the centroid
+    ! normalize to avoid floating point cutoffs, since the polygon may be very tiny
     xc = this%centroid ()
     do i = 1,this%nVerts
-      xl(:,i) = this%x(:,i) - xc(:)
+      xl(:,i) = normalize(this%x(:,i) - xc(:))
     end do
     
     ! the projection coordinate directions
@@ -206,6 +213,14 @@ contains
     if (.not.all(shape(q) >= [3,2])) then
       write(*,*)
       write(*,*) shape(q)
+      do i = 1,size(q, dim=2)
+        write(*,'(a,i3,a,3es20.10)') 'q  ',i,': ',q(:,i)
+      end do
+      write(*,*)
+      do i = 1,this%nVerts
+        write(*,'(a,i3,a,3es20.10)') 'xl ',i,': ',xl(:,i)
+      end do
+      write(*,*)
       call this%print_data ()
       call LS_fatal ("polygon ordering failed: unable to calculate polygon-plane coordinates")
     end if
@@ -253,8 +268,7 @@ contains
       write(*,*)
     end if
 
-    write(*,'(a,3f35.25)') 'norm ',this%norm
-    write(*,*)
+    write(*,'(a,3es35.25)') 'norm ',this%norm
 
   end subroutine print_data
 

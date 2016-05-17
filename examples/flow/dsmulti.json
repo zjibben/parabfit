@@ -5,8 +5,8 @@
 	"corner-min": [0.0, 0.0, 0.0],
 	"corner-max": [1.0, 1.0, 1.0],
 	//"intervals" : [ 16,  16,  16]
-	"intervals" : [ 32,  32,  32]
-	//"intervals" : [ 64,  64,  64]
+	//"intervals" : [ 32,  32,  32]
+	"intervals" : [ 64,  64,  64]
     },
     
     "sim-control": {

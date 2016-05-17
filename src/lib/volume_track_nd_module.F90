@@ -163,7 +163,8 @@ contains
     integer :: m, ierr
     
     ! send cell data to the multimat_cell type
-    call cell%init (x, hex_f, hex_e, vol, outnorm)
+    call cell%init (ierr, x, hex_f, hex_e, vol, outnorm)
+    if (ierr /= 0) call LS_fatal ('cell_outward_volflux failed: could not initialize cell')
 
     ! partition the cell based on vofs and norms
     call cell%partition (vof, int_norm)

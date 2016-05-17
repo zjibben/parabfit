@@ -26,6 +26,7 @@ module plane_type
     procedure :: signed_distance
     procedure :: intersects
     procedure :: intersection_point
+    procedure :: print_data
   end type plane
 
 contains
@@ -68,6 +69,7 @@ contains
   ! return the point where the line between x1 & x2 intersect with the given plane
   function intersection_point (this,x)
 
+    use consts, only: alpha
     use array_utils, only: isZero
 
     class(plane), intent(in) :: this
@@ -83,9 +85,9 @@ contains
     d1 = this%signed_distance(x(:,1))
     d2 = this%signed_distance(x(:,2))
     
-    if (isZero (d1)) then
+    if (isZero (d1,alpha)) then
       intersection_point = x(:,1)
-    else if (isZero (d2)) then
+    else if (isZero (d2,alpha)) then
       intersection_point = x(:,2)
     else
       dx = x(:,2)-x(:,1)
@@ -93,5 +95,10 @@ contains
     end if
 
   end function intersection_point
+
+  subroutine print_data (this)
+    class(plane), intent(in) :: this
+    write(*,'(a,4es30.20)') 'plane n, rho: ',this%normal, this%rho
+  end subroutine print_data
 
 end module plane_type

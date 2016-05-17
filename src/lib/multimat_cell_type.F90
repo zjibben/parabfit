@@ -41,11 +41,12 @@ contains
 
     type(multimat_cell) :: cube
     logical             :: success
+    integer             :: ierr
     real(r8)            :: posXflow(6), posZflow(6), posxyzn(3), posxyn(3), posxn(3), &
         posyn(3), tmp
     real(r8), allocatable :: vof(:), intnorm(:,:)
 
-    call cube%init (cube_v, hex_f, hex_e)
+    call cube%init (ierr, cube_v, hex_f, hex_e)
     
     ! define face velocities [+y, -y, -x, +x, -z, +z]
     posXflow = [ 0.0_r8, 0.0_r8, -1.0_r8, 1.0_r8,  0.0_r8, 0.0_r8 ]
@@ -157,7 +158,7 @@ contains
          0.0_r8,   0.0_r8], [2,6]) )
     write(*,*) 'passed cube 1/8th filled in xy, fluxed in +x?   ', success
 
-    ! cube 1/8th filled along xy diagonal
+    ! cube 1/8th filled along xyz diagonal
     vof = [0.125_r8, 0.875_r8]
     intnorm(:,1) = posxyzn; intnorm(:,2) = -intnorm(:,1)
     call cube%partition (vof, intnorm)
@@ -173,7 +174,7 @@ contains
     write(*,*) 'passed cube 1/8th filled in xyz, fluxed in +x?  ', success
 
     ! cube with 3-matls, one very small
-    call cube%init (reshape([&
+    call cube%init (ierr, reshape([&
         2.8125E-01_r8,    5.6250E-01_r8,    2.8125E-01_r8,&
         3.1250E-01_r8,    5.6250E-01_r8,    2.8125E-01_r8,&
         3.1250E-01_r8,    5.9375E-01_r8,    2.8125E-01_r8,&
@@ -227,6 +228,12 @@ contains
       call LS_fatal ("outward volflux failed")
     end if
     fluxing_unit_test = all(isZero (outward_volflux-volflux_ex,cutvof))
+
+    ! if (.not.fluxing_unit_test) then
+    !   write(*,*) 'failed: '
+    !   write(*,'(6es20.10)') outward_volflux
+    !   write(*,'(6es20.10)') volflux_ex
+    ! end if
     
   end function fluxing_unit_test
 
@@ -251,6 +258,7 @@ contains
         write(*,*) 'partition test failed on material: ',m
         write(*,'(a,4es20.10)') 'vof, vof_result, error: ',vof(m), vof_result, abs(vof(m)-vof_result)
         write(*,'(a,4es20.10)') 'remaining vof: ',1.0_r8 - sum(vof(:m))
+        write(*,*) 'failure may simply be due to insufficient number of iterations'
         partition_unit_test = .false.
       end if
     end do
