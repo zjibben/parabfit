@@ -48,6 +48,8 @@ contains
 
   ! check if the plane lies between two points in space
   logical function intersects (this,x)
+
+    use consts,      only: alpha
     use array_utils, only: isZero
 
     class(plane), intent(in) :: this
@@ -62,8 +64,7 @@ contains
     d2 = this%signed_distance(x(:,2))
     
     ! if the signed distances have opposite signs, the two points are on opposite sides of the plane
-    intersects = sign(1.0_r8,d1)/=sign(1.0_r8,d2) .or. isZero (d1) .or. isZero (d2)
-    ! what does sign return for sign(1.0,0.0)?
+    intersects = sign(1.0_r8,d1)/=sign(1.0_r8,d2) .or. isZero (d1,alpha) .or. isZero (d2,alpha)
   end function intersects
 
   ! return the point where the line between x1 & x2 intersect with the given plane

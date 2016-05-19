@@ -42,6 +42,9 @@ module polyhedron_type
     procedure          :: print_data
     !procedure, private :: edge_containing_vertices
     procedure, private :: polyhedron_on_side_of_plane
+    procedure, private :: update_face_normals
+    procedure, private :: is_valid
+    procedure, private :: remove_dangling_vertices
     !final :: polyhedron_delete
   end type polyhedron
 
@@ -157,23 +160,101 @@ contains
     write(*,*) 'SHAPE VOLUMES'
     call cube%init (ierr, cube_v, hex_f, hex_e)
     volume = cube%volume ()
-    write(*,*) 'cube volume?                     ', isZero (volume-1.0_r8)
+    success = isZero (volume-1.0_r8)
+    write(*,*) 'cube volume?                     ', success
+    if (.not.success) write(*,*) 'volume: ',volume
 
     ! calculate the volume of a pyramid (1/6)
     call pyramid%init (ierr, pyr_v, pyr_f, pyr_e)
     volume = pyramid%volume ()
-    write(*,*) 'pyramid volume?                  ', isZero (volume-1.0_r8/6.0_r8)
-    write(*,*) volume
-    
+    success = isZero (volume-1.0_r8/6.0_r8)
+    write(*,*) 'pyramid volume?                  ', success
+    if (.not.success) write(*,*) 'volume: ',volume
+
+    ! calculate the volume of a pyramid
+    call pyramid%init (ierr, reshape([&
+        3.7500000000000000000000000e-01_r8, 3.5937500000000000000000000e-01_r8, 2.0312500000000000000000000e-01_r8,&
+        3.7500000000000000000000000e-01_r8, 3.7187838412018936473657504e-01_r8, 2.0312500000000000000000000e-01_r8,&
+        3.7500000000000000000000000e-01_r8, 3.5937500000000000000000000e-01_r8, 2.0205613718049295068901472e-01_r8,&
+        3.8156580412702972848748573e-01_r8, 3.5937500000000000000000000e-01_r8, 2.0312500000000000000000000e-01_r8], [3,4]), reshape([&
+        4, 1, 3,&
+        3, 1, 2,&
+        2, 1, 4,&
+        4, 3, 2], [3,4]), reshape([&
+        1, 3,&
+        1, 4,&
+        1, 2,&
+        2, 3,&
+        3, 4,&
+        4, 2], [2,6]))
+    volume = pyramid%volume ()
+    success = volume > 0.0_r8
+    write(*,*) 'pyramid2 volume?                 ', success
+    if (.not.success) write(*,*) 'volume: ',volume
+
     ! calculate the volume of a pyramid (1/6)
     call pyramid3%init (ierr, pyr3_v, pyr3_f, pyr3_e)
     volume = pyramid3%volume ()
     write(*,*) 'pyramid3 volume?                 ', isZero (volume-1.0_r8/6.0_r8)
-
+    
     ! calculate the volume of a "cutcube" (1-0.9**3/6)
     call cutcube%init (ierr, cutcube_v, cutcube_f, cutcube_e)
     volume = cutcube%volume ()
     write(*,*) 'cutcube volume?                  ', isZero (volume-(1.0_r8-0.9_r8**3/6.0_r8))
+
+    ! calculate the volume of a "cutcube"
+    call cutcube%init (ierr, reshape([&
+        7.03125E-01_r8,    2.50000E-01_r8,    6.3092397329198735000943543E-01_r8,&
+        6.87500E-01_r8,    2.65625E-01_r8,    6.3835968598238201909822465E-01_r8,&
+        7.03125E-01_r8,    2.65625E-01_r8,    6.3231363915688509891310787E-01_r8,&
+        7.03125E-01_r8,    2.65625E-01_r8,    6.3231362814843028452571616E-01_r8,&
+        6.87500E-01_r8,    2.65625E-01_r8,    6.3835968087108196922230263E-01_r8,&
+        6.87500E-01_r8,    2.50000E-01_r8,    6.3697002011748427019455221E-01_r8,&
+        7.03125E-01_r8,    2.50000E-01_r8,    6.3092396677678574956615876E-01_r8], [3,7]), reshape([&
+        5,   2,   3,   4,&
+        7,   1,   6,   0,&
+        6,   2,   5,   0,&
+        4,   3,   1,   7,&
+        3,   2,   6,   1,&
+        7,   6,   5,   4], [4,6]), reshape([&
+        1,   7,&
+        3,   4,&
+        2,   5,&
+        1,   6,&
+        2,   6,&
+        2,   3,&
+        3,   1,&
+        4,   5,&
+        5,   6,&
+        6,   7,&
+        7,   4], [2,11]))
+    volume = cutcube%volume ()
+    write(*,*) 'cutcube2 volume?                 ', volume > 0.0_r8
+
+    ! calculate the volume of a "cutcube"
+    call cutcube%init (ierr, reshape([&
+        6.2500000000000000000000000E-01_r8,    4.9205247210652008904574473E-01_r8,    2.6562500000000000000000000E-01_r8,&
+        6.2500000000000000000000000E-01_r8,    4.8437500000000000000000000E-01_r8,    2.5576988559870150741204498E-01_r8,&
+        6.2500000000000000000000000E-01_r8,    4.9205228021985458752851628E-01_r8,    2.6562500000000000000000000E-01_r8,&
+        6.2500000000000000000000000E-01_r8,    4.8437500000000000000000000E-01_r8,    2.5577007468008733370723462E-01_r8,&
+        6.0962392793390562939492838E-01_r8,    4.8437500000000000000000000E-01_r8,    2.6523569565858362562238426E-01_r8,&
+        6.0937500000000000000000000E-01_r8,    4.8455889840500104837062167E-01_r8,    2.6562500000000000000000000E-01_r8], [3,6]), reshape([&
+        5,   2,   4,   0,&
+        4,   2,   1,   3,&
+        3,   1,   6,   0,&
+        6,   1,   2,   5,&
+        6,   5,   4,   3], [4,5]), reshape([&
+        2,   4,&
+        1,   3,&
+        1,   6,&
+        2,   5,&
+        2,   1,&
+        3,   4,&
+        4,   5,&
+        5,   6,&
+        6,   3], [2,9]))
+    volume = cutcube%volume ()
+    write(*,*) 'cutcube3 volume?                 ', volume > 0.0_r8
     
     ! create a plane, and return coordinates it intersects with polyhedron edges
     write(*,*) 'SHAPE SPLITTING'
@@ -189,49 +270,49 @@ contains
 
     ! split the cube vertically down the center
     !write(*,*) 'cube split volumes'
-    call cube%split (P,tmp)
+    call cube%split (P,tmp,ierr)
     success = isZero (tmp(1)%volume ()-0.5_r8) .and. isZero (tmp(2)%volume ()-0.5_r8)
     write(*,*) 'vertical cut?                    ',success
 
     ! split the cube at an angle
     P%normal = [ 1.0_r8, 1.0_r8, 0.0_r8 ] / sqrt(2.0_r8)
     P%rho    = 1.5_r8 / sqrt(2.0_r8)
-    call cube%split (P,tmp)
+    call cube%split (P,tmp,ierr)
     success = isZero (tmp(1)%volume ()-0.125_r8) .and. isZero (tmp(2)%volume ()-0.875_r8)
     write(*,*) 'xy-angle off-center cut?         ',success
 
     ! split the cube at an angle through the center
     P%normal = [ 1.0_r8, 1.0_r8, 0.0_r8 ] / sqrt(2.0_r8)
     P%rho    = 1.0_r8 / sqrt(2.0_r8)
-    call cube%split (P,tmp)
+    call cube%split (P,tmp,ierr)
     success = isZero (tmp(1)%volume ()-0.5_r8) .and. isZero (tmp(2)%volume ()-0.5_r8)
     write(*,*) 'center xy-angle cut?             ',success
 
     ! split the cube at an angle through the center
     P%normal = [ 1.0_r8, 1.0_r8, 1.0_r8 ] / sqrt(3.0_r8)
     P%rho    = 1.5_r8 / sqrt(3.0_r8)
-    call cube%split (P,tmp)
+    call cube%split (P,tmp,ierr)
     success = isZero (tmp(1)%volume ()-0.5_r8) .and. isZero (tmp(2)%volume ()-0.5_r8)
     write(*,*) 'center xyz-angle cut?            ',success
 
     ! split the cube at an angle through an offset
     P%normal = [ 1.0_r8, 1.0_r8, 1.0_r8 ] / sqrt(3.0_r8)
     P%rho    = 0.5_r8/sqrt(3.0_r8)
-    call cube%split (P,tmp)
+    call cube%split (P,tmp,ierr)
     success = isZero (tmp(1)%volume ()-47.0_r8/48.0_r8) .and. isZero (tmp(2)%volume ()-1.0_r8/48.0_r8)
     write(*,*) 'off-center xyz-angle cut?        ',success
 
     ! split the pyramid in the x direction
     P%normal = -[ 1.0_r8, 0.0_r8, 0.0_r8 ]
     P%rho    = -0.8_r8
-    call pyramid3%split (P,tmp)
+    call pyramid3%split (P,tmp,ierr)
     success = isZero (tmp(1)%volume ()-0.992_r8/6.0_r8) .and. isZero (tmp(2)%volume ()-4e-3_r8/3.0_r8)
     write(*,*) 'pyramid3 cut?                    ',success
-
+    
     ! split the cutcube
     P%normal = -[ 1.0_r8, 0.0_r8, 0.0_r8 ]
     P%rho    = -0.8_r8
-    call cutcube%split (P,tmp)
+    call cutcube%split (P,tmp,ierr)
     tmpr1 = 1.0_r8-0.9_r8**3/6.0_r8
     tmpr2 = 0.2_r8 - 0.1_r8**3/6.0_r8
     success = isZero (tmp(1)%volume ()-(tmpr1-tmpr2)) .and. isZero (tmp(2)%volume ()-tmpr2)
@@ -265,7 +346,7 @@ contains
         5,   6,&
         6,   7,&
         7,   4], [2,11]))
-    call cutcube%split (P,tmp)
+    call cutcube%split (P,tmp,ierr)
     tmpr1 = 0.0_r8
     tmpr2 = 0.0_r8
     success = ierr==0
@@ -308,7 +389,7 @@ contains
         8,    9,&
         9,   10,&
         10,   6], [2,15]))
-    call cutcube%split (P,tmp)
+    call cutcube%split (P,tmp,ierr)
     tmpr1 = 0.0_r8
     tmpr2 = 0.0_r8
     success = ierr==0
@@ -345,12 +426,67 @@ contains
         6,   7,&
         7,   8,&
         8,   4], [2,12]))
-    call cutcube%split (P,tmp)
+    call cutcube%split (P,tmp,ierr)
+    tmpr1 = tmp(1)%volume()
+    tmpr2 = tmp(2)%volume()
+    success = ierr==0
+    write(*,*) 'cutcube4 cut?                     ',success,tmpr1,tmpr2
+
+    ! ! split the cutcube5
+    ! P%normal = [3.55921787180000004369E-01_r8, -9.34506859900000041996E-01_r8, 4.07556263139999958023E-03_r8]
+    ! P%rho    = -2.42551881899006921417E-01_r8
+    ! call cutcube%init (ierr, reshape([&
+    !     2.96875E-01_r8,    3.75000E-01_r8,    5.31250E-01_r8,&
+    !     3.12500E-01_r8,    3.75000E-01_r8,    5.31250E-01_r8,&
+    !     3.12500E-01_r8,    3.90625E-01_r8,    5.31250E-01_r8,&
+    !     2.96875E-01_r8,    3.90625E-01_r8,    5.31250E-01_r8,&
+    !     2.96875E-01_r8,    3.75000E-01_r8,    5.46875E-01_r8,&
+    !     3.12500E-01_r8,    3.75000E-01_r8,    5.46875E-01_r8,&
+    !     3.12500E-01_r8,    3.90625E-01_r8,    5.46875E-01_r8,&
+    !     2.96875E-01_r8,    3.90625E-01_r8,    5.46875E-01_r8], [3,8]), hex_f, hex_e)
+    ! call cutcube%split(P,tmp,ierr)
+    ! success = ierr==0
+    ! write(*,*) 'cutcube5 cut?                     ',success,tmp(1)%volume(),tmp(2)%volume()
+    ! call tmp(1)%print_data()
+
+    ! split the cutcube5
+    P%normal = [-3.559249373021E-01_r8, 9.345056485104E-01_r8, -4.07822371163224E-03_r8]
+    P%rho    = 2.42549038109635933802E-01_r8
+    call cutcube%init (ierr, reshape([&
+        3.1250000000000000000000000E-01_r8,    3.7500000000000000000000000E-01_r8,    5.3125000000000000000000000E-01_r8,&
+        2.9687500000000000000000000E-01_r8,    3.7500000000000000000000000E-01_r8,    5.4687500000000000000000000E-01_r8,&
+        3.1250000000000000000000000E-01_r8,    3.7500000000000000000000000E-01_r8,    5.4687500000000000000000000E-01_r8,&
+        2.9687500000000000000000000E-01_r8,    3.7500525766029885188501680E-01_r8,    5.4687500000000000000000000E-01_r8,&
+        2.9687500000000000000000000E-01_r8,    3.7500000000000000000000000E-01_r8,    5.4566944384477711338377048E-01_r8,&
+        2.9704011309117928085754556E-01_r8,    3.7500000000000000000000000E-01_r8,    5.3125000000000000000000000E-01_r8,&
+        3.1250000000000000000000000E-01_r8,    3.8088814359134498532810653E-01_r8,    5.3125000000000000000000000E-01_r8,&
+        3.1250000000000000000000000E-01_r8,    3.8095628719611474011230712E-01_r8,    5.4687500000000000000000000E-01_r8], [3,8]), &
+        reshape([&
+        6,   1,   3,   2,   5,&
+        5,   2,   4,   0,   0,&
+        8,   3,   1,   7,   0,&
+        7,   1,   6,   0,   0,&
+        4,   2,   3,   8,   0,&
+        8,   7,   6,   5,   4], [5,6]), reshape([&
+        1,   6,&
+        1,   7,&
+        2,   5,&
+        1,   3,&
+        2,   3,&
+        3,   8,&
+        2,   4,&
+        4,   5,&
+        5,   6,&
+        6,   7,&
+        7,   8,&
+        8,   4], [2,12]))
+    tmpr1 = cutcube%volume()
+    call cutcube%split (P,tmp,ierr)
     tmpr1 = 0.0_r8
     tmpr2 = 0.0_r8
-    success = ierr==0
-    write(*,*) 'cutcube4 cut?                     ',success,tmp(1)%volume(),tmp(2)%volume()
-
+    success = ierr==0 .and. tmp(1)%volume() > 0.0_r8
+    write(*,*) 'cutcube5 cut?                     ',success !,tmp(1)%volume(),tmp(2)%volume()
+    
     write(*,*) '===================================================='
     write(*,*)
     
@@ -393,13 +529,15 @@ contains
       this%face_normal = face_normal
     else
       this%face_normal = 0.0_r8
+      call this%update_face_normals ()
     end if
 
-    if (any(count(this%face_vid /= 0, dim=1) < 3) .or. this%nVerts < 4) then
-      print *, 'tried to create invalid polyhedron!'
+    !call this%remove_dangling_vertices ()
+    ierr = this%is_valid()
+    if (ierr/=0) then
+      write(*,*) 'tried to create invalid polyhedron!'
       call this%print_data()
       write(*,*)
-      ierr = 1
     end if
     
     ! if the faces are of type polygon
@@ -413,8 +551,171 @@ contains
     
   end subroutine init_polyhedron
 
+  function is_valid (this) result(ierr)
+
+    class(polyhedron), intent(in) :: this
+    integer :: ierr
+
+    integer :: v
+
+    ierr = 0
+
+    if (this%nVerts < 4) ierr = 1 ! must have >= 4 vertices
+    if (this%nFaces < 3) ierr = 1 ! must have >= 3 faces
+    if (any(count(this%face_vid /= 0, dim=1) < 3)) ierr = 1 ! each face must have >= 3 vertices
+
+    ! ! no dangling vertices
+    ! ! every vertex must be connected to at least three other vertices
+    ! do v = 1,this%nVerts
+    !   if (count(this%edge_vid==v)<3) then
+    !     write(*,*) 'dangling vertex ',v
+    !     ierr = 1
+    !   end if
+    ! end do
+
+  end function is_valid
+
+  subroutine update_face_normals (this, force)
+
+    use array_utils,   only: normalize, isZero
+    use cell_geometry, only: cross_product
+
+    class(polyhedron), intent(inout) :: this
+    logical, intent(in), optional :: force
+
+    integer :: f,v,nV
+    logical :: forceh
+
+    forceh = merge(force, .false., present(force))
+
+    do f = 1,this%nFaces
+      if (all(isZero(this%face_normal(:,f))) .or. forceh) then
+        nV = count(this%face_vid(:,f)/=0)
+        v = 3
+        do while (all(isZero (this%face_normal(:,f))) .and. v<=nV)
+          this%face_normal(:,f) = normalize(cross_product (&
+              this%x(:,this%face_vid(2,f)) - this%x(:,this%face_vid(1,f)), &
+              this%x(:,this%face_vid(v,f)) - this%x(:,this%face_vid(1,f))))
+          v = v + 1
+        end do
+        if (v>nV .and. all(isZero(this%face_normal(:,f)))) then
+          call this%print_data ()
+          call LS_fatal ("could not calculate polyhedron face normal")
+        end if
+      end if
+    end do
+
+  end subroutine update_face_normals
+
+  subroutine remove_dangling_vertices (this)
+
+    class(polyhedron), intent(inout) :: this
+
+    integer :: v,vv
+
+    ! no dangling vertices
+    ! every vertex must be connected to at least three other vertices
+    ! vertices connected to only two other vertices may be removed, and
+    ! its connected vertices joined
+    ! WARNING: this assumes the dangling vertex is still attached to two other vertices,
+    !          and doesn't consider vertices with only one edge
+    v = 1
+    do while (v <= this%nVerts)
+      if (count(this%edge_vid==v)<3) then
+        ! delete this vertex
+        do vv = v+1,this%nVerts
+          this%x(:,vv-1) = this%x(:,vv)
+        end do
+        this%nVerts = this%nVerts - 1
+
+        ! delete the two edges it is connected to, and add a new one between those two vertices
+        call delete_edges_containing_vertex (this,v)
+
+        ! remove the vertex from the face it is connected to
+        call delete_faces_containing_vertex (this,v)
+      else
+        v = v+1
+      end if
+    end do
+
+  contains
+
+    subroutine delete_edges_containing_vertex (this,v)
+
+      class(polyhedron), intent(inout) :: this
+      integer, intent(in) :: v
+
+      integer :: e,ee,vn(2),j
+
+      e = 1; j=1
+      do while (e <= this%nEdges)
+        if (any(this%edge_vid(:,e)==v)) then
+          ! store the other vertex connected to this edge
+          vn(j) = this%edge_vid(1,e)
+          if (vn(j)==v) vn(j) = this%edge_vid(2,e)
+          j = j+1
+
+          ! delete edges containing this vertex
+          do ee = e+1,this%nEdges
+            this%edge_vid(:,ee-1) = this%edge_vid(:,ee)
+          end do
+          this%nEdges = this%nEdges - 1
+        else
+          e = e+1
+        end if
+      end do
+
+      ! add the vertex connecting [v1,v2]
+      this%nEdges = this%nEdges + 1
+      this%edge_vid(:,this%nEdges) = vn
+
+      ! update the edge structure
+      where (this%edge_vid>v) this%edge_vid = this%edge_vid - 1
+
+    end subroutine delete_edges_containing_vertex
+
+    subroutine delete_faces_containing_vertex (this,v)
+
+      use array_utils, only: first_true_loc
+
+      class(polyhedron), intent(inout) :: this
+      integer, intent(in) :: v
+
+      integer :: f,ff,fv,nV
+
+      f = 1
+      do while (f <= this%nFaces)
+        if (any(this%face_vid(:,f)==v)) then
+          if (count(this%face_vid(:,f)/=0)==3) then
+            ! if the face only has three vertices, delete the entire face
+            do ff = f+1,this%nFaces
+              this%face_vid(:,ff-1) = this%face_vid(:,ff)
+              this%face_normal(:,ff-1) = this%face_normal(:,ff)
+            end do
+            this%nFaces = this%nFaces - 1
+          else
+            nV = count(this%face_vid(:,f)/=0)
+            fv = first_true_loc (this%face_vid(:,f)==v)
+            do ff = fv+1,nV
+              this%face_vid(ff-1,f) = this%face_vid(ff,f)
+            end do
+            this%face_vid(nV,f) = 0
+            f = f+1
+          end if
+        else
+          f = f+1
+        end if
+      end do
+
+      ! update the face structure
+      where (this%face_vid>v) this%face_vid = this%face_vid - 1
+
+    end subroutine delete_faces_containing_vertex
+
+  end subroutine remove_dangling_vertices
+
   subroutine init_polyhedron_null (this)
-    class(polyhedron),  intent(out) :: this
+    class(polyhedron), intent(out) :: this
     this%nVerts = 0
     this%nEdges = 0
     this%nFaces = 0
@@ -459,15 +760,18 @@ contains
   real(r8) function volume (this)
 
     use consts,          only: ndim,alittle
-    use array_utils,     only: isZero
+    use array_utils,     only: isZero, normalize
     use ieee_arithmetic, only: ieee_is_nan
+    use cell_geometry,   only: cross_product
 
     class(polyhedron), intent(inout) :: this
+    !integer, intent(out) :: ierr
     
     integer :: f,nV,v
-    real(r8) :: x0(ndim), xl(ndim)
+    real(r8) :: x0(ndim), xl(ndim), tmp(ndim), n(ndim), t(ndim)
     type(polygon) :: face
-    
+
+    !ierr = 0
     volume = merge(this%vol, 0.0_r8, .not.ieee_is_nan(this%vol))
     if (.not.allocated(this%x) .or. volume > 0.0_r8) return
 
@@ -477,22 +781,63 @@ contains
     do v = 1,this%nVerts
       this%x(:,v) = (this%x(:,v)-x0)/xl
     end do
-
+    call this%update_face_normals (force=.true.)
+    
     ! sum up the integral of n_x*x over all faces (could just as easily be any other direction)
     volume = 0.0_r8
-    do f = 1,this%nFaces
-      ! generate a polygon from this face
-      nV = count(this%face_vid(:,f) /= 0) ! number of vertices on this face
-      call face%init (this%x(:,this%face_vid(1:nV,f)), this%face_normal(:,f))
 
-      ! calculate this face's contribution
-      if (.not.isZero (face%norm(1))) volume = volume + face%norm(1) * face%intXdA (1)
+    ! do f = 1,this%nFaces
+    !   ! generate a polygon from this face
+    !   nV = count(this%face_vid(:,f) /= 0) ! number of vertices on this face
+    !   call face%init (this%x(:,this%face_vid(1:nV,f)), this%face_normal(:,f))
+
+    !   ! calculate this face's contribution
+    !   if (.not.isZero (face%norm(1))) volume = volume + face%norm(1) * face%intXdA (1)
+    ! end do
+    
+    do f = 1,this%nFaces
+      nV = count(this%face_vid(:,f) /= 0) ! number of vertices on this face
+      tmp = 0.0_r8
+      do v = 1,nV
+        tmp = tmp + &
+            cross_product (this%x(:,this%face_vid(v,f)), this%x(:,this%face_vid(modulo(v,nV)+1,f)))
+      end do
+      volume = volume + &
+          dot_product(this%face_normal(:,f),this%x(:,this%face_vid(1,f))) * &
+          dot_product(this%face_normal(:,f),tmp)
+      ! print '(a,4es14.4)', 'volume: ',volume
+      ! print *, tmp
+      ! print *, this%face_normal(:,f)
+      ! print *, this%x(:,this%face_vid(1,f))
     end do
+    volume = volume/6.0_r8
+
+    ! do f = 1,this%nFaces
+    !   nV = count(this%face_vid(:,f) /= 0) ! number of vertices on this face
+    !   do v = 1,nV
+    !     t = normalize(this%x(:,this%face_vid(modulo(v,nV)+1,f))-this%x(:,this%face_vid(v,f)))
+    !     n = cross_product(this%face_normal(:,f),t)
+    !     volume = volume + &
+    !         dot_product(this%x(:,this%face_vid(v,f)),this%face_normal(:,f)) * &
+    !         dot_product(this%x(:,this%face_vid(v,f)),t) * &
+    !         dot_product(this%x(:,this%face_vid(v,f)),n)
+
+    !     t = normalize(this%x(:,this%face_vid(modulo(v-2,nV)+1,f))-this%x(:,this%face_vid(v,f)))
+    !     n = -cross_product(this%face_normal(:,f),t)
+    !     volume = volume + &
+    !         dot_product(this%x(:,this%face_vid(v,f)),this%face_normal(:,f)) * &
+    !         dot_product(this%x(:,this%face_vid(v,f)),t) * &
+    !         dot_product(this%x(:,this%face_vid(v,f)),n)
+    !   end do
+    ! end do
+    ! volume = volume/6.0_r8
 
     ! rescale the polyhedron
     do v = 1,this%nVerts
       this%x(:,v) = this%x(:,v)*xl + x0
     end do
+    this%face_normal = 0.0_r8
+    call this%update_face_normals (force=.true.)
     volume = volume * product(xl)
 
     this%vol = volume
@@ -507,9 +852,11 @@ contains
         deallocate(this%x)
         this%nVerts = 0
       else
+        write(*,*) "calculated negative polyhedron volume!"
         call this%print_data ()
         write(*,*)
-        call LS_fatal ("calculated negative polyhedron volume!")
+        !ierr = 1
+        !call LS_fatal ("calculated negative polyhedron volume!")
       end if
     end if
 
@@ -613,7 +960,7 @@ contains
   !         vertices may end up within alpha of each other. In this
   !         case, say both polyhedra are null, since we are within
   !         the cutvof anyways.
-  subroutine split (this,P,split_poly)
+  subroutine split (this,P,split_poly,ierr)
 
     use consts, only: alpha
     use plane_type
@@ -621,8 +968,9 @@ contains
     class(polyhedron), intent(in) :: this
     class(plane),      intent(in) :: P
     type(polyhedron), intent(out) :: split_poly(:)
+    integer,          intent(out) :: ierr
 
-    integer       :: v, v_assoc_pe(this%nEdges),side(this%nVerts), ierr
+    integer       :: v, v_assoc_pe(this%nEdges),side(this%nVerts)
     type(polygon) :: intpoly
     real(r8)      :: dist, tmp1, tmp2
 
@@ -698,7 +1046,8 @@ contains
       write(*,*)
       
       write(*,*) 'problematic vols: ',tmp1,tmp2
-      call LS_fatal ('polyhedron split failed: invalid volume')
+      ierr = 1
+      !call LS_fatal ('polyhedron split failed: invalid volume')
     end if
 
   end subroutine split

@@ -46,8 +46,66 @@ contains
         posyn(3), tmp
     real(r8), allocatable :: vof(:), intnorm(:,:)
 
-    call cube%init (ierr, cube_v, hex_f, hex_e)
     
+    write(*,*)
+    write(*,*) 'MULTIMAT CELL TYPE'
+    write(*,*) '===================================================='
+
+    ! partitioning
+    write(*,*) 'CELL PARTITIONING'
+    ! cube with 3-matls, one very small
+    call cube%init (ierr, reshape([&
+        2.8125E-01_r8,    5.6250E-01_r8,    2.8125E-01_r8,&
+        3.1250E-01_r8,    5.6250E-01_r8,    2.8125E-01_r8,&
+        3.1250E-01_r8,    5.9375E-01_r8,    2.8125E-01_r8,&
+        2.8125E-01_r8,    5.9375E-01_r8,    2.8125E-01_r8,&
+        2.8125E-01_r8,    5.6250E-01_r8,    3.1250E-01_r8,&
+        3.1250E-01_r8,    5.6250E-01_r8,    3.1250E-01_r8,&
+        3.1250E-01_r8,    5.9375E-01_r8,    3.1250E-01_r8,&
+        2.8125E-01_r8,    5.9375E-01_r8,    3.1250E-01_r8],&
+        [3,8]), hex_f, hex_e)
+    vof = [8.7485114822E-01_r8,    1.2514879878E-01_r8,    5.2994441145E-08_r8]
+    intnorm = reshape([&
+        9.8094153325E-01_r8,   -1.1866987389E-01_r8,   -1.5385437718E-01_r8,&
+        -9.8094153821E-01_r8,    1.1866966066E-01_r8,    1.5385451003E-01_r8,&
+        -4.6914971675E-01_r8,    7.9578595328E-01_r8,   -3.8291416771E-01_r8], [3,3])
+
+    !call cube%partition (vof, intnorm)
+    success = partition_unit_test (cube, vof, intnorm)
+    ! success = fluxing_unit_test (cube, 2.692080062668622E-003*2.2845404866E-01_r8*posZflow, &
+    !     reshape([&
+    !      0.0_r8, 0.0_r8, 0.0_r8, &
+    !      0.0_r8, 0.0_r8, 0.0_r8, &
+    !      0.0_r8, 0.0_r8, 0.0_r8, &
+    !      0.0_r8, 0.0_r8, 0.0_r8, &
+    !      0.0_r8, 0.0_r8, 0.0_r8, &
+    !      0.0_r8, 0.0_r8, 0.0_r8], [3,6]) )
+
+    write(*,*) '3-matl cube? ', success
+
+    ! 3-matl cube2
+    call cube%init (ierr, reshape([&
+        2.96875E-01_r8,    3.75000E-01_r8,    5.31250E-01_r8,&
+        3.12500E-01_r8,    3.75000E-01_r8,    5.31250E-01_r8,&
+        3.12500E-01_r8,    3.90625E-01_r8,    5.31250E-01_r8,&
+        2.96875E-01_r8,    3.90625E-01_r8,    5.31250E-01_r8,&
+        2.96875E-01_r8,    3.75000E-01_r8,    5.46875E-01_r8,&
+        3.12500E-01_r8,    3.75000E-01_r8,    5.46875E-01_r8,&
+        3.12500E-01_r8,    3.90625E-01_r8,    5.46875E-01_r8,&
+        2.96875E-01_r8,    3.90625E-01_r8,    5.46875E-01_r8], [3,8]), hex_f, hex_e)
+    vof = [0.811404648085707_r8,  0.188595062059073_r8,   2.898552200505922E-007_r8]
+    intnorm = reshape([&
+        3.5592178718E-01_r8,   -9.3450685990E-01_r8,    4.0755626314E-03_r8,&
+        -3.5592493730E-01_r8,    9.3450564851E-01_r8,   -4.0782237116E-03_r8,&
+        5.7303886156E-01_r8,    5.7634688730E-01_r8,    5.8262400280E-01_r8], [3,3])
+    success = partition_unit_test (cube, vof, intnorm)
+    write(*,*) '3-matl cube2? ', success
+    
+    
+    ! fluxing
+    write(*,*) 'FLUXING'
+    call cube%init (ierr, cube_v, hex_f, hex_e)
+
     ! define face velocities [+y, -y, -x, +x, -z, +z]
     posXflow = [ 0.0_r8, 0.0_r8, -1.0_r8, 1.0_r8,  0.0_r8, 0.0_r8 ]
     posZflow = [ 0.0_r8, 0.0_r8,  0.0_r8, 0.0_r8, -1.0_r8, 1.0_r8 ]
@@ -58,23 +116,8 @@ contains
     posyn   = [0.0_r8, 1.0_r8, 0.0_r8]                ! positive y-direction
     posxyn  = (posxn + posyn) / sqrt(2.0_r8) ! positive x-y plane
     
-    write(*,*)
-    write(*,*) 'MULTIMAT CELL TYPE'
-    write(*,*) '===================================================='
-
-    ! partitioning
-    write(*,*) 'CELL PARTITIONING'
-    ! TODO
-    ! This is really already taken care of for two materials via
-    ! the locate_plane_nd unit tests, but still needs to be done
-    ! for more than two materials. Fluxing more than 2 materials
-    ! also needs to be done.
-    write(*,*) 'need to write tests here'
-
-    ! fluxing
-    write(*,*) 'FLUXING'
-
     ! cube 8/10ths filled in x direction
+    deallocate(intnorm)
     allocate(intnorm(3,2))
     vof = [0.8_r8, 0.2_r8]
     intnorm(:,1) = posxn; intnorm(:,2) = -intnorm(:,1)
@@ -173,36 +216,6 @@ contains
          0.0_r8, 0.0_r8], [2,6]) )
     write(*,*) 'passed cube 1/8th filled in xyz, fluxed in +x?  ', success
 
-    ! cube with 3-matls, one very small
-    call cube%init (ierr, reshape([&
-        2.8125E-01_r8,    5.6250E-01_r8,    2.8125E-01_r8,&
-        3.1250E-01_r8,    5.6250E-01_r8,    2.8125E-01_r8,&
-        3.1250E-01_r8,    5.9375E-01_r8,    2.8125E-01_r8,&
-        2.8125E-01_r8,    5.9375E-01_r8,    2.8125E-01_r8,&
-        2.8125E-01_r8,    5.6250E-01_r8,    3.1250E-01_r8,&
-        3.1250E-01_r8,    5.6250E-01_r8,    3.1250E-01_r8,&
-        3.1250E-01_r8,    5.9375E-01_r8,    3.1250E-01_r8,&
-        2.8125E-01_r8,    5.9375E-01_r8,    3.1250E-01_r8],&
-        [3,8]), hex_f, hex_e)
-    vof = [8.7485114822E-01_r8,    1.2514879878E-01_r8,    5.2994441145E-08_r8]
-    intnorm = reshape([&
-         9.8094153325E-01_r8,   -1.1866987389E-01_r8,   -1.5385437718E-01_r8,&
-        -9.8094153821E-01_r8,    1.1866966066E-01_r8,    1.5385451003E-01_r8,&
-        -4.6914971675E-01_r8,    7.9578595328E-01_r8,   -3.8291416771E-01_r8], [3,3])
-    
-    !call cube%partition (vof, intnorm)
-    success = partition_unit_test (cube, vof, intnorm)
-    ! success = fluxing_unit_test (cube, 2.692080062668622E-003*2.2845404866E-01_r8*posZflow, &
-    !     reshape([&
-    !      0.0_r8, 0.0_r8, 0.0_r8, &
-    !      0.0_r8, 0.0_r8, 0.0_r8, &
-    !      0.0_r8, 0.0_r8, 0.0_r8, &
-    !      0.0_r8, 0.0_r8, 0.0_r8, &
-    !      0.0_r8, 0.0_r8, 0.0_r8, &
-    !      0.0_r8, 0.0_r8, 0.0_r8], [3,6]) )
-
-    write(*,*) '3-matl cube? ', success
-
     write(*,*) '===================================================='
     write(*,*)
 
@@ -279,8 +292,9 @@ contains
 
     type(plane)      :: interface_plane
     type(polyhedron) :: tmp(2),remainder
-    integer          :: m,nm
+    integer          :: m,nm,ierr
 
+    ierr = 0
     if (allocated(this%mat_poly)) deallocate(this%mat_poly)
     allocate(this%mat_poly(size(vof)))
     this%mat_poly(:)%nVerts = 0
@@ -309,13 +323,14 @@ contains
         ! if this is not the final material in the cell, split the cell
         interface_plane = locate_plane_nd (remainder, norm(:,m), vof(m)*this%volume(), this%volume())
         !tmp = remainder%split (interface_plane)
-        call remainder%split (interface_plane,tmp)
+        call remainder%split (interface_plane,tmp,ierr)
 
         ! this check ensures the partitions give their vofs within the requested cutvof
         ! it will fail if the Brent's iterations did not converge within the maximum
         ! number of allowed iterations
-        ! if (.not.isZero(tmp(1)%volume() / this%volume() - (1.0_r8 - sum(vof(:m))), cutvof)) &
-        !     call partitionError ()
+        ! if (.not.isZero(tmp(1)%volume() / this%volume() - (1.0_r8 - sum(vof(:m))), cutvof)) ierr=1
+
+        if (ierr/=0) call partitionError ()
 
         remainder = tmp(1)
         this%mat_poly(m) = tmp(2)
@@ -325,20 +340,36 @@ contains
   contains
 
     subroutine partitionError ()
+
+      integer :: i
+      real(r8) :: rem
+
       write(*,*)
       write(*,*) 'partition error!'
-      write(*,*) 'remainder polyhedron volume does not match remaining volume from vof'
+      
+      write(*,*) 'cell:'
+      call this%print_data ()
 
-      write(*,*) 'material id: ',m
-      write(*,'(a,es20.10)') 'remainder polyhedron vof: ',tmp(1)%volume() / this%volume()
-      write(*,'(a,es20.10)') 'exact remaining vof:      ',1.0_r8 - sum(vof(:m))
-      write(*,'(a,es20.10)') 'error:                    ',&
-          abs(tmp(1)%volume() / this%volume() - (1.0_r8 - sum(vof(:m))))
+      write(*,*) 'vof: ',vof
+
+      write(*,*) 'norms:'
+      do i = 1,size(norm, dim=2)
+        write(*,'(3es20.10)') norm(:,i)
+      end do
+
+      write(*,*) 'previous vofs:'
+      rem = 1.0_r8
+      do i = 1,m-1
+        write(*,'(i3,a,2es20.10)') i,': ',this%mat_poly(i)%volume() / this%volume()
+        rem = rem - this%mat_poly(i)%volume() / this%volume()
+      end do
+      write(*,*) 'remaining vof: ',rem
+      rem = rem - tmp(2)%volume() / this%volume()
+      write(*,*) 'remaining after last cutout vof: ',rem
       
       write(*,*)
       write(*,*) 'previous remainder polyhedron data: '
       call remainder%print_data ()
-
       
       write(*,*)
       write(*,*) 'material ',m,' cutout: '
@@ -348,9 +379,15 @@ contains
       write(*,*) 'remainder polyhedron data: '
       call tmp(1)%print_data ()
 
-      write(*,'(a,4es20.10)') 'interface plane n,p: ',interface_plane%normal, interface_plane%rho
+      write(*,*) 'interface plane:'
+      call interface_plane%print_data ()
 
       write(*,*)
+      ! write(*,*) 'remainder polyhedron volume does not match remaining volume from vof'
+      ! write(*,'(a,es20.10)') 'remainder polyhedron vof: ',tmp(1)%volume() / this%volume()
+      ! write(*,'(a,es20.10)') 'exact remaining vof:      ',1.0_r8 - sum(vof(:m))
+      ! write(*,'(a,es20.10)') 'error:                    ',&
+      !     abs(tmp(1)%volume() / this%volume() - (1.0_r8 - sum(vof(:m))))
 
       call LS_fatal ("partition error")
     end subroutine partitionError

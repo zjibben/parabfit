@@ -112,6 +112,7 @@ contains
     ! write(*,'(a,2es14.4)') 'error:  ',fx,x
     ! write(*,'(a,3es14.4)') 'bounds: ',x_min,x_mid,x_max
     ! call LS_fatal('too many brent iterations!')
+    !write(*,*) 'WARNING: did not converge brent iterations'
 
   end function brent
   
