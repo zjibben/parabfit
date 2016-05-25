@@ -30,7 +30,6 @@ module polygon_type
     real(r8) :: norm(ndim)
   contains
     procedure :: init => init_polygon
-    procedure :: intXdA
     procedure :: centroid
     procedure :: order
     procedure :: update_plane_normal
@@ -132,50 +131,6 @@ contains
 
   end subroutine update_plane_normal
   
-  !
-  ! This function calculates the integral of X, Y, or Z (input dir)
-  ! over a polygon by reducing it to the sum of the integral of
-  ! dir^2 over all edges, which can be calculated algebraically.
-  ! Follows the algorithm proposed by [1].
-  !
-  real(r8) function intXdA (this,dir)
-
-    class(polygon), intent(in) :: this
-    integer,        intent(in) :: dir
-
-    integer :: e,eN,nEdges,A,B,C
-    real(r8) :: term
-
-    nEdges = size(this%x, dim=2)
-
-    ! project into the plane that maximizes the area
-    C = maxloc(abs(this%norm), dim=1)
-    A = mod(C,3)+1
-    B = mod(A,3)+1
-    
-    ! sum up the integral of dir^2 over all edges
-    intXdA = 0.0_r8
-    do e = 1,nEdges
-      eN = mod(e,nEdges)+1 ! pick the next edge, looping back to the beginning if we are at the end
-      
-      if (A==dir) then
-        intXdA = intXdA + (this%x(B,eN)-this%x(B,e)) * (this%x(A,eN)**2 + this%x(A,eN)*this%x(A,e) + this%x(A,e)**2) &
-             / (6.0_r8*this%norm(C))
-      else if (B==dir) then
-        intXdA = intXdA - (this%x(A,eN)-this%x(A,e)) * (this%x(B,eN)**2 + this%x(B,eN)*this%x(B,e) + this%x(B,e)**2) &
-             / (6.0_r8*this%norm(C))
-      else if (C==dir) then
-        intXdA = intXdA - ( &
-             + this%norm(A) * (this%x(B,eN)-this%x(B,e)) * (this%x(A,eN)**2 + this%x(A,eN)*this%x(A,e) + this%x(A,e)**2) / 6.0_r8 &
-             - this%norm(B) * (this%x(A,eN)-this%x(A,e)) * (this%x(B,eN)**2 + this%x(B,eN)*this%x(B,e) + this%x(B,e)**2) / 6.0_r8 &
-             - sum(this%norm*this%x(:,e)) * (this%x(B,eN)-this%x(B,e)) * (this%x(A,eN) + this%x(A,e)) / 2.0_r8 &
-             ) / this%norm(C)**2
-      end if
-
-    end do
-
-  end function intXdA
-
   function centroid (this)
     use consts, only: ndim
     class(polygon), intent(in) :: this

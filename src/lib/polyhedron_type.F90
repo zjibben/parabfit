@@ -830,20 +830,8 @@ contains
     ! scale the polyhedron (see note 1)
     call this%scale ()
     
-    
     ! sum up the integral of n_x*x over all faces (could just as easily be any other direction)
     volume = 0.0_r8
-
-    ! do f = 1,this%nFaces
-    !   ! generate a polygon from this face
-    !   nV = count(this%face_vid(:,f) /= 0) ! number of vertices on this face
-    !   call face%init (this%x(:,this%face_vid(1:nV,f)), this%face_normal(:,f))
-
-    !   ! calculate this face's contribution
-    !   if (.not.isZero (face%norm(1))) volume = volume + face%norm(1) * face%intXdA (1)
-    ! end do
-    
-    !print *, 'calculating volume...'
     do f = 1,this%nFaces
       nV = count(this%face_vid(:,f) /= 0) ! number of vertices on this face
       tmp = 0.0_r8
@@ -865,26 +853,6 @@ contains
     end do
     volume = volume/6.0_r8
     this%vol = volume
-
-    ! do f = 1,this%nFaces
-    !   nV = count(this%face_vid(:,f) /= 0) ! number of vertices on this face
-    !   do v = 1,nV
-    !     t = normalize(this%x(:,this%face_vid(modulo(v,nV)+1,f))-this%x(:,this%face_vid(v,f)))
-    !     n = cross_product(this%face_normal(:,f),t)
-    !     volume = volume + &
-    !         dot_product(this%x(:,this%face_vid(v,f)),this%face_normal(:,f)) * &
-    !         dot_product(this%x(:,this%face_vid(v,f)),t) * &
-    !         dot_product(this%x(:,this%face_vid(v,f)),n)
-
-    !     t = normalize(this%x(:,this%face_vid(modulo(v-2,nV)+1,f))-this%x(:,this%face_vid(v,f)))
-    !     n = -cross_product(this%face_normal(:,f),t)
-    !     volume = volume + &
-    !         dot_product(this%x(:,this%face_vid(v,f)),this%face_normal(:,f)) * &
-    !         dot_product(this%x(:,this%face_vid(v,f)),t) * &
-    !         dot_product(this%x(:,this%face_vid(v,f)),n)
-    !   end do
-    ! end do
-    ! volume = volume/6.0_r8
 
     ! rescale the polyhedron
     call this%descale ()
