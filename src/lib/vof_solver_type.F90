@@ -14,7 +14,6 @@
 !!
 
 #include "f90_assert.fpp"
-!#define DEBUG
 
 module vof_solver_type
 
@@ -30,14 +29,14 @@ module vof_solver_type
   type, public :: vof_solver
     private
 
-    type(unstr_mesh), pointer :: mesh                  => null() ! reference only -- do not own
-    type(mesh_geom),  pointer :: gmesh                 => null() ! reference only -- do not own
+    type(unstr_mesh), pointer, public :: mesh          => null() ! reference only -- do not own
+    type(mesh_geom),  pointer, public :: gmesh         => null() ! reference only -- do not own
 
     real(r8),         pointer :: fluidRho(:)           => null() ! reference only -- do not own
     real(r8),         pointer :: fluxing_velocity(:,:) => null() ! reference only -- do not own
 
     !! Pending/current state
-    integer                            :: advect_method, volume_track_subcycles
+    integer,                    public :: advect_method, volume_track_subcycles
     real(r8)                           :: t, dt
     integer,                    public :: nmat                 ! number of materials present globally
     !real(r8),      allocatable, public :: velocity(:,:)       ! face velocities
@@ -56,8 +55,6 @@ module vof_solver_type
     !procedure, private :: flux_renorm
   end type vof_solver
 
-  public :: parallel_interfaces_test, intersecting_interfaces_test
-
   ! TODO: this needs to be removed and replaced with use of the velocity_bc and pressure_bc variables
   integer, allocatable :: BC_flag(:,:)
 
@@ -75,11 +72,11 @@ module vof_solver_type
   real(r8), save :: WMaxMatU   = 0.0_r8
 
   ! advection methods
-  integer, parameter :: ONION_SKIN        = 1
-  integer, parameter :: NESTED_DISSECTION = 2
+  integer, parameter, public :: ONION_SKIN        = 1
+  integer, parameter, public :: NESTED_DISSECTION = 2
 
 contains
-
+  
   subroutine init (this, mesh, gmesh, nmat, fluxing_velocity, fluidRho, params, velocity_bc)
 
     use consts, only: nfc
@@ -868,146 +865,6 @@ contains
     end do
 
   end subroutine update_intrec_surf
-
-  ! unit tests ------------------
-  subroutine parallel_interfaces_test ()
-
-    use unstr_mesh_factory
-    use array_utils, only: int2str
-
-    type(unstr_mesh), target :: mesh
-    type(mesh_geom),  target :: gmesh
-    type(vof_solver)         :: vof_slv
-    integer                  :: m
-
-    ! generate a 3x3x1 regular mesh
-    mesh = new_unstr_mesh ([0.0_r8, 0.0_r8, 0.0_r8], [1.0_r8, 1.0_r8, 1.0_r8], [3,3,1])
-    call gmesh%init (mesh)
-
-    ! initialize the vof solver
-    vof_slv%nmat = 3
-    allocate(vof_slv%matl_id(vof_slv%nmat), vof_slv%vof(vof_slv%nmat,mesh%ncell), &
-        vof_slv%intrec(vof_slv%nmat-1))
-    vof_slv%matl_id = [1,2,3]
-    vof_slv%advect_method = ONION_SKIN
-    vof_slv%mesh  => mesh
-    vof_slv%gmesh => gmesh
-
-    ! initialize the vof
-    vof_slv%vof(1,cell_index(1,1,1)) = 1.0_r8
-    vof_slv%vof(1,cell_index(1,2,1)) = 1.0_r8
-    vof_slv%vof(1,cell_index(1,3,1)) = 1.0_r8
-    vof_slv%vof(1,cell_index(2,1,1)) = 1.0_r8/3.0_r8
-    vof_slv%vof(1,cell_index(2,2,1)) = 1.0_r8/3.0_r8
-    vof_slv%vof(1,cell_index(2,3,1)) = 1.0_r8/3.0_r8
-    vof_slv%vof(1,cell_index(3,1,1)) = 0.0_r8
-    vof_slv%vof(1,cell_index(3,2,1)) = 0.0_r8
-    vof_slv%vof(1,cell_index(3,3,1)) = 0.0_r8
-
-    vof_slv%vof(2,cell_index(1,1,1)) = 0.0_r8
-    vof_slv%vof(2,cell_index(1,2,1)) = 0.0_r8
-    vof_slv%vof(2,cell_index(1,3,1)) = 0.0_r8
-    vof_slv%vof(2,cell_index(2,1,1)) = 1.0_r8/3.0_r8
-    vof_slv%vof(2,cell_index(2,2,1)) = 1.0_r8/3.0_r8
-    vof_slv%vof(2,cell_index(2,3,1)) = 1.0_r8/3.0_r8
-    vof_slv%vof(2,cell_index(3,1,1)) = 0.0_r8
-    vof_slv%vof(2,cell_index(3,2,1)) = 0.0_r8
-    vof_slv%vof(2,cell_index(3,3,1)) = 0.0_r8
-
-    vof_slv%vof(3,cell_index(1,1,1)) = 0.0_r8
-    vof_slv%vof(3,cell_index(1,2,1)) = 0.0_r8
-    vof_slv%vof(3,cell_index(1,3,1)) = 0.0_r8
-    vof_slv%vof(3,cell_index(2,1,1)) = 1.0_r8/3.0_r8
-    vof_slv%vof(3,cell_index(2,2,1)) = 1.0_r8/3.0_r8
-    vof_slv%vof(3,cell_index(2,3,1)) = 1.0_r8/3.0_r8
-    vof_slv%vof(3,cell_index(3,1,1)) = 1.0_r8
-    vof_slv%vof(3,cell_index(3,2,1)) = 1.0_r8
-    vof_slv%vof(3,cell_index(3,3,1)) = 1.0_r8
-
-    ! reconstruct planes
-    call vof_slv%update_intrec_surf ()
-
-    ! plot plane reconstruction
-    do m = 1,vof_slv%nmat-1
-      call vof_slv%intrec(m)%write_ply ('par_'//trim(int2str(m))//'.ply')
-    end do
-
-    write(*,*) 'parallel interfaces reconstruction dumped'
-
-  end subroutine parallel_interfaces_test
-
-  subroutine intersecting_interfaces_test ()
-
-    use unstr_mesh_factory
-    use array_utils, only: int2str
-
-    type(unstr_mesh), target :: mesh
-    type(mesh_geom),  target :: gmesh
-    type(vof_solver)         :: vof_slv
-    integer                  :: m
-
-    ! generate a 3x3x1 regular mesh
-    mesh = new_unstr_mesh ([0.0_r8, 0.0_r8, 0.0_r8], [1.0_r8, 1.0_r8, 1.0_r8], [3,3,1])
-    call gmesh%init (mesh)
-
-    ! initialize the vof solver
-    vof_slv%nmat = 3
-    allocate(vof_slv%matl_id(vof_slv%nmat), vof_slv%vof(vof_slv%nmat,mesh%ncell), &
-        vof_slv%intrec(vof_slv%nmat))
-    vof_slv%matl_id = [1,2,3]
-    vof_slv%advect_method = ONION_SKIN
-    vof_slv%mesh  => mesh
-    vof_slv%gmesh => gmesh
-
-    ! initialize the vof
-    vof_slv%vof(1,cell_index(1,1,1)) = 1.0_r8
-    vof_slv%vof(1,cell_index(1,2,1)) = 1.0_r8
-    vof_slv%vof(1,cell_index(1,3,1)) = 1.0_r8
-    vof_slv%vof(1,cell_index(2,1,1)) = 1.0_r8/2.0_r8
-    vof_slv%vof(1,cell_index(2,2,1)) = 1.0_r8/2.0_r8
-    vof_slv%vof(1,cell_index(2,3,1)) = 1.0_r8/2.0_r8
-    vof_slv%vof(1,cell_index(3,1,1)) = 0.0_r8
-    vof_slv%vof(1,cell_index(3,2,1)) = 0.0_r8
-    vof_slv%vof(1,cell_index(3,3,1)) = 0.0_r8
-
-    vof_slv%vof(2,cell_index(1,1,1)) = 0.0_r8
-    vof_slv%vof(2,cell_index(1,2,1)) = 0.0_r8
-    vof_slv%vof(2,cell_index(1,3,1)) = 0.0_r8
-    vof_slv%vof(2,cell_index(2,1,1)) = 1.0_r8/2.0_r8
-    vof_slv%vof(2,cell_index(2,2,1)) = 1.0_r8/4.0_r8
-    vof_slv%vof(2,cell_index(2,3,1)) = 0.0_r8
-    vof_slv%vof(2,cell_index(3,1,1)) = 1.0_r8
-    vof_slv%vof(2,cell_index(3,2,1)) = 1.0_r8/2.0_r8
-    vof_slv%vof(2,cell_index(3,3,1)) = 0.0_r8
-
-    vof_slv%vof(3,cell_index(1,1,1)) = 0.0_r8
-    vof_slv%vof(3,cell_index(1,2,1)) = 0.0_r8
-    vof_slv%vof(3,cell_index(1,3,1)) = 0.0_r8
-    vof_slv%vof(3,cell_index(2,1,1)) = 0.0_r8
-    vof_slv%vof(3,cell_index(2,2,1)) = 1.0_r8/4.0_r8
-    vof_slv%vof(3,cell_index(2,3,1)) = 1.0_r8/2.0_r8
-    vof_slv%vof(3,cell_index(3,1,1)) = 0.0_r8
-    vof_slv%vof(3,cell_index(3,2,1)) = 1.0_r8/2.0_r8
-    vof_slv%vof(3,cell_index(3,3,1)) = 1.0_r8
-
-    ! reconstruct planes
-    call vof_slv%update_intrec_surf ()
-
-    ! plot plane reconstruction
-    do m = 1,vof_slv%nmat-1
-      call vof_slv%intrec(m)%write_ply ('int_'//trim(int2str(m))//'.ply')
-    end do
-
-    write(*,*) 'intersecting interfaces reconstruction dumped'
-
-  end subroutine intersecting_interfaces_test
-
-  ! note this is a duplicate of a private function in unstr_mesh_factory
-  integer function cell_index (i, j, k)
-    integer, intent(in) :: i, j, k
-    integer, parameter  :: nx(3) = [3,3,1]
-    cell_index = i + ((j-1) + (k-1)*nx(2))*nx(1)
-  end function cell_index
 
   subroutine print_vofs (this)
 

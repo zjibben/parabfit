@@ -6,15 +6,15 @@ program unit_test
 
   use,intrinsic :: iso_fortran_env, only: output_unit
   use logging_services
-  use volume_track_module,    only: volume_track_unit_test_suite
-  use volume_track_nd_module, only: volume_track_nd_unit_test
-  use polygon_type,        only: polygon_unit_test
-  use polyhedron_type,        only: polyhedron_unit_test
-  use surface_type,           only: surface_unit_test
-  use locate_plane_module,    only: locate_plane_unit_test_suite
-  use locate_plane_nd_module, only: locate_plane_nd_unit_test_suite
-  use vof_solver_type,        only: parallel_interfaces_test, intersecting_interfaces_test
-  use multimat_cell_type,     only: multimat_cell_unit_test_suite
+  use volume_track_test
+  use volume_track_nd_test
+  use polygon_type_test
+  use polyhedron_type_test
+  use multimat_cell_type_test
+  use surface_type_test
+  use locate_plane_test
+  use locate_plane_nd_test
+  use vof_solver_type_test
   implicit none
 
   call LS_initialize ([output_unit]) !, LS_VERB_NOISY)

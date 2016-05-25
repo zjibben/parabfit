@@ -4,6 +4,15 @@ include_directories(${Pececillo_SOURCE_DIR}/src/lib)
 include_directories(${Pececillo_MODULE_DIR} ${Petaca_MODULE_DIR})
 
 set(SOURCE_FILES
+  polygon_type_test.F90
+  polyhedron_type_test.F90
+  locate_plane_nd_test.F90
+  surface_type_test.F90
+  multimat_cell_type_test.F90
+  locate_plane_test.F90
+  volume_track_test.F90
+  volume_track_nd_test.F90
+  vof_solver_type_test.F90
   unit_test.F90)
 
 # Create a library (so we can unit test)
@@ -20,7 +29,7 @@ target_link_libraries(libpececillo-unit pececillo)
 # endif()
 
 
-# HC driver
+# unit test driver
 add_executable(pececillo-unit unit_test.F90)
 target_link_libraries(pececillo-unit libpececillo-unit)
 
