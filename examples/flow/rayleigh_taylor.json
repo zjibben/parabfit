@@ -4,8 +4,8 @@
     "mesh": {
         "corner-min": [-0.5, -0.5, -2.0],
         "corner-max": [ 0.5,  0.5,  2.0],
-        //"intervals" : [17,  17,  64]
-        "intervals" : [8, 8, 32]
+        "intervals" : [17,  17,  64]
+        //"intervals" : [8, 8, 32]
     },
     
     "sim-control": {
@@ -109,7 +109,7 @@
     },
     
     "vof-solver": {
-        "advection-method": 1,
+        "advection-method": 2,
         "subcycles": 2,
         "materials": [1, 2],
     	"initial-vof": {

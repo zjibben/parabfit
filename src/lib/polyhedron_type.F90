@@ -16,6 +16,7 @@
 module polyhedron_type
 
   use kinds,  only: r8
+  use consts, only: ndim
   use logging_services
   use polygon_type
   implicit none
@@ -28,7 +29,7 @@ module polyhedron_type
     integer               :: nVerts, nEdges, nFaces       ! number of vertices, edges, and faces
     real(r8), allocatable :: x(:,:),face_normal(:,:)      ! vertex positions and face outward normals
     integer,  allocatable :: face_vid(:,:), edge_vid(:,:) ! face and edge IDs
-    real(r8)              :: vol                          ! volume
+    real(r8)              :: vol,x0(ndim),xl(ndim)        ! should be private, but need inheritance
     ! ideally vol should be private, but Fortran then also hides it from child types
   contains
     procedure, private :: init_polyhedron
@@ -45,6 +46,8 @@ module polyhedron_type
     procedure, private :: update_face_normals
     procedure, private :: is_valid
     procedure, private :: remove_dangling_vertices
+    procedure, private :: scale
+    procedure, private :: descale
     !final :: polyhedron_delete
   end type polyhedron
 
@@ -191,7 +194,28 @@ contains
     success = volume > 0.0_r8
     write(*,*) 'pyramid2 volume?                 ', success
     if (.not.success) write(*,*) 'volume: ',volume
-
+    
+    ! calculate the volume of a pyramid
+    call pyramid%init (ierr, reshape([&
+        2.5000000000000000000000000e-01_r8, 2.5000000000000000000000000e-01_r8, 0.0000000000000000000000000e+00_r8,&
+        2.5000000000000000000000000e-01_r8, 2.6287194342498776400418592e-01_r8, 0.0000000000000000000000000e+00_r8,&
+        2.5000000000000000000000000e-01_r8, 2.5000000000000000000000000e-01_r8, -1.1618077816026584070385752e-04_r8,&
+        2.6287373171168715302314922e-01_r8, 2.5000000000000000000000000e-01_r8, 0.0000000000000000000000000e+00_r8], [3,4]), reshape([&
+        4, 1, 3,&
+        3, 1, 2,&
+        2, 1, 4,&
+        4, 3, 2], [3,4]), reshape([&
+        1, 3,&
+        1, 4,&
+        1, 2,&
+        2, 3,&
+        3, 4,&
+        4, 2], [2,6]))
+    volume = pyramid%volume ()
+    success = volume > 0.0_r8
+    write(*,*) 'pyramid3 volume?                 ', success
+    if (.not.success) write(*,*) 'volume: ',volume
+    
     ! calculate the volume of a pyramid (1/6)
     call pyramid3%init (ierr, pyr3_v, pyr3_f, pyr3_e)
     volume = pyramid3%volume ()
@@ -494,8 +518,6 @@ contains
 
   subroutine init_polyhedron (this, ierr, x, face_v, edge_v, vol, face_normal)
 
-    use consts, only: ndim
-
     class(polyhedron),  intent(out) :: this
     integer,            intent(out) :: ierr
     real(r8),           intent(in)  :: x(:,:)
@@ -587,9 +609,10 @@ contains
     logical :: forceh
 
     forceh = merge(force, .false., present(force))
+    if (forceh) this%face_normal = 0.0_r8 ! force the normals to be recalculated
 
     do f = 1,this%nFaces
-      if (all(isZero(this%face_normal(:,f))) .or. forceh) then
+      if (all(isZero(this%face_normal(:,f)))) then
         nV = count(this%face_vid(:,f)/=0)
         v = 3
         do while (all(isZero (this%face_normal(:,f))) .and. v<=nV)
@@ -743,6 +766,35 @@ contains
 
   end subroutine init_polyhedron_copy
 
+  subroutine scale (this)
+
+    class(polyhedron), intent(inout) :: this
+
+    integer :: v
+
+    this%x0 = minval(this%x,dim=2)
+    this%xl = maxval(this%x,dim=2) - this%x0
+    do v = 1,this%nVerts
+      this%x(:,v) = (this%x(:,v)-this%x0)/this%xl
+    end do
+    call this%update_face_normals (force=.true.)
+
+  end subroutine scale
+
+  subroutine descale (this)
+
+    class(polyhedron), intent(inout) :: this
+
+    integer :: v
+
+    do v = 1,this%nVerts
+      this%x(:,v) = this%x(:,v)*this%xl + this%x0
+    end do
+    call this%update_face_normals (force=.true.)
+    this%vol = this%vol * product(this%xl)
+
+  end subroutine descale
+
   ! This function calculates the volume of a polehedron following the
   ! algorithm presented by [1]. It calculates the sum of the surface
   ! integral of x over all faces, which is equal to the volume by the
@@ -759,7 +811,7 @@ contains
   !         still produce volumes on the order of e-27, far below the double precision limit of e-16.
   real(r8) function volume (this)
 
-    use consts,          only: ndim,alittle
+    use consts,          only: alittle
     use array_utils,     only: isZero, normalize
     use ieee_arithmetic, only: ieee_is_nan
     use cell_geometry,   only: cross_product
@@ -768,7 +820,7 @@ contains
     !integer, intent(out) :: ierr
     
     integer :: f,nV,v
-    real(r8) :: x0(ndim), xl(ndim), tmp(ndim), n(ndim), t(ndim)
+    real(r8) :: tmp(ndim), n(ndim), t(ndim)
     type(polygon) :: face
 
     !ierr = 0
@@ -776,12 +828,8 @@ contains
     if (.not.allocated(this%x) .or. volume > 0.0_r8) return
 
     ! scale the polyhedron (see note 1)
-    x0 = minval(this%x,dim=2)
-    xl = maxval(this%x,dim=2) - x0
-    do v = 1,this%nVerts
-      this%x(:,v) = (this%x(:,v)-x0)/xl
-    end do
-    call this%update_face_normals (force=.true.)
+    call this%scale ()
+    
     
     ! sum up the integral of n_x*x over all faces (could just as easily be any other direction)
     volume = 0.0_r8
@@ -795,6 +843,7 @@ contains
     !   if (.not.isZero (face%norm(1))) volume = volume + face%norm(1) * face%intXdA (1)
     ! end do
     
+    !print *, 'calculating volume...'
     do f = 1,this%nFaces
       nV = count(this%face_vid(:,f) /= 0) ! number of vertices on this face
       tmp = 0.0_r8
@@ -806,11 +855,16 @@ contains
           dot_product(this%face_normal(:,f),this%x(:,this%face_vid(1,f))) * &
           dot_product(this%face_normal(:,f),tmp)
       ! print '(a,4es14.4)', 'volume: ',volume
+      ! print *, this%face_vid(:,f)
       ! print *, tmp
       ! print *, this%face_normal(:,f)
       ! print *, this%x(:,this%face_vid(1,f))
+      ! do v = 1,nV
+      !   print *, 'x: ',this%x(:,this%face_vid(1,v))
+      ! end do
     end do
     volume = volume/6.0_r8
+    this%vol = volume
 
     ! do f = 1,this%nFaces
     !   nV = count(this%face_vid(:,f) /= 0) ! number of vertices on this face
@@ -833,14 +887,8 @@ contains
     ! volume = volume/6.0_r8
 
     ! rescale the polyhedron
-    do v = 1,this%nVerts
-      this%x(:,v) = this%x(:,v)*xl + x0
-    end do
-    this%face_normal = 0.0_r8
-    call this%update_face_normals (force=.true.)
-    volume = volume * product(xl)
-
-    this%vol = volume
+    call this%descale ()
+    volume = this%vol
 
     if (this%vol < 0.0_r8) then
       if (isZero(this%vol, 1e5_r8*alittle)) then
@@ -868,7 +916,6 @@ contains
   !
   type(polygon) function intersection_verts (this,P,v_assoc_pe)
 
-    use consts, only: ndim
     use plane_type
     use array_utils, only: reverse, containsPoint, pointIndex
 
