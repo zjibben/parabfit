@@ -13,12 +13,11 @@ set(HYPRE_BUILD_TARGET hypre)
 
 # Define the version and archive file
 set(EP_HYPRE_VERSION_MAJOR  2)
-set(EP_HYPRE_VERSION_MINOR  9) #6)
-set(EP_HYPRE_VERSION_PATCH  0b)
+set(EP_HYPRE_VERSION_MINOR  11)
+set(EP_HYPRE_VERSION_PATCH  1)
 set(EP_HYPRE_VERSION  ${EP_HYPRE_VERSION_MAJOR}.${EP_HYPRE_VERSION_MINOR}.${EP_HYPRE_VERSION_PATCH})
 set(EP_HYPRE_ARCHIVE_FILE   hypre-${EP_HYPRE_VERSION}.tar.gz)
-#set(EP_HYPRE_MD5_SUM        84381005bdddff69b62b43ca025070fd) 
-set(EP_HYPRE_MD5_SUM        87bce8469240dc775c6c622c5f68fa87) 
+set(EP_HYPRE_MD5_SUM        3f02ef8fd679239a6723f60b7f796519)
 
 # Useful utility to build *FLAGS strings
 include(BuildWhitespaceString)
@@ -82,6 +81,9 @@ if (LAPACK_FOUND)
   list(APPEND ldflags_list ${LAPACK_LINKER_FLAGS})
   set(hypre_lapack_opt --with-lapack)
 endif()
+
+# debug options
+#set(hypre_debug_opt --enable-debug)
 
 # OpenMP
 #BROKENset(hypre_openmp_opt)

@@ -30,7 +30,7 @@ module projection_module
     type(parameter_list), pointer :: params
 
     type(csr_graph), pointer :: g => null()
-    type(csr_matrix) :: lhs
+    type(csr_matrix), pointer :: lhs => null()
     type(fischer_guess) :: fischer
   contains
     procedure :: init => init_projection_solver
@@ -166,7 +166,7 @@ contains
       use consts, only: alittle
 
       real(r8),             intent(out)   :: dP(:)
-      type(csr_matrix),     intent(in)    :: lhs
+      type(csr_matrix),     intent(in), target :: lhs
       real(r8),             intent(in)    :: rhs(:)
       type(fischer_guess),  intent(inout) :: fischer
       type(parameter_list), pointer       :: params
@@ -432,7 +432,8 @@ contains
     integer :: i
 
     if (associated(this%g)) deallocate(this%g)
-    allocate(this%g)
+    if (associated(this%lhs)) deallocate(this%lhs)
+    allocate(this%g, this%lhs)
     call this%g%init (this%mesh%ncell)
     do i = 1,this%mesh%ncell
       call this%g%add_edge (i,i)
@@ -447,6 +448,7 @@ contains
   subroutine projection_solver_delete (this)
     type(projection_solver) :: this
     if (associated(this%g)) deallocate(this%g)
+    if (associated(this%lhs)) deallocate(this%lhs)
   end subroutine projection_solver_delete
   
   ! update the cell centered and fluxing velocities

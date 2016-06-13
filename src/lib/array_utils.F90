@@ -364,7 +364,8 @@ contains
 
   real(r8) pure function meanHarmonic (x)
     real(r8), intent(in) :: x(:)
-    meanHarmonic = merge(1.0_r8 / meanArithmetic(1.0_r8/x), 0.0_r8, mask=.not.any(x==0.0_r8))
+    meanHarmonic = 0.0_r8
+    if (.not.any(x==0.0_r8)) meanHarmonic = 1.0_r8 / meanArithmetic(1.0_r8/x)
   end function meanHarmonic
 
   real(r8) pure function magnitude (v)

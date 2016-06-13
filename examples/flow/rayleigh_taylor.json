@@ -6,6 +6,7 @@
         "corner-max": [ 0.5,  0.5,  2.0],
         "intervals" : [17,  17,  64]
         //"intervals" : [8, 8, 32]
+        //"intervals" : [2, 2, 2]
     },
     
     "sim-control": {
@@ -79,7 +80,7 @@
                     },
                     "function": {
                         "type": "polynomial",
-                        "poly-coef": [-14.7],
+                        "poly-coef": [-19.6],
                         "poly-powers":  [[0,0,1]]
                     }
                 }
@@ -103,13 +104,12 @@
     },
 
     "material-properties": {
-        "densities":   [1.0, 1.5],
-        //"densities":   [1.0, 10.0],
-        "viscosities": [0.0, 0.0]
+        "densities":   [1.0, 2.0],
+        "viscosities": [0.0001, 0.0001]
     },
     
     "vof-solver": {
-        "advection-method": 2,
+        "advection-method": 1,
         "subcycles": 2,
         "materials": [1, 2],
     	"initial-vof": {

@@ -300,8 +300,12 @@ contains
     call fHYPRE_IJVectorSetValues  (this%xh, this%nrows, rows, x, ierr)
     call fHYPRE_IJVectorAssemble   (this%xh, ierr)
     INSIST(ierr == 0)
-
+    
     !! Solve the system.
+    INSIST(hypre_associated(this%solver))
+    INSIST(hypre_associated(this%Ah))
+    INSIST(hypre_associated(this%bh))
+    INSIST(hypre_associated(this%xh))
     call fHYPRE_ParCSRHybridSolve (this%solver, this%Ah, this%bh, this%xh, ierr)
     if (ierr /= 0) then
       INSIST(ierr == HYPRE_ERROR_CONV)
@@ -310,6 +314,7 @@ contains
     else
       stat = 0
     end if
+    
 
     !! Retrieve the solution vector from HYPRE.
     call fHYPRE_IJVectorGetValues (this%xh, this%nrows, rows, x, ierr)

@@ -11,6 +11,6 @@ module consts
   integer,  parameter :: ndim = 3 ! number of dimensions
   integer,  parameter :: nfc  = 6 ! number of faces per cell
   integer,  parameter :: nvc  = 8 ! number of vertices per cell
-  integer,  parameter :: nvf = 4 ! number of vertices per cell face  
+  integer,  parameter :: nvf  = 4 ! number of vertices per cell face  
 
 end module consts

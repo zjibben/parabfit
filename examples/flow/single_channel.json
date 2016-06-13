@@ -5,14 +5,16 @@
     "mesh": {
         "corner-min": [0.0, 0.0, 0.0],
         "corner-max": [1.0, 4.0, 1.0],
-        //"intervals": [  9,   32,   9]
-        "intervals": [ 17,   64,  17]
+        "intervals": [  9,   32,   9]
+        //"intervals": [ 17,   64,  17]
         //"intervals": [ 33,  128,  33]
         //"intervals": [ 65,  256,  65]
         //"intervals": [ 8, 32, 8]
         //"intervals": [ 16, 64, 16]
         //"intervals": [ 32, 128, 32]
         //"intervals": [ 64,  256,  64]
+        //"intervals": [4,4,4]
+        //"intervals": [1,2,1]
     },
     
     "sim-control": {
@@ -78,7 +80,7 @@
             "pressure": {
                 "type": "polynomial",
                 "poly-coef": [1.0, -0.25],
-                "poly-powers":  [[0,0,0,0],[0,1,0,0]]
+                "poly-powers":  [[0,0,0],[0,1,0]]
             }
         },
         "prediction-solver": {
@@ -110,8 +112,11 @@
         "subcycles": 2,
         "materials": [1],
         "initial-vof": {
-            "all": {
-                "material-id": 1
+            "mat1": {
+                "material-id": 1,
+                "region": {
+                    "type": "all"
+                }
             }
         }
     }

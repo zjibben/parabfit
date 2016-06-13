@@ -2,6 +2,8 @@
 ! Define the Navier-Stokes predictor step
 !
 
+#include "f90_assert.fpp"
+
 module predictor_module  
 
   use kinds,  only: r8
@@ -26,7 +28,7 @@ module predictor_module
 
     !! locally owned persistent variables
     type(csr_graph), pointer :: g => null()
-    type(csr_matrix) :: lhs
+    type(csr_matrix), pointer :: lhs => null()
   contains
     procedure :: init => init_predictor_solver
     procedure :: solve
@@ -58,7 +60,8 @@ contains
     integer :: i,n,m, index
 
     if (associated(this%g)) deallocate(this%g)
-    allocate(this%g)
+    if (associated(this%lhs)) deallocate(this%lhs)
+    allocate(this%g, this%lhs)
     call this%g%init (this%mesh%ncell*ndim)
     do i = 1,this%mesh%ncell
       do n = 1,ndim
@@ -79,6 +82,7 @@ contains
   subroutine predictor_solver_delete (this)
     type(predictor_solver) :: this
     if (associated(this%g)) deallocate(this%g)
+    if (associated(this%lhs)) deallocate(this%lhs)
   end subroutine predictor_solver_delete
 
   
@@ -184,7 +188,6 @@ contains
       ! the copy velocity_cc_n above when accessing neighbors
       ! TODO: * expand the "mass matrix" with the other physics that gets added,
       !         possibly warranting breaking this entire section into its own subroutine.
-      !       * do the implicit stuff after this loop
       if (inviscid .or. viscous_implicitness == 0.0_r8) then
         mass = fluidRho(i)*fluidVof(i)
         velocity_cc(:,i) = merge(cell_rhs / mass, 0.0_r8, mask=mass>0.0_r8)
@@ -196,6 +199,7 @@ contains
 
     ! solve the implicit system for viscous flows
     if (.not.inviscid .and. viscous_implicitness > 0.0_r8) then
+      INSIST(associated(this%params))
       call start_timer ('solver')
       ! initial guess is current velocity (TODO: better initial guess?)
       vel_cc_new = reshape(velocity_cc_n, [ndim*this%mesh%ncell])
@@ -203,7 +207,7 @@ contains
       call solver%init (this%lhs, this%params)
       call solver%setup ()
       call solver%solve (rhs, vel_cc_new, stat)
-      if (stat /= 0) call LS_fatal ("projection solver failed")
+      if (stat /= 0) call LS_fatal ("predictor solver failed")
 
       ! copy result into velocity_cc (TODO: can I do all this directly without copying?)
       velocity_cc = reshape(vel_cc_new, [ndim, this%mesh%ncell])

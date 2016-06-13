@@ -22,6 +22,7 @@ cd @hypre_source_dir@/src
             @TPL_SHARED_SWITCH@ \
             @hypre_mpi_opt@ \
 	    @hypre_blas_opt@ \
-	    @hypre_lapack_opt@ 
+	    @hypre_lapack_opt@  \
+            @hypre_debug_opt@
 
 exit $?
