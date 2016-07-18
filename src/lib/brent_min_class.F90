@@ -1,62 +1,66 @@
 !!
 !! BRENT_MODULE
 !!
-!! This module provides an interface to a Brent's algorithm.
-!! Note this could probably be replaced with some canned package,
+!! This module provides an interface to Brent's minimization algorithm.
+!! Note this could be replaced with some canned package,
 !! like the GNU Scientific Library, netlib, or something else.
 !!
 !! Zechariah J. Jibben <zjibben@lanl.gov>
-!! Last revised 4 Nov 2012.
+!! March 2016
 !!
 
-module brent_module
+module brent_min_class
 
   use kinds,  only: r8
   use consts, only: alittle
   implicit none
   private
 
-  public :: brent
-  
-  type, abstract, public :: brent_func
+  type, abstract, public :: brent_min
+    real(r8) :: eps
+    integer  :: maxitr, numitr=0
   contains
-    procedure(eval), deferred :: eval
-  end type brent_func
+    procedure, non_overridable :: find_minimum
+    procedure(func), deferred :: f
+  end type brent_min
 
   abstract interface
-    function eval (this, x)
-      import r8, brent_func
-      class(brent_func), intent(in) :: this
+    function func (this, x) result(fx)
+      import r8, brent_min
+      class(brent_min), intent(in) :: this
       real(r8), intent(in) :: x
-      real(r8) :: eval
-    end function eval
+      real(r8) :: fx
+    end function func
   end interface
 
 contains
 
   ! perform Brent's method
-  function brent (f,x_min,x_mid,x_max,tol,iter_max) result(x)
+  subroutine find_minimum (this,x_min,x_mid,x_max, x, stat)
 
     use logging_services
-
-    class(brent_func), intent(in) :: f
-    real(r8),          intent(in) :: x_min,x_mid,x_max,tol
-    integer,           intent(in) :: iter_max
+    
+    class(brent_min), intent(in)  :: this
+    real(r8),         intent(in)  :: x_min,x_mid,x_max
+    real(r8),         intent(out) :: x
+    integer,          intent(out) :: stat
 
     real(r8), parameter :: cgold = 1.0_r8 - 2.0_r8/(1.0_r8 + sqrt(5.0_r8))
-    real(r8) :: a,b, fu,fv,fw,fx, u,v,w,x,xm, p,q,r,tol1,tol2, d,e
+    real(r8) :: a,b, fu,fv,fw,fx, u,v,w,xm, p,q,r,tol1,tol2, d,e
     integer  :: iter
 
     a = x_min; b = x_max
     x = x_mid; w = x_mid; v = x_mid
-    fx = f%eval (x); fw = fx; fv = fx
+    fx = this%f (x); fw = fx; fv = fx
     e = 0.0_r8; d = 0.0_r8
 
-    do iter = 1,iter_max
+    stat = 0
+
+    do iter = 1,this%maxitr
       xm = 0.5_r8 * (a+b)
-      tol1 = tol*abs(x) + alittle
+      tol1 = this%eps*abs(x) + alittle
       tol2 = 2.0_r8 * tol1
-      if (abs(x-xm) <= tol2-0.5_r8*(b-a) .and. abs(fx) <= tol) return !.and. abs(fx) <= tol
+      if (abs(x-xm) <= tol2-0.5_r8*(b-a) .and. abs(fx) <= this%eps) return !.and. abs(fx) <= this%eps
 
       ! interpolate the polynomial
       if (abs(e) > tol1) then
@@ -78,7 +82,7 @@ contains
 
       ! evaluate at the next point
       u = x + merge(d, sign(tol1,d), abs(d) >= tol1)
-      fu = f%eval (u)
+      fu = this%f (u)
 
       if (fu <= fx) then
         ! u is a new minima location
@@ -113,14 +117,14 @@ contains
     ! write(*,'(a,3es14.4)') 'bounds: ',x_min,x_mid,x_max
     ! call LS_fatal('too many brent iterations!')
     !write(*,*) 'WARNING: did not converge brent iterations'
+    stat = 1
 
-  end function brent
+  end subroutine find_minimum
   
   pure subroutine shft3 (a,b,c,d)
     real(r8), intent(out)   :: a
     real(r8), intent(inout) :: b,c
     real(r8), intent(in)    :: d
-
     a = b
     b = c
     c = d
@@ -130,9 +134,8 @@ contains
     real(r8), intent(out)   :: a
     real(r8), intent(inout) :: b
     real(r8), intent(in)    :: c
-
     a = b
     b = c
   end subroutine shft2
 
-end module brent_module
+end module brent_min_class

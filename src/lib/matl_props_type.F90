@@ -29,6 +29,8 @@ module matl_props_type
     procedure :: init
   end type matl_props
 
+  public :: viscosityCell
+
 contains
 
   subroutine init (this, params)
@@ -78,5 +80,13 @@ contains
     end if
 
   end subroutine init
+
+  ! calculates the cell-centered viscosity from the material viscosities and the vof in the cell
+  ! note this might fit best in some other module
+  real(r8) pure function viscosityCell (mprop, vof, fluidVof)
+    type(matl_props), intent(in) :: mprop
+    real(r8),         intent(in) :: vof(:), fluidVof
+    viscosityCell = sum(mprop%viscosity*vof, mask=.not.mprop%is_immobile) / fluidVof
+  end function viscosityCell
 
 end module matl_props_type

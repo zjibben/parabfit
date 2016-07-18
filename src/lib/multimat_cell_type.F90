@@ -71,6 +71,7 @@ contains
       if (nm==this%nmat .or. (1.0_r8-cutvof)*remainder%volume() < vof(m)*this%volume() .or. &
           isZero(remainder%volume())) then
         ! if this is the final material in the cell,
+        ! or its volume is within a cutvof of the remaining volume,
         ! it gets the entire remainder of the polyhedron
         this%mat_poly(m) = remainder
         if (this%nmat==1) this%m = m ! if this is the only material, store its ID

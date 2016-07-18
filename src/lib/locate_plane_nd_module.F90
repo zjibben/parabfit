@@ -5,7 +5,7 @@
 !! subroutine for the nested dissection method.
 !!
 !! Zechariah J. Jibben <zjibben@lanl.gov>
-!! Last revised 4 Nov 2012.
+!! March 2016
 !!
 
 #include "f90_assert.fpp"
@@ -16,7 +16,8 @@ module locate_plane_nd_module
   use consts, only: ndim
   use plane_type
   use polyhedron_type
-  use brent_module
+  use brent_min_class
+  use brent_root_class
   use logging_services
   implicit none
   private
@@ -24,22 +25,15 @@ module locate_plane_nd_module
   public :: locate_plane_nd
 
   ! define type for error function
-  ! type, extends(brent_func) :: volume_error_func
-  !   real(r8)         :: tvol,norm(3)
-  !   type(polyhedron) :: poly
-  ! contains
-  !   procedure        :: init => func_init
-  !   procedure        :: eval => func_eval
-  !   procedure        :: signed_eval => func_signed_eval
-  ! end type volume_error_func
-  
-  type, extends(brent_func) :: vof_error_func
+  type, extends(brent_root) :: vof_error_func
     real(r8)         :: tvol,norm(ndim),parvol
     type(polyhedron) :: poly
   contains
-    procedure        :: init => func_init
-    procedure        :: eval => func_eval
-    procedure        :: signed_eval => func_signed_eval
+    procedure :: init => func_init
+    procedure :: eval => func_eval
+    procedure :: signed_eval => func_signed_eval
+    procedure :: f => func_signed_eval
+    !procedure :: f => func_eval
   end type vof_error_func
   
 contains
@@ -57,8 +51,9 @@ contains
     type(polyhedron), intent(in) :: poly
     real(r8),         intent(in) :: norm(:), vol, cell_volume
     
-    real(r8)              :: rho_min,rho_mid,rho_max
-    type(vof_error_func)  :: vof_error
+    real(r8)             :: rho_min,rho_mid,rho_max
+    integer              :: ierr
+    type(vof_error_func) :: vof_error
 
     ASSERT(size(norm)==ndim)
 
@@ -70,7 +65,10 @@ contains
     
     ! start Brent's method
     locate_plane_nd%normal = norm
-    locate_plane_nd%rho = brent (vof_error, rho_min, rho_mid, rho_max, cutvof/2.0_r8, 30)
+    vof_error%eps = 0.5_r8*cutvof; vof_error%maxitr = 30
+    call vof_error%find_root (rho_min, rho_max, locate_plane_nd%rho, ierr)
+    !call vof_error%find_minimum (rho_min, rho_mid, rho_max, locate_plane_nd%rho, ierr)
+    !locate_plane_nd%rho = brent (vof_error, rho_min, rho_mid, rho_max, cutvof/2.0_r8, 30)
     ! note ~30 iterations seem to be necessary to pass current unit tests
 
   end function locate_plane_nd

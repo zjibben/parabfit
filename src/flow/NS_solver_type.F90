@@ -456,23 +456,26 @@ contains
     class(NS_solver), intent(in) :: this
     real(r8),         intent(in) :: remaining_dt ! the remaining time left for this flow_sim step
 
-    real(r8) :: max_vel, min_dx
+    integer  :: i
+    real(r8) :: tmp, dx
+    
+    timestep_size = huge(1.0_r8)
+    do i = 1,this%mesh%ncell
+      ! TODO: get the smallest cell spacing more intelligently
+      !       this will cause problems with very skewed cells
+      dx = this%mesh%volume(i)**(1.0_r8/3.0_r8)
 
-    ! TODO: get the smallest cell spacing more intelligently
-    !       this will cause problems with very skewed cells
-    min_dx = minval(this%mesh%volume**(1.0_r8/3.0_r8)) 
-    max_vel = maxval(this%fluxing_velocity)
+      ! advection
+      tmp = max(maxval(this%fluxing_velocity(:,i)), 0.0_r8)
+      if (tmp>0.0_r8) timestep_size = min(timestep_size, this%CFL_multiplier* dx / tmp)
 
-    timestep_size = merge(&
-        this%CFL_multiplier/max_vel * min_dx,&
-        huge(1.0_r8), mask=max_vel/=0.0_r8)
-
-    ! if we are doing purely explicit viscous flow, reduce the step size as necessary
-    if (.not.this%use_prescribed_velocity) then
-      if (.not.this%inviscid .and. this%viscous_implicitness == 0.0_r8) &
-          timestep_size = min(timestep_size, &
-          this%CFL_multiplier / maxval(this%mprop%viscosity) * min_dx**2)
-    end if
+      ! if we are doing mostly-explicit viscous flow, reduce the step size as necessary
+      if (.not.this%use_prescribed_velocity .and. .not.this%inviscid &
+          .and. this%viscous_implicitness < 0.5_r8) then
+        tmp = viscosityCell(this%mprop, this%vof(:,i), this%fluidVof(i))
+        if (tmp>0.0_r8) timestep_size = min(timestep_size, this%CFL_multiplier * dx**2 / tmp)
+      end if
+    end do
 
     ! ensure the timestep size is not larger than the remaining time in this cycle
     ! or the requested maximum timestep size

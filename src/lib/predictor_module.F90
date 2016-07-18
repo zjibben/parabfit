@@ -439,16 +439,4 @@ contains
 
   end function viscosityFace
 
-  ! calculates the cell-centered viscosity from the material viscosities and the vof in the cell
-  real(r8) pure function viscosityCell (mprop, vof, fluidVof)
-
-    use matl_props_type
-
-    type(matl_props), intent(in) :: mprop
-    real(r8),         intent(in) :: vof(:), fluidVof
-
-    viscosityCell = sum(mprop%viscosity*vof, mask=.not.mprop%is_immobile) / fluidVof
-
-  end function viscosityCell
-
 end module predictor_module

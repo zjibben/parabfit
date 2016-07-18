@@ -1002,6 +1002,11 @@ contains
 
     ! calculate the face by modifying the parent face structure with the new edge from the plane
     !
+    ! TODO: Can the "next" point on the intersecting plane be found by going backwards on the
+    !       intersecting polygon? i.e., if v on the polygon is on this face, is v-1 (with
+    !       appropriate modulos) the necessary next point on the face? This might prevent
+    !       the more expensive searching with edge_cont_verts.
+    !
     ! note 1: in cases where several vertices on the parent face lie on the plane,
     !         this vertex may not be connected to the previous one found, but instead
     !         one of the other previous ones. If this edge does not exist and the

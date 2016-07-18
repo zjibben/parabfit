@@ -94,7 +94,8 @@ set(Pececillo_SOURCE_FILES
     material_geometry_type.F90
     vof_init.F90
     truncate_volume_module.F90
-    brent_module.F90
+    brent_min_class.F90
+    brent_root_class.F90
     int_norm_module.F90
     locate_plane_module.F90
     locate_plane_nd_module.F90

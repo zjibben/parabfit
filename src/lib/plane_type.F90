@@ -67,7 +67,7 @@ contains
     intersects = sign(1.0_r8,d1)/=sign(1.0_r8,d2) .or. isZero (d1,alpha) .or. isZero (d2,alpha)
   end function intersects
 
-  ! return the point where the line between x1 & x2 intersect with the given plane
+  ! return the point where the line between x1 & x2 intersects with the given plane
   function intersection_point (this,x)
 
     use consts, only: alpha
