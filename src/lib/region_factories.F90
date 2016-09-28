@@ -33,6 +33,13 @@ contains
     allocate(r, source=halfsphere_region(xc, radius, n))
   end subroutine alloc_halfsphere_region
 
+  subroutine alloc_cylinder_region (r, xc, axis, radius, halfheight)
+    use cylinder_region_type
+    class(region), allocatable, intent(out) :: r
+    real(r8), intent(in) :: xc(:), axis(:), radius, halfheight
+    allocate(r, source=cylinder_region(xc, axis, radius, halfheight))
+  end subroutine alloc_cylinder_region
+
   subroutine alloc_fill_region (r)
     use fill_region_type
     class(region), allocatable, intent(out) :: r
@@ -48,8 +55,8 @@ contains
     class(region), allocatable, intent(out) :: r
     type(parameter_list), intent(inout) :: params
 
-    real(r8), allocatable :: normal(:), x(:)
-    real(r8) :: p
+    real(r8), allocatable :: normal(:), x(:), axis(:)
+    real(r8) :: p, d
     character(:), allocatable :: rtype, context, errmsg
     integer :: stat
 
@@ -84,6 +91,18 @@ contains
       ASSERT(size(normal)==3)
       normal = normalize(normal)
       call alloc_halfsphere_region (r, x, p, normal)
+    case ('cylinder')
+      call params%get ('center', x, stat=stat, errmsg=errmsg)
+      if (stat /= 0) call LS_fatal (context//errmsg)
+      call params%get ('axis', axis, stat=stat, errmsg=errmsg)
+      if (stat /= 0) call LS_fatal (context//errmsg)
+      call params%get ('radius', p, stat=stat, errmsg=errmsg)
+      if (stat /= 0) call LS_fatal (context//errmsg)
+      call params%get ('halfheight', d, stat=stat, errmsg=errmsg)
+      if (stat /= 0) call LS_fatal (context//errmsg)
+      ASSERT(size(x)==3)
+      ASSERT(size(axis)==3)
+      call alloc_cylinder_region (r, x, axis, p, d)
     case ('fill', 'all')
       call alloc_fill_region (r)
     case default
