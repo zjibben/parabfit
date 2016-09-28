@@ -97,6 +97,7 @@ set(Pececillo_SOURCE_FILES
     brent_min_class.F90
     brent_root_class.F90
     int_norm_module.F90
+    curvature.F90
     locate_plane_module.F90
     locate_plane_nd_module.F90
     volume_track_module.F90

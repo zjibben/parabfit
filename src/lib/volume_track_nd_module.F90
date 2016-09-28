@@ -27,6 +27,10 @@ contains
     use surface_type
     use timer_tree_type
     use int_norm_module, only: interface_normal
+    ! DEBUGGING ##############
+    use consts, only: cutvof
+    use curvature
+    ! ########
 
     real(r8),         intent(out) :: volume_flux_sub(:,:,:)
     real(r8),         intent(in)  :: adv_dt, vof(:,:), fluxing_velocity(:,:), fluidrho(:)
@@ -35,8 +39,8 @@ contains
     type(surface),    intent(out) :: intrec(:)
     logical,          intent(in)  :: dump_intrec
 
-    real(r8) :: int_norm(3,size(vof,dim=1),mesh%ncell)
-    integer  :: i,m
+    real(r8) :: int_norm(3,size(vof,dim=1),mesh%ncell),k,l1
+    integer  :: i,m,j
     
     if (dump_intrec) then
       do m = 1,size(intrec)
@@ -50,13 +54,24 @@ contains
     ! calculate the flux volumes for each face
     call start_timer ("reconstruct/advect")
 
-    !$omp parallel do schedule(dynamic,100)
+    j=0;l1=0.0_r8
+    !!$omp parallel do schedule(dynamic,100)
     do i = 1,mesh%ncell
       volume_flux_sub(:,:,i) = cell_outward_volflux (mesh%x(:,mesh%cnode(:,i)), mesh%volume(i), &
           mesh%area(mesh%cface(:,i)), gmesh%outnorm(:,:,i), vof(:,i), int_norm(:,:,i), dump_intrec, &
           intrec, adv_dt, fluxing_velocity(:,i), fluidRho(i))
+      if (vof(1,i) > cutvof .and. vof(1,i) < 1.0_r8-cutvof) then
+        k = meanCurvature(int_norm(:,1,:), vof(1,:), mesh%area(mesh%cface(:,i)), mesh%volume(i), i, mesh, gmesh)
+        l1 = l1 + abs(k-1.0_r8/0.15_r8)
+        ! print *, "cell ",i,gmesh%xc(:,i)," curvature: ",k, abs(k-1/0.15)
+        ! print *
+        j = j+1
+      end if
+      !if (j>=4) exit
     end do
-    !$omp end parallel do
+    !!$omp end parallel do
+    print *, 'done', l1/real(j,r8), ' ex:',1/0.15
+    !stop
     
     call stop_timer ("reconstruct/advect")
     

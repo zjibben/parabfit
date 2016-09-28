@@ -21,11 +21,15 @@ module array_utils
       reverse,invert,isZero, index_of, &
       meanArithmetic, meanHarmonic, &
       magnitude, magnitude2, normalize, normalizeIfNonzero, projectOnto, orthonormalBasis, &
-      eliminateNoise
+      eliminateNoise, interpolate
 
   ! interface append
   !   procedure append_polygon
   ! end interface append
+
+  interface interpolate
+    module procedure interpolate_r8, interpolate_r8v
+  end interface interpolate
 
   interface reorder
     module procedure reorder_r81d, reorder_r82d
@@ -414,8 +418,6 @@ contains
   ! given a set of vectors x, return an orthonormal basis q for the same space using Gram-Schmidt
   subroutine orthonormalBasis (q,x)
 
-    use consts, only: ndim
-
     real(r8), allocatable, intent(out) :: q(:,:)
     real(r8), intent(in) :: x(:,:)
 
@@ -441,5 +443,25 @@ contains
     q = vs(:,1:n)
     
   end subroutine orthonormalBasis
+
+  pure function interpolate_r8 (f, xc, xf)
+    real(r8), intent(in) :: f(:),xc(:,:),xf(:)
+    real(r8) :: interpolate_r8
+    real(r8) :: interpolation_factor
+    ! ASSERT(size(f)==2)
+    ! ASSERT(size(xc,2)==2)
+    interpolation_factor = dot_product(xf-xc(:,1), xc(:,2)-xc(:,1))/magnitude2(xc(:,2)-xc(:,1))
+    interpolate_r8 = (1.0_r8 - interpolation_factor)*f(1) + interpolation_factor*f(2)
+  end function interpolate_r8
+
+  pure function interpolate_r8v (f, xc, xf)
+    real(r8), intent(in) :: f(:,:),xc(:,:),xf(:)
+    real(r8) :: interpolate_r8v(size(f,1))
+    real(r8) :: interpolation_factor
+    ! ASSERT(size(f,2)==2)
+    ! ASSERT(size(xc,2)==2)
+    interpolation_factor = dot_product(xf-xc(:,1), xc(:,2)-xc(:,1))/magnitude2(xc(:,2)-xc(:,1))
+    interpolate_r8v = (1.0_r8 - interpolation_factor)*f(:,1) + interpolation_factor*f(:,2)
+  end function interpolate_r8v
 
 end module array_utils
