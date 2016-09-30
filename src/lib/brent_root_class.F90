@@ -52,6 +52,7 @@ contains
     c = xmax
     fa = this%f(a)
     fb = this%f(b)
+    fc = fb
 
     stat = 0
 

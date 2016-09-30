@@ -16,7 +16,6 @@ module locate_plane_nd_module
   use consts, only: ndim
   use plane_type
   use polyhedron_type
-  use brent_min_class
   use brent_root_class
   use logging_services
   implicit none

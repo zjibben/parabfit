@@ -4,7 +4,6 @@ module locate_plane_nd_test
   use locate_plane_nd_module
   use plane_type
   use polyhedron_type
-  use brent_module
   use logging_services
   implicit none
   private
