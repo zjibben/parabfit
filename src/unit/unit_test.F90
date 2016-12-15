@@ -16,7 +16,7 @@ program unit_test
   use locate_plane_nd_test
   use vof_solver_type_test
   use analytic_surface_type_test
-  use string_type_test
+  !use string_type_test
   implicit none
 
   call LS_initialize ([output_unit]) !, LS_VERB_NOISY)
