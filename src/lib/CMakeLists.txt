@@ -18,6 +18,7 @@ set(Pececillo_SOURCE_FILES
     logging_services.F90
     data_layout_type.F90
     array_utils.F90
+    string_type.F90
 
 # Region modules
     region_class.F90
@@ -50,6 +51,7 @@ set(Pececillo_SOURCE_FILES
     fptr_scalar_func_type.F90
     piecewise_scalar_func_type.F90
     scalar_func_factories.F90
+    analytic_surface_type.F90
 
 # Mesh function modules
     bndry_func_class.F90
@@ -79,7 +81,7 @@ set(Pececillo_SOURCE_FILES
     idaesol_type.F90
     nka_type.F90
 
- # Flow Modules
+# Flow Modules
     differential_operators_module.F90
     matl_props_type.F90
     prescribed_velocity_fields.F90
@@ -99,6 +101,7 @@ set(Pececillo_SOURCE_FILES
     brent_root_class.F90
     int_norm_module.F90
     curvature.F90
+    curvature_fit_func.F90
     locate_plane_module.F90
     locate_plane_nd_module.F90
     volume_track_module.F90
@@ -119,7 +122,7 @@ set(Pececillo_SOURCE_FILES
     
 add_library(pececillo ${Pececillo_SOURCE_FILES})
 add_dependencies(pececillo hypre)
-target_link_libraries(pececillo petaca ${HYPRE_LIBRARIES} exodus)
+target_link_libraries(pececillo petaca ${HYPRE_LIBRARIES} exodus lapack)
 install(TARGETS pececillo DESTINATION lib)
 
 add_subdirectory(test)

@@ -4,6 +4,7 @@ include_directories(${Pececillo_SOURCE_DIR}/src/lib)
 include_directories(${Pececillo_MODULE_DIR} ${Petaca_MODULE_DIR})
 
 set(SOURCE_FILES
+  analytic_surface_type_test.F90
   polygon_type_test.F90
   polyhedron_type_test.F90
   locate_plane_nd_test.F90
@@ -13,6 +14,7 @@ set(SOURCE_FILES
   volume_track_test.F90
   volume_track_nd_test.F90
   vof_solver_type_test.F90
+  string_type_test.F90
   unit_test.F90)
 
 # Create a library (so we can unit test)

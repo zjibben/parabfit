@@ -39,7 +39,7 @@ contains
     type(surface),    intent(out) :: intrec(:)
     logical,          intent(in)  :: dump_intrec
 
-    real(r8) :: int_norm(3,size(vof,dim=1),mesh%ncell),k,l1
+    real(r8) :: int_norm(3,size(vof,dim=1),mesh%ncell),k,lnorm(3),kex
     integer  :: i,m,j
     
     if (dump_intrec) then
@@ -54,23 +54,29 @@ contains
     ! calculate the flux volumes for each face
     call start_timer ("reconstruct/advect")
 
-    j=0;l1=0.0_r8
+    j=0;lnorm=0.0_r8; kex=1.0_r8/0.25_r8
     !!$omp parallel do schedule(dynamic,100)
     do i = 1,mesh%ncell
       volume_flux_sub(:,:,i) = cell_outward_volflux (mesh%x(:,mesh%cnode(:,i)), mesh%volume(i), &
           mesh%area(mesh%cface(:,i)), gmesh%outnorm(:,:,i), vof(:,i), int_norm(:,:,i), dump_intrec, &
           intrec, adv_dt, fluxing_velocity(:,i), fluidRho(i))
-      if (vof(1,i) > cutvof .and. vof(1,i) < 1.0_r8-cutvof) then
-        k = meanCurvature(int_norm(:,1,:), vof(1,:), mesh%area(mesh%cface(:,i)), mesh%volume(i), i, mesh, gmesh)
-        l1 = l1 + abs(k-1.0_r8/0.15_r8)
-        ! print *, "cell ",i,gmesh%xc(:,i)," curvature: ",k, abs(k-1/0.15)
-        ! print *
-        j = j+1
-      end if
-      !if (j>=4) exit
+      ! if (vof(1,i) > cutvof .and. vof(1,i) < 1.0_r8-cutvof .and. all(gmesh%cneighbor(:,i)>0)) then
+      !   k = meanCurvature(int_norm(:,1,:), vof(1,:), mesh%area(mesh%cface(:,i)), mesh%volume(i), i, mesh, gmesh)
+      !   lnorm(1) = lnorm(1) + abs(k-kex)    !l1
+      !   lnorm(2) = lnorm(2) + (k-kex)**2    !l2
+      !   lnorm(3) = max(lnorm(3),abs(k-kex)) !linf
+      !   j = j+1
+      !   ! print '(a,i6,a,3es15.4,a,2f10.4)', "cell ",i, "   (",gmesh%xc(:,i),")  curvature: ",k, abs(k-kex)
+      !   ! print *
+      ! end if
+      ! !if (j>=1) exit
     end do
     !!$omp end parallel do
-    print *, 'done', l1/real(j,r8), ' ex:',1/0.15
+    ! print '(4(a,es10.2))', &
+    !     'done, l1:', lnorm(1)/real(j,r8), &
+    !     ' l2:', sqrt(lnorm(2)/real(j,r8)), &
+    !     ' linf:', lnorm(3), &
+    !     ' ex:',kex
     !stop
     
     call stop_timer ("reconstruct/advect")

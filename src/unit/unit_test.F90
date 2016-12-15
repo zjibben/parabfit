@@ -15,6 +15,8 @@ program unit_test
   use locate_plane_test
   use locate_plane_nd_test
   use vof_solver_type_test
+  use analytic_surface_type_test
+  use string_type_test
   implicit none
 
   call LS_initialize ([output_unit]) !, LS_VERB_NOISY)
@@ -38,5 +40,11 @@ program unit_test
   ! multiple interfaces tests
   call parallel_interfaces_test ()
   call intersecting_interfaces_test ()
+
+  ! analytic surface
+  call analytic_surface_test_suite ()
+
+  ! ! misc
+  ! call string_test_suite ()
 
 end program unit_test

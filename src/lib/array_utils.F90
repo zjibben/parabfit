@@ -18,8 +18,9 @@ module array_utils
 
   public :: first_true_loc,last_true_loc,xrange,reorder,insertion_sort,int2str,&
       containsPair, containsValue, containsPoint, pointIndex, &
-      reverse,invert,isZero, index_of, &
+      reverse,invert,isZero, index_of, clip, &
       meanArithmetic, meanHarmonic, &
+      outer_product, &
       magnitude, magnitude2, normalize, normalizeIfNonzero, projectOnto, orthonormalBasis, &
       eliminateNoise, interpolate
 
@@ -299,6 +300,32 @@ contains
     isZero_r8aa = abs(x) < tolh
   end function isZero_r8aa
 
+  pure real(r8) function clip (x,limit,default)
+
+    use ieee_arithmetic, only: ieee_is_nan
+
+    real(r8), intent(in) :: x
+    real(r8), optional, intent(in) :: limit,default
+
+    real(r8) :: limith
+
+    if (present(limit)) then
+      limith = limit
+    else
+      limith = huge(1.0_r8)
+    end if
+
+    clip = x
+    if (abs(x) > limith .or. ieee_is_nan(x)) then
+      if (present(default)) then
+        clip = default
+      else
+        clip = limith
+      end if
+    end if
+
+  end function clip
+
   pure logical function eq (a,b)
     real(r8), intent(in) :: a,b
     eq = isZero (a-b)
@@ -463,5 +490,18 @@ contains
     interpolation_factor = dot_product(xf-xc(:,1), xc(:,2)-xc(:,1))/magnitude2(xc(:,2)-xc(:,1))
     interpolate_r8v = (1.0_r8 - interpolation_factor)*f(:,1) + interpolation_factor*f(:,2)
   end function interpolate_r8v
+
+  pure function outer_product (a,b)
+
+    real(r8), intent(in) :: a(:), b(:)
+    real(r8) :: outer_product(size(a),size(b))
+
+    integer :: i
+
+    do i = 1,size(b)
+      outer_product(:,i) = a(:)*b(i)
+    end do
+
+  end function outer_product
 
 end module array_utils

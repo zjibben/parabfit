@@ -307,6 +307,8 @@ contains
     call gmv_write_cell_var (this%mesh, this%ns_solver%velocity_cc(2,:), 'u2')
     call gmv_write_cell_var (this%mesh, this%ns_solver%velocity_cc(3,:), 'u3')
     
+    call gmv_write_cell_var (this%mesh, this%ns_solver%fluidrho, 'fluidrho')
+    
     call gmv_write_cell_var (this%mesh, this%ns_solver%pressure_cc, 'pressure')
 
     ! write all material vofs
