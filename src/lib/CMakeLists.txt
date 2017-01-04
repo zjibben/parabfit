@@ -112,6 +112,7 @@ set(Pececillo_SOURCE_FILES
     polyhedron_type.F90
     multimat_cell_type.F90
     surface_type.F90
+    interface_patch_type.F90
     vof_solver_type.F90
     
 # Output modules

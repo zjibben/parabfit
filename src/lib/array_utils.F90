@@ -443,11 +443,11 @@ contains
   end function projectOnto
 
   ! given a set of vectors x, return an orthonormal basis q for the same space using Gram-Schmidt
-  subroutine orthonormalBasis (q,x)
+  function orthonormalBasis (x)
 
-    real(r8), allocatable, intent(out) :: q(:,:)
     real(r8), intent(in) :: x(:,:)
-
+    real(r8), allocatable :: orthonormalBasis(:,:)
+    
     integer :: i,j,n
     real(r8) :: tmp, v(size(x,dim=1)), vs(size(x,dim=1),size(x,dim=2))
 
@@ -467,9 +467,9 @@ contains
       end if
     end do
     
-    q = vs(:,1:n)
+    orthonormalBasis = vs(:,1:n)
     
-  end subroutine orthonormalBasis
+  end function orthonormalBasis
 
   pure function interpolate_r8 (f, xc, xf)
     real(r8), intent(in) :: f(:),xc(:,:),xf(:)

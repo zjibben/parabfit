@@ -30,6 +30,7 @@ module polygon_type
     procedure :: init => init_polygon
     procedure :: centroid
     procedure :: order
+    procedure :: basis
     procedure :: update_plane_normal
     procedure :: print_data
   end type polygon
@@ -125,7 +126,7 @@ contains
     
     ! the projection coordinate directions
     ! WARNING: problems will occur here if the vertices are slightly non-planar
-    call orthonormalBasis(q,xl)
+    q = orthonormalBasis(xl)
     if (.not.all(shape(q) >= [3,2])) then
       write(*,*)
       write(*,*) shape(q)
@@ -169,6 +170,41 @@ contains
     call this%update_plane_normal ()
 
   end subroutine order
+
+  ! generate an orthogonal basis for the polygon, approximately scaled to the size of the polygon
+  ! the first element is the shortest dimension, the second the longest
+  function basis (this)
+
+    use array_utils, only: projectOnto, magnitude
+
+    class(polygon), intent(in) :: this
+    real(r8) :: basis(ndim,2)
+
+    integer :: i
+    real(r8) :: xc(ndim), xl(ndim), minlen, maxlen, length
+
+    ! find the minimum and maximum directions
+    maxlen = 0.0_r8
+    minlen = huge(1.0_r8)
+    xc = this%centroid ()
+    do i = 1,this%nVerts
+      xl = xc - this%x(:,i)
+      length = magnitude(xl)
+
+      if (length < minlen) then
+        minlen = length
+        basis(:,1) = xl
+      else if (length > maxlen) then
+        maxlen = length
+        basis(:,2) = xl
+      end if
+    end do
+    
+    ! align basis(:,2) such that the two vectors are orthogonal
+    ! it should be almost orthogonal as is
+    basis(:,2) = basis(:,2) - projectOnto(basis(:,2),basis(:,1))
+
+  end function basis
 
   subroutine print_data (this)
 

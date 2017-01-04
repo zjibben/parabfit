@@ -174,7 +174,7 @@ contains
         0.0_r8,   0.0_r8,   &
         0.0_r8,   0.0_r8,   &
         0.0_r8,   0.0_r8], [2,6]) )
-    write(*,*) 'passed cube 1/8th filled in xy, fluxed in +x?   ', success
+    write(*,*) 'passed cube 1/8th filled in xy, fluxed in -x?   ', success
 
     ! cube 1/8th filled along xyz diagonal
     vof = [0.125_r8, 0.875_r8]
