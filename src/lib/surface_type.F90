@@ -22,6 +22,7 @@ module surface_type
   type, public :: surface
     private
     type(polygon), public, allocatable :: element(:)
+    integer, allocatable :: cell_id(:)
   contains
     procedure, private :: append_polyhedron
     procedure, private :: append_polygon
@@ -30,30 +31,37 @@ module surface_type
     procedure :: write_gmv
     procedure :: write_ply
     procedure :: purge
+    procedure :: local_patch
   end type surface
 
 contains
 
   ! append element to the end of array (increasing array size by 1)
-  subroutine append_polygon (this, new_element)
+  subroutine append_polygon (this, new_element, cell_id)
     class(surface), intent(inout) :: this
     class(polygon), intent(in)    :: new_element
+    integer,        intent(in)    :: cell_id
 
-    type(polygon), allocatable    :: tmp(:)
-    integer                       :: N
+    type(polygon), allocatable :: tmp(:)
+    integer,       allocatable :: tmp2(:)
+    integer                    :: N
 
-    if (new_element%nVerts < 3) return
+    if (new_element%nVerts < 3) return ! TODO: throw error here?
 
     if (allocated(this%element)) then
       N = size(this%element)
       tmp = this%element
-      deallocate(this%element)
-      allocate(this%element(N+1))
+      tmp2 = this%cell_id
+      deallocate(this%element, this%cell_id)
+      allocate(this%element(N+1), this%cell_id(N+1))
       this%element(1:N) = tmp
       this%element(N+1) = new_element
+      this%cell_id(1:N) = tmp2
+      this%cell_id(N+1) = cell_id
     else
-      allocate(this%element(1))
+      allocate(this%element(1), this%cell_id(1))
       this%element(1) = new_element
+      this%cell_id(1) = cell_id
     end if
 
   end subroutine append_polygon
@@ -118,6 +126,7 @@ contains
   subroutine purge (this)
     class(surface), intent(inout) :: this
     if (allocated(this%element)) deallocate(this%element)
+    if (allocated(this%cell_id)) deallocate(this%cell_id)
   end subroutine purge
 
   subroutine write_gmv (this)
@@ -226,5 +235,50 @@ contains
     close (99)
 
   end subroutine write_ply
+
+  ! return the polygons immediately surrounding the given cell
+  !
+  ! note 1: This could never be executed, in the case we ask for curvature in a cell
+  !         neighboring the interface. I'm not sure how to deal with this yet, I'll have to look
+  !         at how the height function method handles it. I assume you would want to look at the
+  !         primary normal direction of the interface nearby, then grab the curvature in the
+  !         cell directly "below" this one. That could catastrophically break down when the
+  !         curvature is on the order of the mesh spacing, though. This might also add some
+  !         complexity by requiring curvature computation in cells containing the interface first,
+  !         then looking up the values in a table later.
+  function local_patch (this, cell_id, gmesh)
+
+    use mesh_geom_type
+
+    class(surface), intent(in) :: this
+    integer, intent(in) :: cell_id
+    type(mesh_geom), intent(in) :: gmesh
+    type(polygon), allocatable :: local_patch(:)
+
+    integer :: e, npolygons, polygon_id(27) !, neighbor(26)
+    integer, allocatable :: neighbor(:)
+
+    ! get the neighboring cell ids
+    ! WARNING: right now this only includes face neighbors,
+    !          but I would like to include all neighbors
+    neighbor = pack(gmesh%cneighbor(:,cell_id), mask=gmesh%cneighbor(:,cell_id)>0)
+
+    ! get polygons from these cells
+    ! the order doesn't matter as long as the polygon associated with cell_id is first
+    npolygons = 1
+    do e = 1,size(this%cell_id)
+      if (any(this%cell_id(e) == neighbor)) then
+        npolygons = npolygons + 1
+        polygon_id(npolygons) = e
+      else if (this%cell_id(e) == cell_id) then
+        ! WARNING: see note 1
+        polygon_id(1) = e
+      end if
+    end do
+    
+    ! return the local patch
+    local_patch = this%element(polygon_id(:npolygons))
+    
+  end function local_patch
 
 end module surface_type

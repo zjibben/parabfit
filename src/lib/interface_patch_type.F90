@@ -25,7 +25,7 @@ module interface_patch_type
   public :: curvature_from_patch
 
 contains
-
+  
   real(r8) function curvature_from_patch (interface_reconstructions)
 
     use analytic_surface_type
@@ -51,22 +51,22 @@ contains
   ! return a collection of 3 points which fit the polygon
   ! these points should surround the centroid, but not touch the edge of the polygon
   function polygon_points (interface_reconstruction)
-
+    
     type(polygon), intent(in) :: interface_reconstruction
     real(r8) :: polygon_points(ndim,3)
-
+    
     real(r8) :: xcent(ndim), q(ndim,2), d
-
+    
     xcent = interface_reconstruction%centroid()
     !polygon_points(:,1) = 0.5_r8 * (xcent + interface_reconstruction%x(:,1))
-
+    
     ! form an equilateral triangle in the scaled basis
     q = interface_reconstruction%basis()
     d = 0.5_r8
     polygon_points(:,1) = xcent + d*q(:,1)
     polygon_points(:,2) = xcent + d*0.5_r8*(-q(:,1) + sqrt(3.0_r8)*q(:,2))
     polygon_points(:,3) = xcent + d*0.5_r8*(-q(:,1) - sqrt(3.0_r8)*q(:,2))
-
+    
   end function polygon_points
 
 end module interface_patch_type

@@ -85,7 +85,7 @@ contains
              mesh%normal(:,mesh%cface(:,i)), mesh%cfpar(i))
         volume_flux_sub(:,:,i) = cell_volume_flux (adv_dt, cell, fluidRho(i), vof(:,i), &
              int_norm(:,:), nmat_in_cell, nmat, &
-             fluxing_velocity(:,i), ninterfaces, dump_intrec, intrec)
+             fluxing_velocity(:,i), ninterfaces, dump_intrec, intrec, i)
       end do
       !$omp end do nowait
     else
@@ -102,7 +102,7 @@ contains
              mesh%normal(:,mesh%cface(:,i)), mesh%cfpar(i))
         volume_flux_sub(:,:,i) = cell_volume_flux (adv_dt, cell, fluidRho(i), vof(:,i), &
              int_norm_global(:,:,i), nmat_in_cell, nmat, &
-             fluxing_velocity(:,i), ninterfaces, dump_intrec, intrec)
+             fluxing_velocity(:,i), ninterfaces, dump_intrec, intrec, i)
       end do
       !$omp end parallel do
 
@@ -114,7 +114,7 @@ contains
 
   ! get the volume flux for every material in the given cell
   function cell_volume_flux (adv_dt, cell, fluidRho, vof, int_norm, nmat_in_cell, nmat, &
-       face_fluxing_velocity, ninterfaces, dump_intrec, intrec)
+       face_fluxing_velocity, ninterfaces, dump_intrec, intrec, cell_id)
     use consts,              only: alittle
     use hex_types,           only: cell_data, hex_f, hex_e
     use locate_plane_module, only: locate_plane_hex
@@ -126,7 +126,7 @@ contains
     use timer_tree_type
 
     real(r8),        intent(in)    :: adv_dt, int_norm(:,:), vof(:), fluidRho, face_fluxing_velocity(:)
-    integer,         intent(in)    :: ninterfaces, nmat_in_cell, nmat
+    integer,         intent(in)    :: ninterfaces, nmat_in_cell, nmat, cell_id
     type(cell_data), intent(in)    :: cell
     type(surface),   intent(inout) :: intrec(:)
     logical,         intent(in)    :: dump_intrec
@@ -163,7 +163,7 @@ contains
         if (dump_intrec) then
           call poly%init (ierr, plane_cell%node, hex_f, hex_e)
           if (ierr /= 0) call LS_fatal ('failed plane reconstruction dump')
-          call intrec(ni)%append (poly%intersection_verts (plane_cell%P))
+          call intrec(ni)%append (poly%intersection_verts (plane_cell%P), cell_id)
         end if
       end if
       

@@ -843,7 +843,7 @@ contains
             call plane_cell%locate_plane (locate_plane_niters)
             call poly%init (ierr, plane_cell%node, hex_f, hex_e)
             if (ierr /= 0) call LS_fatal ('plane reconstruction dump failed')
-            call this%intrec(ni)%append (poly%intersection_verts (plane_cell%P))
+            call this%intrec(ni)%append (poly%intersection_verts (plane_cell%P), i)
           end if
         end do
       case (NESTED_DISSECTION)
@@ -857,7 +857,7 @@ contains
         
         ! dump the interface reconstruction, if requested
         do ni = 1,size(this%intrec)
-          call this%intrec(ni)%append (ndcell%interface_polygon (ni))
+          call this%intrec(ni)%append (ndcell%interface_polygon (ni), i)
         end do
       case default
         call LS_fatal('unknown partition type')

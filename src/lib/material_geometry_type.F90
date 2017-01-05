@@ -8,6 +8,10 @@
 !! June 2015
 !!
 
+!! TODO: Make a way to initialize this type without a parameter list type, which really
+!!       relies on JSON input files. I want to set up a material geometry list in the code
+!!       as a unit test.
+
 #include "f90_assert.fpp"
 
 module material_geometry_type

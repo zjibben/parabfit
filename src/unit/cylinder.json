@@ -1,0 +1,20 @@
+{
+    "initial-vof": {
+    	    "mat2": {
+    		"material-id": 2,
+                "region": {
+                    "type": "cylinder",
+    		    "center": [0.0, 0.0, 0.05],
+                    "axis": [0.0, 0.0, 1.0],
+    		    "radius": 0.25,
+                    "halfheight": 0.2
+                }
+    	    },
+	    "mat1": {
+    		"material-id": 1,
+                "region": {
+                    "type": "fill"
+                }
+            }
+    }
+}

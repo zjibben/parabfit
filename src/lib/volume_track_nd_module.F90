@@ -27,10 +27,10 @@ contains
     use surface_type
     use timer_tree_type
     use int_norm_module, only: interface_normal
-    ! DEBUGGING ##############
-    use consts, only: cutvof
-    use curvature
-    ! ########
+    ! ! DEBUGGING ##############
+    ! use consts, only: cutvof
+    ! use curvature
+    ! ! ########
 
     real(r8),         intent(out) :: volume_flux_sub(:,:,:)
     real(r8),         intent(in)  :: adv_dt, vof(:,:), fluxing_velocity(:,:), fluidrho(:)
@@ -59,7 +59,7 @@ contains
     do i = 1,mesh%ncell
       volume_flux_sub(:,:,i) = cell_outward_volflux (mesh%x(:,mesh%cnode(:,i)), mesh%volume(i), &
           mesh%area(mesh%cface(:,i)), gmesh%outnorm(:,:,i), vof(:,i), int_norm(:,:,i), dump_intrec, &
-          intrec, adv_dt, fluxing_velocity(:,i), fluidRho(i))
+          intrec, adv_dt, fluxing_velocity(:,i), fluidRho(i), i)
       ! if (vof(1,i) > cutvof .and. vof(1,i) < 1.0_r8-cutvof .and. all(gmesh%cneighbor(:,i)>0)) then
       !   k = meanCurvature(int_norm(:,1,:), vof(1,:), mesh%area(mesh%cface(:,i)), mesh%volume(i), i, mesh, gmesh)
       !   lnorm(1) = lnorm(1) + abs(k-kex)    !l1
@@ -84,7 +84,7 @@ contains
   end subroutine volume_track_nd
 
   function cell_outward_volflux (x, vol, farea, outnorm, vof, int_norm, dump_intrec, intrec, adv_dt,&
-       fluxing_velocity, fluidRho)
+       fluxing_velocity, fluidRho, cell_id)
     
     use consts,    only: nfc
     use hex_types, only: hex_f,hex_e
@@ -95,6 +95,7 @@ contains
         adv_dt, fluxing_velocity(:), fluidRho
     type(surface), intent(inout) :: intrec(:)
     logical,       intent(in)    :: dump_intrec
+    integer,       intent(in)    :: cell_id
     real(r8)                     :: cell_outward_volflux(size(vof),nfc)
     
     type(multimat_cell) :: cell
@@ -110,7 +111,7 @@ contains
     ! dump the interface reconstruction, if requested
     if (dump_intrec) then
       do m = 1,size(intrec)
-        call intrec(m)%append (cell%interface_polygon (m))
+        call intrec(m)%append (cell%interface_polygon (m), cell_id)
       end do
     end if
 

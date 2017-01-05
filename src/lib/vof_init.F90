@@ -43,11 +43,11 @@ contains
     use unstr_mesh_type
     use parameter_list_type
 
-    type(unstr_mesh), pointer, intent(in)    :: mesh
-    type(parameter_list),      intent(in)    :: plist
-    integer,                   intent(in)    :: nmat
-    integer,                   intent(in)    :: matl_ids(:)
-    real(r8),                  intent(inout) :: vof(:,:)
+    type(unstr_mesh),     intent(in)    :: mesh
+    type(parameter_list), intent(in)    :: plist
+    integer,              intent(in)    :: nmat
+    integer,              intent(in)    :: matl_ids(:)
+    real(r8),             intent(inout) :: vof(:,:)
 
     integer                 :: i
     real(r8)                :: tolerance
