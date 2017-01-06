@@ -180,15 +180,30 @@ contains
     class(polygon), intent(in) :: this
     real(r8) :: basis(ndim,2)
 
-    integer :: i
+    integer :: i, iN
     real(r8) :: xc(ndim), xl(ndim), minlen, maxlen, length
 
     ! find the minimum and maximum directions
     maxlen = 0.0_r8
     minlen = huge(1.0_r8)
     xc = this%centroid ()
+    ! do i = 1,this%nVerts
+    !   xl = xc - this%x(:,i)
+    !   length = magnitude(xl)
+
+    !   if (length < minlen) then
+    !     minlen = length
+    !     basis(:,1) = xl
+    !   else if (length > maxlen) then
+    !     maxlen = length
+    !     basis(:,2) = xl
+    !   end if
+    ! end do
+
+    ! find closest and farthest points to the centroid on the polygon edge
     do i = 1,this%nVerts
-      xl = xc - this%x(:,i)
+      iN = modulo(i,this%nVerts) + 1
+      xl = this%x(:,i) + projectOnto(xc - this%x(:,i), this%x(:,iN) - this%x(:,i)) - xc
       length = magnitude(xl)
 
       if (length < minlen) then
@@ -203,6 +218,11 @@ contains
     ! align basis(:,2) such that the two vectors are orthogonal
     ! it should be almost orthogonal as is
     basis(:,2) = basis(:,2) - projectOnto(basis(:,2),basis(:,1))
+
+    call this%print_data ()
+    print *, 'b: ',basis(:,1)
+    print *, 'b: ',basis(:,2)
+    print *
 
   end function basis
 

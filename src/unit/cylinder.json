@@ -4,10 +4,10 @@
     		"material-id": 2,
                 "region": {
                     "type": "cylinder",
-    		    "center": [0.0, 0.0, 0.05],
+    		    "center": [0.0, 0.0, 0.0],
                     "axis": [0.0, 0.0, 1.0],
     		    "radius": 0.25,
-                    "halfheight": 0.2
+                    "halfheight": 0.5
                 }
     	    },
 	    "mat1": {

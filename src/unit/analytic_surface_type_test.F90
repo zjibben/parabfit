@@ -12,13 +12,19 @@ contains
 
   subroutine analytic_surface_test_suite ()
 
+    integer :: i
+
     print '(a)'
     print '(a)', 'ANALYTIC_SURFACE'
     print '(a)', '===================================================='
 
     call plane_test ()
     call parabola_test ()
-    call mesh_2d_test (16)
+
+    call mesh_2d_test (2**4)
+    ! do i = 4,6 !10
+    !   call mesh_2d_test (2**i)
+    ! end do
 
     print '(a)', '===================================================='
     print '(a)'
@@ -108,8 +114,8 @@ contains
     integer :: i, infile, ierr, nvofcell
 
     ! create a regular 2D mesh
-    mesh = new_unstr_mesh ([-0.5_r8, -0.5_r8, 0.0_r8], [0.5_r8, 0.5_r8, 1.0_r8], &
-        [mesh_size,mesh_size,1])
+    mesh = new_unstr_mesh ([-0.5_r8, -0.5_r8, -0.5_r8/real(mesh_size,r8)], &
+        [0.5_r8, 0.5_r8, 0.5_r8/real(mesh_size,r8)], [mesh_size,mesh_size,1])
     call gmesh%init (mesh)
 
     ! fill the mesh with volume fractions for a circle
@@ -123,7 +129,7 @@ contains
 
     plist => plist%sublist('initial-vof')
     call vof_initialize (mesh, plist, vof, [1,2], 2)
-    curvature_exact = 4.0_r8
+    curvature_exact = 0.5_r8 * (1.0_r8/0.25_r8 + 0.0_r8)
     deallocate(plist)
     
     ! get the interface reconstructions
@@ -133,24 +139,29 @@ contains
           gmesh%outnorm(:,:,i))
       if (ierr /= 0) call LS_fatal ('cell_outward_volflux failed: could not initialize cell')
 
-      !int_norm(1:2,1,i) = normalize(gmesh%xc(1:2,i))
+      int_norm(1:2,1,i) = -normalize(gmesh%xc(1:2,i))
       call cell%partition (vof(:,i), int_norm(:,:,i))
 
       call intrec%append (cell%interface_polygon(1), i)
     end do
+    call intrec%write_ply ('cylsurf.ply')
 
     ! get the curvature
     curvature = 0.0_r8; lnorm = 0.0_r8; nvofcell = 0
     do i = 1,mesh%ncell
       ! TODO: this really should be in any cell neighboring a cell containing the interface
       if (vof(1,i) > cutvof .and. vof(1,i) < 1.0_r8-cutvof) then
-        curvature(i) = curvature_from_patch (intrec%local_patch(i,gmesh))
+        curvature(i) = abs(curvature_from_patch (intrec%local_patch(i,gmesh)))
+        print *, 'here0'
         nvofcell = nvofcell + 1
         lnorm(1) = lnorm(1) + abs(curvature(i) - curvature_exact)
-        print *, i, curvature(i)
+        print '(i6, 2es15.4)', i, curvature(i), abs(curvature(i) - curvature_exact)
+        exit
       end if
     end do
+    print *, 'here1'
     lnorm(1) = lnorm(1) / real(nvofcell,r8)
+    print *, 'here2'
 
     print '(a,es15.4)', 'Finished. L1 = ',lnorm(1)
 
