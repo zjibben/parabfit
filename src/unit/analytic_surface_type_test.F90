@@ -108,14 +108,14 @@ contains
     type(surface) :: intrec
     type(parameter_list), pointer :: plist
     real(r8) :: curvature_exact, lnorm(3)
-    real(r8) :: vof(2,mesh_size*mesh_size), curvature(mesh_size*mesh_size)
+    real(r8) :: vof(2,mesh_size*mesh_size*3), curvature(mesh_size*mesh_size*3)
     real(r8), allocatable :: int_norm(:,:,:)
     type(multimat_cell) :: cell
     integer :: i, infile, ierr, nvofcell
 
     ! create a regular 2D mesh
-    mesh = new_unstr_mesh ([-0.5_r8, -0.5_r8, -0.5_r8/real(mesh_size,r8)], &
-        [0.5_r8, 0.5_r8, 0.5_r8/real(mesh_size,r8)], [mesh_size,mesh_size,1])
+    mesh = new_unstr_mesh ([-0.5_r8, -0.5_r8, -3.0_r8*0.5_r8/real(mesh_size,r8)], &
+        [0.5_r8, 0.5_r8, 3.0_r8*0.5_r8/real(mesh_size,r8)], [mesh_size,mesh_size,3])
     call gmesh%init (mesh)
 
     ! fill the mesh with volume fractions for a circle
@@ -156,7 +156,7 @@ contains
         nvofcell = nvofcell + 1
         lnorm(1) = lnorm(1) + abs(curvature(i) - curvature_exact)
         print '(i6, 2es15.4)', i, curvature(i), abs(curvature(i) - curvature_exact)
-        exit
+        !exit
       end if
     end do
     print *, 'here1'

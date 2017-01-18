@@ -42,7 +42,7 @@ contains
     end do
 
     do i = 1,size(pts,2)
-      print *, 'x: ',pts(:,i)
+      print '(a,3es14.4)', 'x: ',pts(:,i)
     end do
 
     ! calculate the analytic surface fit and curvature, calculated at the center point

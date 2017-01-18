@@ -220,8 +220,8 @@ contains
     basis(:,2) = basis(:,2) - projectOnto(basis(:,2),basis(:,1))
 
     call this%print_data ()
-    print *, 'b: ',basis(:,1)
-    print *, 'b: ',basis(:,2)
+    print '(a,3es15.5)', 'b: ',basis(:,1)
+    print '(a,3es15.5)', 'b: ',basis(:,2)
     print *
 
   end function basis
@@ -232,15 +232,15 @@ contains
 
     integer :: v
 
-    write(*,*) 'POLYGON DATA:'
+    print *, 'POLYGON DATA:'
     if (allocated(this%x)) then
       do v = 1,this%nVerts
-        write(*,'(a,i3,a,3es35.25)') 'x ',v,':  ',this%x(:,v)
+        print '(a,i3,a,3es15.5)', 'x ',v,':  ',this%x(:,v)
       end do
       write(*,*)
     end if
 
-    write(*,'(a,3es35.25)') 'norm ',this%norm
+    print '(a,3es15.5)', 'norm ',this%norm
 
   end subroutine print_data
 

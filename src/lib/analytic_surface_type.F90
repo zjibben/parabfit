@@ -154,15 +154,15 @@ contains
     character(32) :: term_str
     integer :: i
 
-    terms = ['','x','y','z','x**2','x*y','x*z','y**2','y*z','z**2']
+    terms = ['1','x','y','z','x**2','x*y','x*z','y**2','y*z','z**2']
     Fstr = ''
 
     do i = 1,size(this%coeff)
       if (.not.isZero(this%coeff(i),1e-5_r8)) then
         if (this%coeff(i) > 0.0_r8) then
-          write(term_str,'(a,es10.3,a)') '  + ',this%coeff(i),terms(i)
+          write(term_str,'(a,es10.3,2a)') '  + ',this%coeff(i),'*',terms(i)
         else
-          write(term_str,'(a,es10.3,a)') '  - ',abs(this%coeff(i)),terms(i)
+          write(term_str,'(a,es10.3,2a)') '  - ',abs(this%coeff(i)),'*',terms(i)
         end if
         Fstr = Fstr // trim(term_str)
       end if
