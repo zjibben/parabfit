@@ -239,13 +239,14 @@ contains
   ! return the polygons immediately surrounding the given cell
   !
   ! note 1: This could never be executed, in the case we ask for curvature in a cell
-  !         neighboring the interface. I'm not sure how to deal with this yet, I'll have to look
-  !         at how the height function method handles it. I assume you would want to look at the
-  !         primary normal direction of the interface nearby, then grab the curvature in the
-  !         cell directly "below" this one. That could catastrophically break down when the
-  !         curvature is on the order of the mesh spacing, though. This might also add some
-  !         complexity by requiring curvature computation in cells containing the interface first,
-  !         then looking up the values in a table later.
+  !         neighboring the interface, but it needs to be. I'm not sure how to deal
+  !         with this yet, I'll have to look at how the height function method
+  !         handles it. I assume you would want to look at the primary normal direction
+  !         of the interface nearby, then grab the curvature in the cell directly
+  !         "below" this one. That could catastrophically break down when the curvature
+  !         is on the order of the mesh spacing, though. This might also add some
+  !         complexity by requiring curvature computation in cells containing the
+  !         interface first, then looking up the values in a table later.
   function local_patch (this, cell_id, gmesh)
 
     use mesh_geom_type
@@ -261,7 +262,8 @@ contains
     ! get the neighboring cell ids
     ! WARNING: right now this only includes face neighbors,
     !          but I would like to include all neighbors
-    neighbor = pack(gmesh%cneighbor(:,cell_id), mask=gmesh%cneighbor(:,cell_id)>0)
+    !neighbor = pack(gmesh%cneighbor(:,cell_id), mask=gmesh%cneighbor(:,cell_id)>0)
+    neighbor = gmesh%caneighbor(cell_id)%elements
 
     ! get polygons from these cells
     ! the order doesn't matter as long as the polygon associated with cell_id is first
@@ -275,7 +277,7 @@ contains
         polygon_id(1) = e
       end if
     end do
-    
+
     ! return the local patch
     local_patch = this%element(polygon_id(:npolygons))
     

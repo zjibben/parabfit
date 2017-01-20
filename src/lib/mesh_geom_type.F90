@@ -5,7 +5,9 @@
 !! July 2015
 !!
 !! cneighbor(f,n) is the cell id of the neighbor to cell n opposite local face id f
-!! fneighbor(f,n) is the local face id of the face belonging to the neighbor to cell n opposite local face id f
+!! caneighbor(1:nneighbor(n),n) is the set of all node neighbors to cell n
+!! fneighbor(f,n) is the local face id of the face belonging to the neighbor to cell n
+!!                opposite local face id f
 !! fcell(n,f) is the cell id of local cell n connected to face f
 !! flid(n,f) is the local face id of the global face f on the local cell n
 !! vcell(:,v) are the cell ids of cells containing node v
@@ -17,17 +19,20 @@
 !!
 
 module mesh_geom_type
+
   use kinds,  only: r8
   use consts, only: nfc,ndim,nvf,nvc
   use unstr_mesh_type
+  use set_type
   implicit none
   private
 
   type, public :: mesh_geom
     private
     integer,  allocatable, public :: cneighbor(:,:), fneighbor(:,:), vcell(:,:), fcell(:,:), &
-        flid(:,:) !, nboundary_faces(:)
+        flid(:,:) !, caneighbor(:,:), nneighbor(:) !, nboundary_faces(:)
     real(r8), allocatable, public :: length(:), outnorm(:,:,:), xc(:,:), fc(:,:)
+    type(set_integer), allocatable, public :: caneighbor(:)
   contains
     procedure :: init
   end type mesh_geom
@@ -42,18 +47,22 @@ contains
     
     allocate(this%cneighbor(6,mesh%ncell), this%fneighbor(6,mesh%ncell), this%fcell(2,mesh%nface), &
         this%flid(2,mesh%nface), this%vcell(8,mesh%nnode), this%length(mesh%nedge), &
-        this%outnorm(3,6,mesh%ncell), this%xc(ndim,mesh%ncell), this%fc(ndim,mesh%nface)) !, &
+        this%outnorm(3,6,mesh%ncell), this%xc(ndim,mesh%ncell), this%fc(ndim,mesh%nface), &
+        this%caneighbor(mesh%ncell))
+        !caneighbor(26,mesh%ncell), nneighbor(mesh%ncell)) !, &
         !this%nboundary_faces(mesh%ncell))
     
     call neighbor_ids (this%cneighbor, this%fneighbor, this%fcell, this%flid, mesh)
     this%vcell = cells_neighboring_vertices (mesh)
+    call all_neighbor_ids (this%caneighbor, this%vcell, mesh)
     !this%length = edge_lengths (mesh%enode, mesh%nedge)
 
     !$omp parallel do default(private) shared(this,mesh)
     do i = 1,mesh%ncell
       ! calculate the outward normal
       do f = 1,nfc
-        this%outnorm(:,f,i) = mesh%normal(:,mesh%cface(f,i)) / sqrt(sum(mesh%normal(:,mesh%cface(f,i))**2))
+        this%outnorm(:,f,i) = mesh%normal(:,mesh%cface(f,i)) / &
+            sqrt(sum(mesh%normal(:,mesh%cface(f,i))**2))
         ! why is it so slow to do it here rather than the loop down there? -zjibben
         !check the orientation of the face with respect to this cell
         if (btest(mesh%cfpar(i),f)) this%outnorm(:,f,i) = -this%outnorm(:,f,i)
@@ -171,5 +180,23 @@ contains
     end do
     
   end subroutine cells_connected_to_faces
+
   
+  subroutine all_neighbor_ids (caneighbor, vcell, mesh)
+    
+    type(set_integer), intent(inout) :: caneighbor(:)
+    integer, intent(in) :: vcell(:,:)
+    type(unstr_mesh), intent(in) :: mesh
+
+    integer :: i,v,vc
+
+    do i = 1,mesh%ncell
+      do v = 1,8
+        vc = mesh%cnode(v,i)
+        call caneighbor(i)%add(pack(vcell(:,vc), mask=vcell(:,vc)>0 .and. vcell(:,vc)/=i))
+      end do
+    end do
+
+  end subroutine all_neighbor_ids
+
 end module mesh_geom_type

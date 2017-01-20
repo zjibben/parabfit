@@ -219,10 +219,10 @@ contains
     ! it should be almost orthogonal as is
     basis(:,2) = basis(:,2) - projectOnto(basis(:,2),basis(:,1))
 
-    call this%print_data ()
-    print '(a,3es15.5)', 'b: ',basis(:,1)
-    print '(a,3es15.5)', 'b: ',basis(:,2)
-    print *
+    ! call this%print_data ()
+    ! print '(a,3es15.5)', 'b: ',basis(:,1)
+    ! print '(a,3es15.5)', 'b: ',basis(:,2)
+    ! print *
 
   end function basis
 
