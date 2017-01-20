@@ -18,13 +18,14 @@ contains
     print '(a)', 'ANALYTIC_SURFACE'
     print '(a)', '===================================================='
 
-    call plane_test ()
-    call parabola_test ()
+    ! call plane_test ()
+    ! call parabola_test ()
+    ! call messy_test ()
 
-    call mesh_2d_test (2**4)
-    ! do i = 4,6 !10
-    !   call mesh_2d_test (2**i)
-    ! end do
+    ! call mesh_2d_test (2**4)
+    do i = 2,6 !10
+      call mesh_2d_test (2**i)
+    end do
 
     print '(a)', '===================================================='
     print '(a)'
@@ -83,6 +84,68 @@ contains
 
   end subroutine parabola_test
 
+  subroutine messy_test ()
+    
+    real(r8), allocatable :: x(:,:)
+    real(r8) :: dx
+    integer :: N,ind,i,j
+    type(analytic_surface) :: surf
+
+    dx = 0.1_r8
+    N = 9
+
+    x = reshape([ 3.3765E-03,    2.5013E-01,    0.0000E+00,&
+                  1.6882E-03,    2.5031E-01,    1.3532E-02,&
+                  1.6882E-03,    2.5031E-01,   -1.3532E-02,&
+                 -4.9481E-02,    2.4442E-01,   -6.2500E-02,&
+                 -2.9952E-02,    2.4721E-01,   -4.8968E-02,&
+                 -2.9952E-02,    2.4721E-01,   -7.6032E-02,&
+                  2.3358E-02,    2.4814E-01,   -6.2500E-02,&
+                  4.2929E-02,    2.4534E-01,   -4.8968E-02,&
+                  4.2929E-02,    2.4534E-01,   -7.6032E-02,&
+                  9.3750E-02,    2.3076E-01,   -7.8125E-02,&
+                  1.0728E-01,    2.2496E-01,   -5.4688E-02,&
+                  8.0218E-02,    2.3656E-01,   -5.4688E-02,&
+                 -6.2148E-03,    2.5023E-01,   -6.2500E-02,&
+                 -3.1074E-03,    2.5058E-01,   -7.6032E-02,&
+                 -3.1074E-03,    2.5058E-01,   -4.8968E-02,&
+                  3.3765E-03,    2.5013E-01,   -6.2500E-02,&
+                  1.6882E-03,    2.5031E-01,   -4.8968E-02,&
+                  1.6882E-03,    2.5031E-01,   -7.6032E-02,&
+                 -4.9481E-02,    2.4442E-01,    0.0000E+00,&
+                 -2.9952E-02,    2.4721E-01,    1.3532E-02,&
+                 -2.9952E-02,    2.4721E-01,   -1.3532E-02,&
+                  2.3358E-02,    2.4814E-01,    0.0000E+00,&
+                  4.2929E-02,    2.4534E-01,    1.3532E-02,&
+                  4.2929E-02,    2.4534E-01,   -1.3532E-02,&
+                  9.3750E-02,    2.3076E-01,   -1.5625E-02,&
+                  1.0728E-01,    2.2496E-01,    7.8125E-03,&
+                  8.0218E-02,    2.3656E-01,    7.8125E-03,&
+                 -6.2148E-03,    2.5023E-01,    0.0000E+00,&
+                 -3.1074E-03,    2.5058E-01,   -1.3532E-02,&
+                 -3.1074E-03,    2.5058E-01,    1.3532E-02,&
+                 -4.9481E-02,    2.4442E-01,    6.2500E-02,&
+                 -2.9952E-02,    2.4721E-01,    7.6032E-02,&
+                 -2.9952E-02,    2.4721E-01,    4.8968E-02,&
+                  2.3358E-02,    2.4814E-01,    6.2500E-02,&
+                  4.2929E-02,    2.4534E-01,    7.6032E-02,&
+                  4.2929E-02,    2.4534E-01,    4.8968E-02,&
+                  9.3750E-02,    2.3076E-01,    4.6875E-02,&
+                  1.0728E-01,    2.2496E-01,    7.0312E-02,&
+                  8.0218E-02,    2.3656E-01,    7.0312E-02,&
+                 -6.2148E-03,    2.5023E-01,    6.2500E-02,&
+                 -3.1074E-03,    2.5058E-01,    4.8968E-02,&
+                 -3.1074E-03,    2.5058E-01,    7.6032E-02,&
+                  3.3765E-03,    2.5013E-01,    6.2500E-02,&
+                  1.6882E-03,    2.5031E-01,    7.6032E-02,&
+                  1.6882E-03,    2.5031E-01,    4.8968E-02], [3,45])
+
+    call surf%init (x)
+
+    print '(dt,a,es12.4)', surf, ',     curvature: ', surf%curvature([0.0_r8,0.0_r8,0.0_r8])
+    
+  end subroutine messy_test
+
   subroutine mesh_2d_test (mesh_size)
 
     use,intrinsic :: iso_c_binding, only: C_NEW_LINE
@@ -107,8 +170,9 @@ contains
     type(mesh_geom) :: gmesh
     type(surface) :: intrec
     type(parameter_list), pointer :: plist
-    real(r8) :: curvature_exact, lnorm(3)
-    real(r8) :: vof(2,mesh_size*mesh_size*3), curvature(mesh_size*mesh_size*3)
+    real(r8) :: curvature_exact, lnorm(3), err, &
+        !vof(2,mesh_size**3), curvature(mesh_size**3)
+        vof(2,mesh_size*mesh_size*3), curvature(mesh_size*mesh_size*3)
     real(r8), allocatable :: int_norm(:,:,:)
     type(multimat_cell) :: cell
     integer :: i, infile, ierr, nvofcell
@@ -116,6 +180,8 @@ contains
     ! create a regular 2D mesh
     mesh = new_unstr_mesh ([-0.5_r8, -0.5_r8, -3.0_r8*0.5_r8/real(mesh_size,r8)], &
         [0.5_r8, 0.5_r8, 3.0_r8*0.5_r8/real(mesh_size,r8)], [mesh_size,mesh_size,3])
+    ! mesh = new_unstr_mesh ([-0.5_r8, -0.5_r8, -0.5_r8], &
+    !     [0.5_r8, 0.5_r8, 0.5_r8], [mesh_size,mesh_size,mesh_size])
     call gmesh%init (mesh)
 
     ! fill the mesh with volume fractions for a circle
@@ -149,21 +215,28 @@ contains
     ! get the curvature
     curvature = 0.0_r8; lnorm = 0.0_r8; nvofcell = 0
     do i = 1,mesh%ncell
+      ! TODO: need to handle boundaries. this might be automatic.
+      if (any(gmesh%fneighbor(:,i)<1)) cycle
+
       ! TODO: this really should be in any cell neighboring a cell containing the interface
       if (vof(1,i) > cutvof .and. vof(1,i) < 1.0_r8-cutvof) then
         curvature(i) = abs(curvature_from_patch (intrec%local_patch(i,gmesh)))
-        print *, 'here0'
+
+        ! append to norms
+        err = abs(curvature(i) - curvature_exact)
         nvofcell = nvofcell + 1
-        lnorm(1) = lnorm(1) + abs(curvature(i) - curvature_exact)
-        print '(i6, 2es15.4)', i, curvature(i), abs(curvature(i) - curvature_exact)
-        !exit
+        lnorm(1) = lnorm(1) + err
+        lnorm(2) = lnorm(2) + err**2
+        lnorm(3) = max(lnorm(3),err)
+        
+        ! print '(i6, 3es15.4)', i, curvature(i), curvature_exact, err
+        ! if (err > 1e0) stop
       end if
     end do
-    print *, 'here1'
     lnorm(1) = lnorm(1) / real(nvofcell,r8)
-    print *, 'here2'
+    lnorm(2) = sqrt(lnorm(2) / real(nvofcell,r8))
 
-    print '(a,es15.4)', 'Finished. L1 = ',lnorm(1)
+    print '(a,3es15.4)', 'Finished. L1,L2,Linf = ',lnorm
 
   end subroutine mesh_2d_test
     

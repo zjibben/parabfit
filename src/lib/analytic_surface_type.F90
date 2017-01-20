@@ -39,22 +39,23 @@ contains
   ! in a least-squares sense
   subroutine init (this,x)
 
-    use array_utils, only: outer_product,isZero
+    use array_utils, only: outer_product,isZero, normalize
+    use, intrinsic :: iso_c_binding, only: c_new_line
 
     class(analytic_surface), intent(out) :: this
     real(r8), intent(in) :: x(:,:)
 
     real(r8), allocatable :: M(:,:), N(:,:), lr(:), li(:), vr(:,:), tmpM(:,:), tmpV(:), tmpV2(:)
+    real(r8) :: tmpR
     integer :: ierr,s,i
 
     ! Exclusively 3D for now. Adding a 2D-specific version would be trivial, though.
     ASSERT(size(x,1)==3)
 
     s = 10 ! number of terms for a quadratic function
-    allocate(this%coeff(s))
 
     ! build the matrices for the generalized eigen-problem
-    allocate(M(s,s), N(s,s))
+    allocate(this%coeff(s), M(s,s), N(s,s))
     M = 0.0_r8; N = 0.0_r8
     do i = 1,size(x,2)
       tmpV = this%l(x(:,i))
@@ -63,6 +64,16 @@ contains
       N = N + matmul(tmpM,transpose(tmpM))
     end do
 
+    ! print *, c_new_line, "M:"
+    ! do i = 1,s
+    !   print '(10es10.2)', M(:,i)
+    ! end do
+
+    ! print *, c_new_line, "N:"
+    ! do i = 1,s
+    !   print '(10es10.2)', N(:,i)
+    ! end do
+
     ! solve the generalized eigenvector problem M*vr = lr*N*vr
     ! note could run this twice, first time just getting the ideal work size (tmpV2)
     allocate(lr(s),li(s),vr(s,s), tmpV2(8*s))
@@ -70,9 +81,26 @@ contains
         lr,li, tmpV, tmpM, s, vr, s, &
         tmpV2, 8*s, ierr)
     if (ierr/=0) call LS_fatal ('failed generalized eigenvalue solve')
+    lr = lr/tmpV
 
     ! pick the eigenvector corresponding to the smallest real eigenvalue
     this%coeff = vr(:,minloc(lr, dim=1, mask=isZero(li)))
+
+    ! print *, c_new_line, "evs:"
+    ! do i = 1,s
+    !   print '(10es10.2)', lr(i), li(i)
+    !   print '(10es10.2)', normalize(vr(:,i))
+    !   print *, c_new_line
+    ! end do
+
+    ! print *, c_new_line, "coeffs: "
+    ! print '(10es10.2)', normalize(this%coeff)
+
+    ! tmpR = minval(lr, dim=1, mask=isZero(li))
+    ! print *, tmpR
+    ! print '(10es10.2)', matmul(M - tmpR*N, this%coeff)
+
+    ! print *, c_new_line
 
   end subroutine init
 
@@ -94,11 +122,11 @@ contains
 
     ASSERT(size(x)==3)
 
-    Dl = transpose(reshape([&
+    Dl = reshape([&
         0.0_r8, 1.0_r8, 0.0_r8, 0.0_r8, 2.0_r8*x(1), x(2),   x(3),   0.0_r8,      0.0_r8, 0.0_r8, &
         0.0_r8, 0.0_r8, 1.0_r8, 0.0_r8, 0.0_r8,      x(1),   0.0_r8, 2.0_r8*x(2), x(3),   0.0_r8, &
-        0.0_r8, 0.0_r8, 0.0_r8, 1.0_r8, 0.0_r8,      0.0_r8, x(1),   0.0_r8,      x(2),   2.0_r8*x(3)], &
-        [size(this%coeff),3]))
+        0.0_r8, 0.0_r8, 0.0_r8, 1.0_r8, 0.0_r8,      0.0_r8, x(1),   0.0_r8,      x(2),  2.0_r8*x(3)&
+        ], [10,3])
 
   end function Dl
 
