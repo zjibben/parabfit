@@ -18,6 +18,7 @@ set(Pececillo_SOURCE_FILES
     logging_services.F90
     data_layout_type.F90
     array_utils.F90
+    set_type.F90
     #string_type.F90
 
 # Region modules
