@@ -250,26 +250,35 @@ contains
   function local_patch (this, cell_id, gmesh)
 
     use mesh_geom_type
+    use set_type
 
     class(surface), intent(in) :: this
     integer, intent(in) :: cell_id
     type(mesh_geom), intent(in) :: gmesh
     type(polygon), allocatable :: local_patch(:)
 
-    integer :: e, npolygons, polygon_id(27) !, neighbor(26)
-    integer, allocatable :: neighbor(:)
+    integer :: e, npolygons
+    integer, allocatable :: neighbor(:), polygon_id(:)
+    type(set_integer) :: ngbr
 
     ! get the neighboring cell ids
-    ! WARNING: right now this only includes face neighbors,
-    !          but I would like to include all neighbors
-    !neighbor = pack(gmesh%cneighbor(:,cell_id), mask=gmesh%cneighbor(:,cell_id)>0)
-    neighbor = gmesh%caneighbor(cell_id)%elements
+    !neighbor = pack(gmesh%cneighbor(:,cell_id), mask=gmesh%cneighbor(:,cell_id)>0) ! face neighbors
+    neighbor = gmesh%caneighbor(cell_id)%elements ! node neighbors
+
+    ! ! stretch out to neighbors of neighbors
+    ! call ngbr%add (neighbor)
+    ! do e = 1,size(neighbor)
+    !   call ngbr%add (gmesh%caneighbor(neighbor(e))%elements)
+    ! end do
+    ! neighbor = ngbr%elements
+    
+    allocate(polygon_id(size(neighbor)+1))
 
     ! get polygons from these cells
     ! the order doesn't matter as long as the polygon associated with cell_id is first
     npolygons = 1
     do e = 1,size(this%cell_id)
-      if (any(this%cell_id(e) == neighbor)) then
+      if (any(this%cell_id(e) == neighbor) .and. this%cell_id(e) /= cell_id) then
         npolygons = npolygons + 1
         polygon_id(npolygons) = e
       else if (this%cell_id(e) == cell_id) then
@@ -280,7 +289,7 @@ contains
 
     ! return the local patch
     local_patch = this%element(polygon_id(:npolygons))
-    
+
   end function local_patch
 
 end module surface_type

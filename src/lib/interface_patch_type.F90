@@ -41,7 +41,6 @@ contains
       pts(:,3*(i-1)+1:3*(i-1)+3) = polygon_points(interface_reconstructions(i))
     end do
 
-
     ! calculate the analytic surface fit and curvature, calculated at the center point
     ! by convention, the first element of interface_reconstructions is the center polygon
     call surf%init (pts)
