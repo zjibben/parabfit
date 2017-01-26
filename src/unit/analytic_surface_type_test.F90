@@ -22,9 +22,9 @@ contains
     ! call parabola_test ()
     ! call messy_test ()
 
-    ! call mesh_2d_test (2**4)
-    do i = 2,6 !10
-      call mesh_2d_test (2**i)
+    !call mesh_2d_test (2**5)
+    do i = 2,6
+      call mesh_2d_test (2**i, 'cylinder.json')
     end do
 
     print '(a)', '===================================================='
@@ -146,7 +146,7 @@ contains
     
   end subroutine messy_test
 
-  subroutine mesh_2d_test (mesh_size)
+  subroutine mesh_2d_test (mesh_size, shape_filename)
 
     use,intrinsic :: iso_c_binding, only: C_NEW_LINE
     use consts, only: cutvof
@@ -164,6 +164,7 @@ contains
     use array_utils, only: normalize
 
     integer, intent(in) :: mesh_size
+    character(*), intent(in) :: shape_filename
 
     character(:), allocatable :: errmsg
     type(unstr_mesh) :: mesh
@@ -188,14 +189,15 @@ contains
     ! right now this relies on an input file to describe the cylinder. In the future I'd like to
     ! initialize material_geometry_types without a parameter_list_type, or initialize a
     ! parameter_list_type without a JSON file
-    open(newunit=infile,file='cylinder.json',action='read',access='stream')
+    open(newunit=infile,file=shape_filename,action='read',access='stream')
     call parameter_list_from_json_stream (infile, plist, errmsg)
     if (.not.associated(plist)) call LS_fatal ("error reading input file:" // C_NEW_LINE // errmsg)
     close(infile)
 
     plist => plist%sublist('initial-vof')
     call vof_initialize (mesh, plist, vof, [1,2], 2)
-    curvature_exact = 0.5_r8 * (1.0_r8/0.25_r8 + 0.0_r8)
+    !curvature_exact = 0.5_r8 * (1.0_r8/0.35_r8 + 1.0_r8/0.35_r8) ! sphere
+    curvature_exact = 0.5_r8 * (1.0_r8/0.35_r8 + 0.0_r8) ! cylinder
     deallocate(plist)
     
     ! get the interface reconstructions
@@ -205,7 +207,8 @@ contains
           gmesh%outnorm(:,:,i))
       if (ierr /= 0) call LS_fatal ('cell_outward_volflux failed: could not initialize cell')
 
-      int_norm(1:2,1,i) = -normalize(gmesh%xc(1:2,i))
+      ! int_norm(:,:,i) = 0.0_r8
+      ! int_norm(1:2,1,i) = -normalize(gmesh%xc(1:2,i))
       call cell%partition (vof(:,i), int_norm(:,:,i))
 
       call intrec%append (cell%interface_polygon(1), i)
@@ -230,7 +233,7 @@ contains
         lnorm(3) = max(lnorm(3),err)
         
         ! print '(i6, 3es15.4)', i, curvature(i), curvature_exact, err
-        ! if (err > 1e0) stop
+        ! if (err > 1e3) stop
       end if
     end do
     lnorm(1) = lnorm(1) / real(nvofcell,r8)
