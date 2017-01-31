@@ -1,7 +1,7 @@
 !!
 !! analytic_surface
 !!
-!! This module defines a class for an analytic implicit surface description.
+!! This module defines a class for an analytic quadric surface description.
 !!
 !! Zechariah J. Jibben <zjibben@lanl.gov>
 !! December 2016
@@ -23,6 +23,10 @@ module analytic_surface_type
     real(r8), allocatable :: coeff(:)
   contains
     procedure :: init
+    procedure :: bestFit
+    procedure :: bestParaboloidFit
+    !procedure :: bestOneSheetFit
+    procedure, private :: taubinCoeffs
     procedure, private :: l
     procedure, private :: Dl
     procedure :: curvature
@@ -37,25 +41,115 @@ contains
 
   ! perform Taubin's method (1991) to calculate the analytic surface which fits the points x(:,:)
   ! in a least-squares sense
-  subroutine init (this,x)
+  subroutine init (this, coeff)
+    class(analytic_surface), intent(out) :: this
+    real(r8), intent(in) :: coeff(:)
+    this%coeff = coeff
+  end subroutine init
 
-    use array_utils, only: outer_product,isZero, normalize
-    use, intrinsic :: iso_c_binding, only: c_new_line
+  subroutine bestFit (this, x)
+
+    use array_utils, only: isZero
 
     class(analytic_surface), intent(out) :: this
     real(r8), intent(in) :: x(:,:)
 
+    real(r8), allocatable :: lr(:), vr(:,:)
+
+    ASSERT(size(x,1)==3) ! Exclusively 3D for now. Adding a 2D version would be trivial, though.
+
+    ! calculate the minimum-error quadric
+    call this%taubinCoeffs (lr,vr, x)
+
+    ! pick the eigenvector corresponding to the smallest real eigenvalue
+    ! note the eigenvalues and eigenvectors come back sorted from
+    ! largest to smallest eigenvalues
+    call this%init (vr(:,size(vr, dim=2)))
+    
+  end subroutine bestFit
+
+  ! Andrews & Sequin (2013) algorithm for parabolic coefficients
+  subroutine bestParaboloidFit (this, x)
+
+    use array_utils, only: normalize, det, polynomial_roots
+
+    class(analytic_surface), intent(out) :: this
+    real(r8), intent(in) :: x(:,:)
+
+    real(r8), allocatable :: lr(:), vr(:,:), C0(:), C1(:), t_roots(:), A0(:,:), A1(:,:), &
+        cubic_coeffs(:), Atmp(:,:)
+
+    ASSERT(size(x,1)==3) ! Exclusively 3D for now. Adding a 2D version would be trivial, though.
+
+    ! calculate the Taubin basis of solutions
+    call this%taubinCoeffs (lr,vr, x)
+
+    ! get the two sets of coefficients associated with the smallest errors (eigenvalues)
+    C0 = vr(:,size(vr, dim=2))
+    C1 = vr(:,size(vr, dim=2)-1)
+
+    ! switch to matrix form of the coefficients
+    A0 = coeffs2matrix (C0)
+    A1 = coeffs2matrix (C1)
+    
+    ! construct cubic polynomial, the roots of which indicate
+    ! a det=0 matrix, or paraboloid
+    allocate(Atmp(size(A0,dim=1), size(A0,dim=2)), cubic_coeffs(4))
+    cubic_coeffs = 0.0_r8
+
+    cubic_coeffs(1) = det(A0)
+    
+    Atmp(:,1) = A1(:,1); Atmp(:,2) = A0(:,2); Atmp(:,3) = A0(:,3)
+    cubic_coeffs(2) = cubic_coeffs(2) + det(Atmp)
+    Atmp(:,1) = A0(:,1); Atmp(:,2) = A1(:,2); Atmp(:,3) = A0(:,3)
+    cubic_coeffs(2) = cubic_coeffs(2) + det(Atmp)
+    Atmp(:,1) = A0(:,1); Atmp(:,2) = A0(:,2); Atmp(:,3) = A1(:,3)
+    cubic_coeffs(2) = cubic_coeffs(2) + det(Atmp)
+
+    Atmp(:,1) = A0(:,1); Atmp(:,2) = A1(:,2); Atmp(:,3) = A1(:,3)
+    cubic_coeffs(3) = cubic_coeffs(3) + det(Atmp)
+    Atmp(:,1) = A1(:,1); Atmp(:,2) = A0(:,2); Atmp(:,3) = A1(:,3)
+    cubic_coeffs(3) = cubic_coeffs(3) + det(Atmp)
+    Atmp(:,1) = A1(:,1); Atmp(:,2) = A1(:,2); Atmp(:,3) = A0(:,3)
+    cubic_coeffs(3) = cubic_coeffs(3) + det(Atmp)
+
+    cubic_coeffs(4) = det(A1)
+
+    t_roots = polynomial_roots(cubic_coeffs)
+
+    call this%init (normalize(C0 + t_roots(3) * C1))
+
+  end subroutine bestParaboloidFit
+
+  function coeffs2matrix(c)
+    real(r8), intent(in) :: c(:)
+    real(r8) :: coeffs2matrix(3,3)
+    coeffs2matrix = reshape([&
+        c(5), c(8)/2, c(9)/2,&
+        c(8)/2, c(6), c(10)/2,&
+        c(9)/2, c(10)/2, c(7)], [3,3])
+  end function coeffs2matrix
+  
+  subroutine taubinCoeffs (this, evl, evc, x)
+    
+    use array_utils, only: outer_product, isZero
+    use, intrinsic :: iso_c_binding, only: c_new_line
+    
+    class(analytic_surface), intent(in) :: this
+    real(r8), allocatable, intent(out) :: evl(:), evc(:,:)
+    real(r8), intent(in) :: x(:,:)
+
     real(r8), allocatable :: M(:,:), N(:,:), lr(:), li(:), vr(:,:), tmpM(:,:), tmpV(:), tmpV2(:)
     real(r8) :: tmpR
-    integer :: ierr,s,i
-
+    integer :: ierr,s,i,j
+    
     ! Exclusively 3D for now. Adding a 2D-specific version would be trivial, though.
     ASSERT(size(x,1)==3)
 
     s = 10 ! number of terms for a quadratic function
 
     ! build the matrices for the generalized eigen-problem
-    allocate(this%coeff(s), M(s,s), N(s,s))
+    allocate(M(s,s), N(s,s))
     M = 0.0_r8; N = 0.0_r8
     do i = 1,size(x,2)
       tmpV = this%l(x(:,i))
@@ -64,16 +158,6 @@ contains
       N = N + matmul(tmpM,transpose(tmpM))
     end do
 
-    ! print *, c_new_line, "M:"
-    ! do i = 1,s
-    !   print '(10es10.2)', M(:,i)
-    ! end do
-
-    ! print *, c_new_line, "N:"
-    ! do i = 1,s
-    !   print '(10es10.2)', N(:,i)
-    ! end do
-
     ! solve the generalized eigenvector problem M*vr = lr*N*vr
     ! note could run this twice, first time just getting the ideal work size (tmpV2)
     allocate(lr(s),li(s),vr(s,s), tmpV2(8*s))
@@ -81,12 +165,31 @@ contains
         lr,li, tmpV, tmpM, s, vr, s, &
         tmpV2, 8*s, ierr)
     if (ierr/=0) call LS_fatal ('failed generalized eigenvalue solve')
-    lr = lr/tmpV
 
-    ! pick the eigenvector corresponding to the smallest real eigenvalue
-    this%coeff = vr(:,minloc(lr, dim=1, mask=isZero(li)))
+    ! only return real results
+    li = li/tmpV
+    evl = pack(lr/tmpV, mask=isZero(li))
 
-    ! print *, c_new_line, "evs:"
+    allocate(evc(s,size(evl)))
+    j = 1
+    do i = 1,s
+      if (isZero(li(i))) then
+        evc(:,j) = vr(:,i)
+        j = j + 1
+      end if
+    end do
+
+    ! print *, c_new_line, "M:"
+    ! do i = 1,s
+    !   print '(10es10.2)', M(:,i)
+    ! end do
+    
+    ! print *, c_new_line, "N:"
+    ! do i = 1,s
+    !   print '(10es10.2)', N(:,i)
+    ! end do
+    
+        ! print *, c_new_line, "evs:"
     ! do i = 1,s
     !   print '(10es10.2)', lr(i), li(i)
     !   print '(10es10.2)', normalize(vr(:,i))
@@ -102,7 +205,7 @@ contains
 
     ! print *, c_new_line
 
-  end subroutine init
+  end subroutine taubinCoeffs
 
   ! return the vector of terms (without coefficients), (1, x, y, z, x**2, etc), for a point x(:)
   function l (this,x)

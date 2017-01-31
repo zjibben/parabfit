@@ -21,11 +21,12 @@ contains
     ! call plane_test ()
     ! call parabola_test ()
     ! call messy_test ()
+    call messy_test2 ()
 
-    !call mesh_2d_test (2**5)
-    do i = 2,6
-      call mesh_2d_test (2**i, 'cylinder.json')
-    end do
+    !call mesh_2d_test (2**4, 'cylinder.json')
+    ! do i = 2,6
+    !   call mesh_2d_test (2**i, 'cylinder.json')
+    ! end do
 
     print '(a)', '===================================================='
     print '(a)'
@@ -52,7 +53,7 @@ contains
       end do
     end do
     
-    call surf%init (x)
+    call surf%bestFit (x)
 
     print '(dt,a,es12.4)', surf, ',     curvature: ', surf%curvature([0.0_r8,0.0_r8,0.0_r8])
     
@@ -78,7 +79,7 @@ contains
       end do
     end do
     
-    call surf%init (x)
+    call surf%bestFit (x)
 
     print '(dt,a,es12.4)', surf, ',     curvature: ', surf%curvature([0.0_r8,0.0_r8,0.0_r8])
 
@@ -140,11 +141,75 @@ contains
                   1.6882E-03,    2.5031E-01,    7.6032E-02,&
                   1.6882E-03,    2.5031E-01,    4.8968E-02], [3,45])
 
-    call surf%init (x)
+    call surf%bestFit (x)
 
-    print '(dt,a,es12.4)', surf, ',     curvature: ', surf%curvature([0.0_r8,0.0_r8,0.0_r8])
+    print '(dt,a,es12.4)', surf, ',     curvature: ', surf%curvature(sum(x(:,1:3), dim=2) / 3.0_r8)
     
   end subroutine messy_test
+
+  subroutine messy_test2 ()
+    
+    real(r8), allocatable :: x(:,:)
+    real(r8) :: dx
+    integer :: N,ind,i,j
+    type(analytic_surface) :: surf
+
+    dx = 0.1_r8
+    N = 9
+
+    x = reshape([&
+        -3.0328E-01,   -1.8111E-01,    0.0000E+00,&
+        -3.0789E-01,   -1.7153E-01,   -1.3532E-02,&
+        -3.0789E-01,   -1.7153E-01,    1.3532E-02,&
+        -2.7379E-01,   -2.1738E-01,   -4.6875E-02,&
+        -2.6349E-01,   -2.3032E-01,   -7.0312E-02,&
+        -2.8409E-01,   -2.0444E-01,   -7.0312E-02,&
+        -2.4913E-01,   -2.4742E-01,   -6.2500E-02,&
+        -2.4783E-01,   -2.4871E-01,   -7.6032E-02,&
+        -2.4783E-01,   -2.4871E-01,   -4.8968E-02,&
+        -3.1624E-01,   -1.5081E-01,   -6.2500E-02,&
+        -3.2185E-01,   -1.3791E-01,   -7.6032E-02,&
+        -3.2185E-01,   -1.3791E-01,   -4.8968E-02,&
+        -3.0328E-01,   -1.8111E-01,   -6.2500E-02,&
+        -3.0789E-01,   -1.7153E-01,   -7.6032E-02,&
+        -3.0789E-01,   -1.7153E-01,   -4.8968E-02,&
+        -3.3724E-01,   -9.3750E-02,   -7.8125E-02,&
+        -3.4086E-01,   -8.0218E-02,   -5.4688E-02,&
+        -3.3362E-01,   -1.0728E-01,   -5.4688E-02,&
+        -2.7379E-01,   -2.1738E-01,    1.5625E-02,&
+        -2.6349E-01,   -2.3032E-01,   -7.8125E-03,&
+        -2.8409E-01,   -2.0444E-01,   -7.8125E-03,&
+        -2.4913E-01,   -2.4742E-01,    0.0000E+00,&
+        -2.4783E-01,   -2.4871E-01,   -1.3532E-02,&
+        -2.4783E-01,   -2.4871E-01,    1.3532E-02,&
+        -3.2372E-01,   -1.3360E-01,    0.0000E+00,&
+        -3.1811E-01,   -1.4651E-01,   -1.3532E-02,&
+        -3.1811E-01,   -1.4651E-01,    1.3532E-02,&
+        -3.3724E-01,   -9.3750E-02,   -1.5625E-02,&
+        -3.4086E-01,   -8.0218E-02,    7.8125E-03,&
+        -3.3362E-01,   -1.0728E-01,    7.8125E-03,&
+        -2.7379E-01,   -2.1738E-01,    7.8125E-02,&
+        -2.6349E-01,   -2.3032E-01,    5.4688E-02,&
+        -2.8409E-01,   -2.0444E-01,    5.4687E-02,&
+        -2.4913E-01,   -2.4742E-01,    6.2500E-02,&
+        -2.4783E-01,   -2.4871E-01,    4.8968E-02,&
+        -2.4783E-01,   -2.4871E-01,    7.6032E-02,&
+        -3.1624E-01,   -1.5081E-01,    6.2500E-02,&
+        -3.2185E-01,   -1.3791E-01,    4.8968E-02,&
+        -3.2185E-01,   -1.3791E-01,    7.6032E-02,&
+        -3.0328E-01,   -1.8111E-01,    6.2500E-02,&
+        -3.0789E-01,   -1.7153E-01,    4.8968E-02,&
+        -3.0789E-01,   -1.7153E-01,    7.6032E-02,&
+        -3.3724E-01,   -9.3750E-02,    4.6875E-02,&
+        -3.4086E-01,   -8.0218E-02,    7.0312E-02,&
+        -3.3362E-01,   -1.0728E-01,    7.0312E-02], [3,45])
+
+    !call surf%bestFit (x)
+    call surf%bestParaboloidFit (x)
+
+    print '(dt,a,es12.4)', surf, ',     curvature: ', surf%curvature(sum(x(:,1:3), dim=2) / 3.0_r8)
+    
+  end subroutine messy_test2
 
   subroutine mesh_2d_test (mesh_size, shape_filename)
 
@@ -226,14 +291,14 @@ contains
         curvature(i) = abs(curvature_from_patch (intrec%local_patch(i,gmesh)))
 
         ! append to norms
-        err = abs(curvature(i) - curvature_exact)
+        err = abs((curvature(i) - curvature_exact) / curvature_exact)
         nvofcell = nvofcell + 1
         lnorm(1) = lnorm(1) + err
         lnorm(2) = lnorm(2) + err**2
         lnorm(3) = max(lnorm(3),err)
         
-        ! print '(i6, 3es15.4)', i, curvature(i), curvature_exact, err
-        ! if (err > 1e3) stop
+        print '(i6, 3es15.4, a)', i, curvature(i), curvature_exact, err, c_new_line
+        if (err > 1e0) stop
       end if
     end do
     lnorm(1) = lnorm(1) / real(nvofcell,r8)
