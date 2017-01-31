@@ -13,6 +13,7 @@ module array_utils
 
   use kinds,  only: r8
   use consts, only: alittle
+  use logging_services
   implicit none
   private
 
@@ -22,7 +23,9 @@ module array_utils
       meanArithmetic, meanHarmonic, &
       outer_product, &
       magnitude, magnitude2, normalize, normalizeIfNonzero, projectOnto, orthonormalBasis, &
-      eliminateNoise, interpolate
+      eliminateNoise, interpolate, &
+      det, &
+      polynomial_roots
 
   ! interface append
   !   procedure append_polygon
@@ -503,5 +506,56 @@ contains
     end do
 
   end function outer_product
+
+  ! return the determinant of a matrix
+  real(r8) function det (A)
+
+    real(r8), intent(in) :: A(:,:)
+
+    real(r8), allocatable :: LU(:,:)
+    integer, allocatable :: piv(:)
+    integer :: s, ierr
+
+    s = size(A, dim=1)
+    LU = A
+    allocate(piv(s))
+    call dgetrf (s,s, LU, s, piv, ierr)
+    if (ierr/=0) call LS_fatal ('failed determinant calculation')
+
+    ! determinant is the product of the diagonal of U in the LU decomposition
+    det = 1.0_r8
+    do s = 1,size(LU,dim=1)
+      det = det * LU(s,s)
+    end do
+
+  end function det
+
+  ! return the roots of the polynomial sum_{i=1}^N coeffs(i) * x^(i-1)
+  ! only real roots are returned
+  function polynomial_roots (coeffs)
+
+    real(r8), intent(in) :: coeffs(:)
+    real(r8), allocatable :: polynomial_roots(:)
+
+    integer :: i, N, ierr
+    real(r8), allocatable :: comp_mat(:,:), lr(:), li(:), vl(:,:), vr(:,:), work(:)
+
+    N = size(coeffs)-1
+
+    ! build the companion matrix
+    allocate(comp_mat(N,N), lr(N), li(N), work(5*N), vl(1,N), vr(1,N))
+    comp_mat = 0.0_r8
+    do i = 1,N-1
+      comp_mat(i+1,i) = 1.0_r8
+    end do
+    comp_mat(:,N) = - coeffs(1:N) / coeffs(N+1)
+
+    ! the roots are the eigenvalues of the companion matrix
+    call dgeev ('N','N', N, comp_mat, N, lr, li, vl, 1, vr, 1, work, 5*N, ierr)
+    if (ierr/=0) call LS_fatal ('failed finding polynomial roots')
+    
+    polynomial_roots = pack(lr, mask=isZero(li))
+
+  end function polynomial_roots
 
 end module array_utils
