@@ -29,12 +29,14 @@ contains
   real(r8) function curvature_from_patch (interface_reconstructions)
 
     use analytic_surface_type
+    use paraboloid_type
 
     type(polygon), intent(in) :: interface_reconstructions(:)
 
     integer :: i
     real(r8) :: pts(ndim,3*size(interface_reconstructions))
-    type(analytic_surface) :: surf
+    !type(analytic_surface) :: surf
+    type(paraboloid) :: surf
 
     ! get points representing each polygon
     do i = 1,size(interface_reconstructions)
@@ -43,15 +45,17 @@ contains
 
     ! calculate the analytic surface fit and curvature, calculated at the center point
     ! by convention, the first element of interface_reconstructions is the center polygon
+    !call surf%bestOneSheetFit (pts)
+    !call surf%bestParaboloidFit (pts)
     call surf%bestFit (pts)
     curvature_from_patch = surf%curvature(interface_reconstructions(1)%centroid())
 
-    !print '(a,3es14.4,a)', 'c: ',interface_reconstructions(1)%centroid()
-    do i = 1,size(pts,2)
-      print '(a,3es14.4)', 'x: ',pts(:,i)
-    end do
-    print *, 'curvature ', curvature_from_patch
-    print '(dt)', surf
+    ! print '(a,3es14.4,a)', 'c: ',interface_reconstructions(1)%centroid()
+    ! do i = 1,size(pts,2)
+    !   print '(a,3es20.10)', 'x: ',pts(:,i)
+    ! end do
+    ! print *, 'curvature ', curvature_from_patch
+    ! print '(dt)', surf
 
   end function curvature_from_patch
 

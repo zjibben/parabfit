@@ -2,6 +2,7 @@ module analytic_surface_type_test
 
   use kinds, only: r8
   use analytic_surface_type
+  use paraboloid_type
   use logging_services
   implicit none
   private
@@ -12,7 +13,8 @@ contains
 
   subroutine analytic_surface_test_suite ()
 
-    integer :: i
+    integer :: i, ncell
+    real(r8), allocatable :: lnorm(:)
 
     print '(a)'
     print '(a)', 'ANALYTIC_SURFACE'
@@ -21,12 +23,23 @@ contains
     ! call plane_test ()
     ! call parabola_test ()
     ! call messy_test ()
-    call messy_test2 ()
+    ! call messy_test2 ()
+    ! call messy_test3 ()
+    ! call messy_test4 ()
+    ! print *
 
-    !call mesh_2d_test (2**4, 'cylinder.json')
-    ! do i = 2,6
-    !   call mesh_2d_test (2**i, 'cylinder.json')
-    ! end do
+    !lnorm = mesh_2d_test (20, 'cylinder.json')
+    !lnorm = mesh_2d_test (80, 'cylinder.json')
+    !lnorm = mesh_2d_test (100, 'cylinder.json')
+
+    open (98, file="ftstr_conv_dump.txt")
+    write (98, '(a)') '# dx l1 l2 l3'
+    do i = 1,30
+      ncell = floor(10.0_r8 * 1.15_r8**i)
+      lnorm = mesh_2d_test (ncell, 'cylinder.json')
+      write (98, '(4es15.5)') 1.0_r8 / real(ncell, r8), lnorm
+    end do
+    close(98)
 
     print '(a)', '===================================================='
     print '(a)'
@@ -205,13 +218,137 @@ contains
         -3.3362E-01,   -1.0728E-01,    7.0312E-02], [3,45])
 
     !call surf%bestFit (x)
-    call surf%bestParaboloidFit (x)
+    !call surf%bestParaboloidFit (x)
+    call surf%bestOneSheetFit (x)
 
     print '(dt,a,es12.4)', surf, ',     curvature: ', surf%curvature(sum(x(:,1:3), dim=2) / 3.0_r8)
     
   end subroutine messy_test2
 
-  subroutine mesh_2d_test (mesh_size, shape_filename)
+  subroutine messy_test3 ()
+    
+    real(r8), allocatable :: x(:,:)
+    real(r8) :: dx
+    integer :: N,ind,i,j
+    !type(analytic_surface) :: surf
+    type(paraboloid) :: surf
+
+    dx = 0.1_r8
+    N = 9
+
+    x = reshape([&
+        -1.5187991043E-01_r8,   -2.0048700559E-01_r8,    0.0000000000E+00_r8,&
+        -1.5093995521E-01_r8,   -2.0121751398E-01_r8,   -1.0825317547E-02_r8,&
+        -1.5093995521E-01_r8,   -2.0121751398E-01_r8,    1.0825317547E-02_r8,&
+        -1.5187991043E-01_r8,   -2.0048700559E-01_r8,   -5.0000000000E-02_r8,&
+        -1.5093995521E-01_r8,   -2.0121751398E-01_r8,   -6.0825317547E-02_r8,&
+        -1.5093995521E-01_r8,   -2.0121751398E-01_r8,   -3.9174682453E-02_r8,&
+        -1.2500000000E-01_r8,   -2.1599817276E-01_r8,   -6.2500000000E-02_r8,&
+        -1.3582531755E-01_r8,   -2.1000567662E-01_r8,   -4.3750000000E-02_r8,&
+        -1.1417468245E-01_r8,   -2.2199066890E-01_r8,   -4.3750000000E-02_r8,&
+        -2.0048795062E-01_r8,   -1.5187626973E-01_r8,   -5.0000000000E-02_r8,&
+        -2.0121987654E-01_r8,   -1.5093813487E-01_r8,   -6.0825317547E-02_r8,&
+        -2.0121987654E-01_r8,   -1.5093813487E-01_r8,   -3.9174682453E-02_r8,&
+        -1.7636193379E-01_r8,   -1.7641207895E-01_r8,   -6.2500000000E-02_r8,&
+        -1.8659751671E-01_r8,   -1.6619820953E-01_r8,   -4.3750000000E-02_r8,&
+        -1.6612635087E-01_r8,   -1.8662594838E-01_r8,   -4.3750000000E-02_r8,&
+        -1.2500000000E-01_r8,   -2.1599817276E-01_r8,   -1.2500000000E-02_r8,&
+        -1.3582531755E-01_r8,   -2.1000567662E-01_r8,    6.2500000000E-03_r8,&
+        -1.1417468245E-01_r8,   -2.2199066890E-01_r8,    6.2500000000E-03_r8,&
+        -2.0146385185E-01_r8,   -1.5062542324E-01_r8,    0.0000000000E+00_r8,&
+        -2.0073192593E-01_r8,   -1.5156355811E-01_r8,   -1.0825317547E-02_r8,&
+        -2.0073192593E-01_r8,   -1.5156355811E-01_r8,    1.0825317547E-02_r8,&
+        -1.7636193379E-01_r8,   -1.7641207895E-01_r8,    1.2500000000E-02_r8,&
+        -1.6612635087E-01_r8,   -1.8662594838E-01_r8,   -6.2500000000E-03_r8,&
+        -1.8659751671E-01_r8,   -1.6619820953E-01_r8,   -6.2500000000E-03_r8,&
+        -1.5062663681E-01_r8,   -2.0146101677E-01_r8,    5.0000000000E-02_r8,&
+        -1.5156659202E-01_r8,   -2.0073050839E-01_r8,    6.0825317547E-02_r8,&
+        -1.5156659202E-01_r8,   -2.0073050839E-01_r8,    3.9174682453E-02_r8,&
+        -1.2500000000E-01_r8,   -2.1599817276E-01_r8,    3.7500000000E-02_r8,&
+        -1.3582531755E-01_r8,   -2.1000567662E-01_r8,    5.6250000000E-02_r8,&
+        -1.1417468245E-01_r8,   -2.2199066890E-01_r8,    5.6250000000E-02_r8,&
+        -2.0048795062E-01_r8,   -1.5187626973E-01_r8,    5.0000000000E-02_r8,&
+        -2.0121987654E-01_r8,   -1.5093813487E-01_r8,    6.0825317547E-02_r8,&
+        -2.0121987654E-01_r8,   -1.5093813487E-01_r8,    3.9174682453E-02_r8,&
+        -1.7636193379E-01_r8,   -1.7641207895E-01_r8,    3.7500000000E-02_r8,&
+        -1.8659751671E-01_r8,   -1.6619820953E-01_r8,    5.6250000000E-02_r8,&
+        -1.6612635087E-01_r8,   -1.8662594838E-01_r8,    5.6250000000E-02_r8], [3,36])
+
+    call surf%bestFit (x)
+    !call surf%bestParaboloidFit (x)
+    !call surf%bestOneSheetFit (x)
+
+    print '(dt,a,es12.4)', surf, ',     curvature: ', surf%curvature(sum(x(:,1:3), dim=2) / 3.0_r8)
+    
+  end subroutine messy_test3
+
+  subroutine messy_test4 ()
+    
+    real(r8), allocatable :: x(:,:)
+    real(r8) :: dx
+    integer :: N,ind,i,j
+    !type(analytic_surface) :: surf
+    type(paraboloid) :: surf
+
+    dx = 0.1_r8
+    N = 9
+
+    x = reshape([&
+        -7.1511535192E-03_r8,   -2.5012802513E-01_r8,    0.0000000000E+00_r8,&
+        -3.5755767596E-03_r8,   -2.5032006282E-01_r8,   -1.0825317547E-02_r8,&
+        -3.5755767596E-03_r8,   -2.5032006282E-01_r8,    1.0825317547E-02_r8,&
+        -2.3837178397E-03_r8,   -2.5038407538E-01_r8,   -5.0000000000E-02_r8,&
+        -5.9592945993E-03_r8,   -2.5019203769E-01_r8,   -6.0825317547E-02_r8,&
+        -5.9592945993E-03_r8,   -2.5019203769E-01_r8,   -3.9174682453E-02_r8,&
+        6.8663166500E-03_r8,   -2.5013333602E-01_r8,   -5.0000000000E-02_r8,&
+        3.4331583250E-03_r8,   -2.5033334005E-01_r8,   -6.0825317547E-02_r8,&
+        3.4331583250E-03_r8,   -2.5033334005E-01_r8,   -3.9174682453E-02_r8,&
+        -7.5000000000E-02_r8,   -2.3808064461E-01_r8,   -6.2500000000E-02_r8,&
+        -8.5825317547E-02_r8,   -2.3460907085E-01_r8,   -4.3750000000E-02_r8,&
+        -6.4174682453E-02_r8,   -2.4155221837E-01_r8,   -4.3750000000E-02_r8,&
+        -3.8749783245E-02_r8,   -2.4672498711E-01_r8,   -5.0000000000E-02_r8,&
+        -2.1874458113E-02_r8,   -2.4836249355E-01_r8,   -6.0825317547E-02_r8,&
+        -2.1874458113E-02_r8,   -2.4836249355E-01_r8,   -3.9174682453E-02_r8,&
+        1.5279179784E-02_r8,   -2.4878639736E-01_r8,   -5.0000000000E-02_r8,&
+        3.2639589892E-02_r8,   -2.4696599340E-01_r8,   -6.0825317547E-02_r8,&
+        3.2639589892E-02_r8,   -2.4696599340E-01_r8,   -3.9174682453E-02_r8,&
+        6.8663166500E-03_r8,   -2.5013333602E-01_r8,    0.0000000000E+00_r8,&
+        3.4331583250E-03_r8,   -2.5033334005E-01_r8,   -1.0825317547E-02_r8,&
+        3.4331583250E-03_r8,   -2.5033334005E-01_r8,    1.0825317547E-02_r8,&
+        -7.5000000000E-02_r8,   -2.3808064461E-01_r8,   -1.2500000000E-02_r8,&
+        -8.5825317547E-02_r8,   -2.3460907085E-01_r8,    6.2500000000E-03_r8,&
+        -6.4174682453E-02_r8,   -2.4155221837E-01_r8,    6.2500000000E-03_r8,&
+        -3.8749783245E-02_r8,   -2.4672498711E-01_r8,    0.0000000000E+00_r8,&
+        -2.1874458113E-02_r8,   -2.4836249355E-01_r8,   -1.0825317547E-02_r8,&
+        -2.1874458113E-02_r8,   -2.4836249355E-01_r8,    1.0825317547E-02_r8,&
+        3.8426393261E-02_r8,   -2.4635919209E-01_r8,    0.0000000000E+00_r8,&
+        2.1065983154E-02_r8,   -2.4817959604E-01_r8,   -1.0825317547E-02_r8,&
+        2.1065983154E-02_r8,   -2.4817959604E-01_r8,    1.0825317547E-02_r8,&
+        -2.3837178397E-03_r8,   -2.5038407538E-01_r8,    5.0000000000E-02_r8,&
+        -5.9592945993E-03_r8,   -2.5019203769E-01_r8,    6.0825317547E-02_r8,&
+        -5.9592945993E-03_r8,   -2.5019203769E-01_r8,    3.9174682453E-02_r8,&
+        6.8663166500E-03_r8,   -2.5013333602E-01_r8,    5.0000000000E-02_r8,&
+        3.4331583250E-03_r8,   -2.5033334005E-01_r8,    6.0825317547E-02_r8,&
+        3.4331583250E-03_r8,   -2.5033334005E-01_r8,    3.9174682453E-02_r8,&
+        -7.5000000000E-02_r8,   -2.3808064461E-01_r8,    3.7500000000E-02_r8,&
+        -8.5825317547E-02_r8,   -2.3460907085E-01_r8,    5.6250000000E-02_r8,&
+        -6.4174682453E-02_r8,   -2.4155221837E-01_r8,    5.6250000000E-02_r8,&
+        -3.8749783245E-02_r8,   -2.4672498711E-01_r8,    5.0000000000E-02_r8,&
+        -2.1874458113E-02_r8,   -2.4836249355E-01_r8,    6.0825317547E-02_r8,&
+        -2.1874458113E-02_r8,   -2.4836249355E-01_r8,    3.9174682453E-02_r8,&
+        1.5279179784E-02_r8,   -2.4878639736E-01_r8,    5.0000000000E-02_r8,&
+        3.2639589892E-02_r8,   -2.4696599340E-01_r8,    6.0825317547E-02_r8,&
+        3.2639589892E-02_r8,   -2.4696599340E-01_r8,    3.9174682453E-02_r8], [3,45])
+
+    call surf%bestFit (x)
+    !call surf%bestParaboloidFit (x)
+    !call surf%bestOneSheetFit (x)
+
+    print '(dt,a,es12.4)', surf, ',     curvature: ', surf%curvature(sum(x(:,1:3), dim=2) / 3.0_r8)
+    
+  end subroutine messy_test4
+
+  function mesh_2d_test (mesh_size, shape_filename) result(lnorm)
 
     use,intrinsic :: iso_c_binding, only: C_NEW_LINE
     use consts, only: cutvof
@@ -226,7 +363,8 @@ contains
     use vof_init
     use multimat_cell_type
     use hex_types, only: hex_f, hex_e
-    use array_utils, only: normalize
+    use array_utils, only: normalize, isZero
+    use curvature_hf
 
     integer, intent(in) :: mesh_size
     character(*), intent(in) :: shape_filename
@@ -261,8 +399,8 @@ contains
 
     plist => plist%sublist('initial-vof')
     call vof_initialize (mesh, plist, vof, [1,2], 2)
-    !curvature_exact = 0.5_r8 * (1.0_r8/0.35_r8 + 1.0_r8/0.35_r8) ! sphere
-    curvature_exact = 0.5_r8 * (1.0_r8/0.35_r8 + 0.0_r8) ! cylinder
+    !curvature_exact = 1.0_r8/0.35_r8 + 1.0_r8/0.35_r8 ! sphere
+    curvature_exact = 1.0_r8/0.25_r8 + 0.0_r8 ! cylinder
     deallocate(plist)
     
     ! get the interface reconstructions
@@ -271,9 +409,10 @@ contains
       call cell%init (ierr, mesh%x(:,mesh%cnode(:,i)), hex_f, hex_e, mesh%volume(i), &
           gmesh%outnorm(:,:,i))
       if (ierr /= 0) call LS_fatal ('cell_outward_volflux failed: could not initialize cell')
-
-      ! int_norm(:,:,i) = 0.0_r8
-      ! int_norm(1:2,1,i) = -normalize(gmesh%xc(1:2,i))
+      
+      int_norm(:,:,i) = 0.0_r8
+      int_norm(1:2,1,i) = -normalize(gmesh%xc(1:2,i))
+      int_norm(:,2,i) = -int_norm(:,1,i)
       call cell%partition (vof(:,i), int_norm(:,:,i))
 
       call intrec%append (cell%interface_polygon(1), i)
@@ -282,12 +421,14 @@ contains
 
     ! get the curvature
     curvature = 0.0_r8; lnorm = 0.0_r8; nvofcell = 0
+    !curvature = abs(curvatureHF(vof(1,:), int_norm(:,1,:), mesh, gmesh))
     do i = 1,mesh%ncell
       ! TODO: need to handle boundaries. this might be automatic.
-      if (any(gmesh%fneighbor(:,i)<1)) cycle
+      if (any(gmesh%cneighbor(:,i)<1)) cycle
 
       ! TODO: this really should be in any cell neighboring a cell containing the interface
-      if (vof(1,i) > cutvof .and. vof(1,i) < 1.0_r8-cutvof) then
+      if (vof(1,i) > cutvof .and. vof(1,i) < 1.0_r8-cutvof) then ! .and. .not.isZero(curvature(i))) then
+      !if (vof(1,i) > 5e-2_r8 .and. vof(1,i) < 1.0_r8-5e-2_r8) then! .and. .not.isZero(curvature(i))) then
         curvature(i) = abs(curvature_from_patch (intrec%local_patch(i,gmesh)))
 
         ! append to norms
@@ -297,15 +438,18 @@ contains
         lnorm(2) = lnorm(2) + err**2
         lnorm(3) = max(lnorm(3),err)
         
-        print '(i6, 3es15.4, a)', i, curvature(i), curvature_exact, err, c_new_line
-        if (err > 1e0) stop
+        ! if (err > 8.6e-2_r8) then
+        !   print '(i6, 3es14.4)', i, curvature(i), curvature_exact, err !, c_new_line
+        !   print '(2es15.5)', vof(1,i), 1.0_r8 - vof(1,i)
+        !   call LS_fatal ("large curvature error")
+        ! end if
       end if
     end do
     lnorm(1) = lnorm(1) / real(nvofcell,r8)
     lnorm(2) = sqrt(lnorm(2) / real(nvofcell,r8))
 
-    print '(a,3es15.4)', 'Finished. L1,L2,Linf = ',lnorm
+    print '(i5, a,3es15.4)', mesh_size, '  Finished. L1,L2,Linf = ',lnorm
 
-  end subroutine mesh_2d_test
+  end function mesh_2d_test
     
 end module analytic_surface_type_test
