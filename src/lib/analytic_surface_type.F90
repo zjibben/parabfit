@@ -21,11 +21,14 @@ module analytic_surface_type
     private
     ! perhaps use a mpoly_scalar_func_type here
     real(r8), allocatable :: coeff(:)
+    logical :: initialized
   contains
     procedure :: init
     procedure :: bestFit
     procedure :: bestParaboloidFit
-    !procedure :: bestOneSheetFit
+    procedure :: bestOneSheetFit
+    procedure :: canonicalForm
+    procedure, private :: goodParaboloidInSpace
     procedure, private :: taubinCoeffs
     procedure, private :: l
     procedure, private :: Dl
@@ -37,6 +40,8 @@ module analytic_surface_type
     generic :: write(formatted) => print_f
   end type analytic_surface
 
+  real(r8), parameter :: eccentricity_max = 1e4_r8
+
 contains
 
   ! perform Taubin's method (1991) to calculate the analytic surface which fits the points x(:,:)
@@ -45,6 +50,7 @@ contains
     class(analytic_surface), intent(out) :: this
     real(r8), intent(in) :: coeff(:)
     this%coeff = coeff
+    this%initialized = .true.
   end subroutine init
 
   subroutine bestFit (this, x)
@@ -62,22 +68,22 @@ contains
     call this%taubinCoeffs (lr,vr, x)
 
     ! pick the eigenvector corresponding to the smallest real eigenvalue
-    ! note the eigenvalues and eigenvectors come back sorted from
-    ! largest to smallest eigenvalues
-    call this%init (vr(:,size(vr, dim=2)))
+    call this%init (vr(:,minloc(lr, dim=1)))
     
   end subroutine bestFit
 
   ! Andrews & Sequin (2013) algorithm for parabolic coefficients
   subroutine bestParaboloidFit (this, x)
 
-    use array_utils, only: normalize, det, polynomial_roots
+    use array_utils, only: indexSort, normalize
 
     class(analytic_surface), intent(out) :: this
     real(r8), intent(in) :: x(:,:)
 
-    real(r8), allocatable :: lr(:), vr(:,:), C0(:), C1(:), t_roots(:), A0(:,:), A1(:,:), &
-        cubic_coeffs(:), Atmp(:,:)
+    real(r8) :: xcen(3)
+    real(r8), allocatable :: lr(:), vr(:,:), C0(:), C1(:)
+    integer, allocatable :: lr_index_sort(:)
+    integer :: i,j
 
     ASSERT(size(x,1)==3) ! Exclusively 3D for now. Adding a 2D version would be trivial, though.
 
@@ -85,16 +91,41 @@ contains
     call this%taubinCoeffs (lr,vr, x)
 
     ! get the two sets of coefficients associated with the smallest errors (eigenvalues)
-    C0 = vr(:,size(vr, dim=2))
-    C1 = vr(:,size(vr, dim=2)-1)
+    lr_index_sort = indexSort (lr)
+    ! C0 = normalize(vr(:,minloc(lr, dim=1)))
+    ! lr(minloc(lr, dim=1)) = huge(1.0_r8) ! nix this one to easily get the second smallest
+    ! C1 = normalize(vr(:,minloc(lr, dim=1)))
+
+    xcen = sum(x(:,1:3), dim=2) / 3.0_r8
+    do j = 2,size(lr)
+      C1 = normalize(vr(:,lr_index_sort(j)))
+      do i = 1,j-1
+        C0 = normalize(vr(:,lr_index_sort(i)))
+        call this%goodParaboloidInSpace (C0, C1, xcen)
+        if (this%initialized) return
+      end do
+    end do
+
+    call LS_fatal ('could not find good paraboloidic fit')
+    
+  end subroutine bestParaboloidFit
+
+  subroutine goodParaboloidInSpace (this, C0, C1, xcen)
+
+    use array_utils, only: normalize, det, polynomial_roots, isZero, signs
+
+    class(analytic_surface), intent(out) :: this
+    real(r8), intent(in) :: C0(:), C1(:), xcen(:)
+
+    real(r8) :: A0(3,3), A1(3,3), Atmp(3,3), cubic_coeffs(4), k, dx(3)
+    real(r8), allocatable :: lr(:), vr(:,:), t_roots(:), lin(:), sqr_signs(:)
+    integer :: i
 
     ! switch to matrix form of the coefficients
     A0 = coeffs2matrix (C0)
     A1 = coeffs2matrix (C1)
     
-    ! construct cubic polynomial, the roots of which indicate
-    ! a det=0 matrix, or paraboloid
-    allocate(Atmp(size(A0,dim=1), size(A0,dim=2)), cubic_coeffs(4))
+    ! construct cubic polynomial, the roots of which indicate a det=0 matrix (i.e., a paraboloid)
     cubic_coeffs = 0.0_r8
 
     cubic_coeffs(1) = det(A0)
@@ -117,17 +148,192 @@ contains
 
     t_roots = polynomial_roots(cubic_coeffs)
 
-    call this%init (normalize(C0 + t_roots(3) * C1))
+    !call this%init (normalize(C0 + minval(t_roots) * C1))
+    
+    ! print *, A0
+    ! print *, det(A0)
+    
+    ! print *, 'c0: ', c0
 
-  end subroutine bestParaboloidFit
+    ! print *
+    ! print *, 'c1: ', c1
+
+    ! print *
+    ! print *, 'tc: ', cubic_coeffs
+
+    ! print *
+    ! print *, 'roots: ',t_roots
+
+    ! print *
+    do i = 1,size(t_roots)
+      dx = xcen
+      call this%init (normalize(C0 + t_roots(i) * C1))
+      call this%canonicalForm (lr, lin, k, dx)
+      !if (isZero(k)) return ! no one-sheet quadrics of this form
+      
+      ! lr = lr/k
+      ! lin = lin/k
+      ! sqr_signs = signs(pack(lr, mask=.not.isZero(lr)))
+      ! print *, lr
+      ! print *, lin
+      ! print *
+      ! if (count(.not.isZero(lr)) == 2 .and. sqr_signs(1) == sqr_signs(2)) return
+
+      ! if not too eccentric, return
+      ! print *, lr
+      ! print *, lin
+      ! print *, k
+      !if (dx(1) > 1e-4_r8) return
+      if (sqrt(sum(lr**2)) < eccentricity_max) return
+      !if (maxval(abs(lr)) < eccentricity_max) return
+    end do
+
+    ! do i = 1,size(x,2)
+    !   print '(a,3es20.10)', 'x: ',x(:,i)
+    ! end do
+
+    this%initialized = .false.
+
+    !call LS_fatal ('could not find paraboloidic fit in this space')
+
+    ! do while (.not.isZero(det(coeffs2matrix(this%coeff))) .and. i <= size(t_roots))
+    !   i = i + 1
+    !   if (i > size(t_roots)) then
+    !     i = i-1
+    !     print *, A0
+    !     print *
+    !     print *, A1
+    !     print *
+    !     print *, 'root: ', t_roots(i)
+    !     print '(a,4es15.5)', 'c: ', cubic_coeffs
+    !     print *, 'det : ', det(A0 + t_roots(i)*A1)
+    !     print *, 'det : ', det(coeffs2matrix(this%coeff))
+    !     print *, 'detf: ', cubic_coeffs(1) + t_roots(i) * cubic_coeffs(2) + &
+    !         t_roots(i)**2 * cubic_coeffs(3) + t_roots(i)**3 * cubic_coeffs(4)
+    !     call LS_fatal ('could not find paraboloid fit')
+    !   end if
+    !   call this%init (normalize(C0 + t_roots(i) * C1))
+    ! end do
+
+  end subroutine goodParaboloidInSpace
+
+  subroutine bestOneSheetFit (this, x)
+
+    use array_utils, only: signs, isZero, diag, det
+
+    class(analytic_surface), intent(out) :: this
+    real(r8), intent(in) :: x(:,:)
+
+    real(r8) :: k
+    real(r8), allocatable :: sqr_signs(:), sqr(:), lin(:)
+    integer :: ierr, N
+
+    ASSERT(size(x,1)==3) ! Exclusively 3D for now. Adding a 2D version would be trivial, though.
+
+    ! get the best fit
+    call this%bestFit (x)
+
+    ! get the canonical form of the best fit, so we can recognize its shape
+    call this%canonicalForm (sqr, lin, k)
+
+    ! The number of hyperbolic sheets is the number of
+    ! eigenvalues (squared terms) with the opposite sign as
+    ! the offset in the canonical equation. If we have a
+    ! two-sheet hyperboloid, then find the best paraboloid fit.
+    ! If k=0, then we have a cone. If any eigenvalues are zero
+    ! or all have the same sign, then the best fit is not
+    ! a hyperboloid.
+    sqr_signs = signs(sqr)
+    
+    if (count(sqr_signs /= sign(1.0_r8, k)) > 1 .and. .not.isZero(k) .and. &
+        .not.(any(isZero(sqr)) .or. all(sqr_signs==sqr_signs(1)))) & !then
+        call this%bestParaboloidFit (x)
+
+      ! call this%canonicalForm (evl, k)
+      ! !print '(4es15.5)', evl, k
+      ! print '(3es15.5)', evl/k
+      ! print *, isZero(evl/k), det(coeffs2matrix(this%coeff))
+
+      !print '(a,3(es15.5,a))', '(',evl(1)/k, ')*x + (',evl(2)/k, ')*y + (',evl(3)/k, ')*z + 1'
+    !end if
+
+    ! print '(4es15.5)', evl, k
+    ! print '(3es15.5)', evl/k
+    ! print *, evl_signs
+    ! print *
+
+  end subroutine bestOneSheetFit
+
+  subroutine canonicalForm(this, sqr, lin, k, dx)
+
+    use array_utils, only: diag, isZero, first_true_loc
+
+    class(analytic_surface), intent(in) :: this
+    real(r8), allocatable, intent(out) :: sqr(:), lin(:)
+    real(r8), intent(out) :: k
+    real(r8), intent(inout), optional :: dx(:)
+
+    real(r8) :: D(3,3), evli(3), evc(3,3), tmp(1,3), work(5*3), tr(3), A(3,3), b(3), norm_fac, &
+        eccentricity
+    integer :: ierr, N, i
+
+    N = 3
+    if (allocated(sqr)) deallocate(sqr)
+    if (allocated(lin)) deallocate(lin)
+    allocate(sqr(N), lin(N))
+
+    ! convert to matrix form
+    A = coeffs2matrix(this%coeff) ! nonlinear terms
+    b = this%coeff(2:4)           ! linear terms
+    k = this%coeff(1)             ! constant term
+
+    ! rotate to cancel out cross-terms (diagonalize the nonlinear terms matrix)
+    call dgeev ('N','V', N, A, N, sqr, evli, tmp, 1, evc, N, work, 5*N, ierr)
+    if (ierr/=0 .or. .not.all(isZero(evli))) call LS_fatal ('failed eigenvalue solve')
+
+    D = diag(sqr)
+    b = matmul(transpose(evc), b)
+
+    ! translate to cancel out as many linear terms as possible
+    tr = 0.0_r8
+    do i = 1,N
+      if (.not.isZero(sqr(i))) tr(i) = 0.5_r8 * b(i) / sqr(i)
+    end do
+    
+    ! use a component of tr corresponding to a 0-eigenvalue to cancel out the constant term
+    if (any(isZero(sqr) .and. .not.isZero(b))) then
+      i = first_true_loc(isZero(sqr) .and. .not.isZero(b))
+      tr(i) = (dot_product(tr, matmul(D,tr)) - dot_product(b, tr) + k) / b(i)
+    end if
+
+    k = dot_product(tr, matmul(D, tr)) - dot_product(b, tr) + k
+    b = b - 2.0_r8 * matmul(tr, D)
+    
+    ! normalize the terms by the largest linear component, or the largest nonlinear component
+    if (any(.not.isZero(b))) then
+      norm_fac = b(first_true_loc(.not.isZero(b)))
+    else
+      norm_fac = sqr(first_true_loc(.not.isZero(sqr)))
+    end if
+    sqr = sqr / norm_fac
+    lin = b / norm_fac
+    k = k / norm_fac
+
+    if (present(dx)) then
+      eccentricity = sqrt(sum(sqr**2))
+      dx = matmul(transpose(evc), dx) / norm_fac
+      dx(1) = 2.0_r8 * sqrt(abs(dx(i))/eccentricity) * abs(norm_fac)
+    end if
+    
+  end subroutine canonicalForm
 
   function coeffs2matrix(c)
     real(r8), intent(in) :: c(:)
     real(r8) :: coeffs2matrix(3,3)
     coeffs2matrix = reshape([&
-        c(5), c(8)/2, c(9)/2,&
-        c(8)/2, c(6), c(10)/2,&
-        c(9)/2, c(10)/2, c(7)], [3,3])
+        c(5), c(6)/2.0_r8, c(7)/2.0_r8,&
+        c(6)/2.0_r8, c(8), c(9)/2.0_r8,&
+        c(7)/2.0_r8, c(9)/2.0_r8, c(10)], [3,3])
   end function coeffs2matrix
   
   subroutine taubinCoeffs (this, evl, evc, x)
@@ -167,13 +373,13 @@ contains
     if (ierr/=0) call LS_fatal ('failed generalized eigenvalue solve')
 
     ! only return real results
-    li = li/tmpV
-    evl = pack(lr/tmpV, mask=isZero(li))
+    !li = li/tmpV
+    evl = pack(lr/tmpV, mask=isZero(li) .and. .not.isZero(tmpV))
 
     allocate(evc(s,size(evl)))
     j = 1
     do i = 1,s
-      if (isZero(li(i))) then
+      if (isZero(li(i)) .and. .not. isZero(tmpV(i))) then
         evc(:,j) = vr(:,i)
         j = j + 1
       end if
@@ -268,7 +474,7 @@ contains
         this%coeff(6)*x(1) + 2*this%coeff(8)*x(2) + this%coeff(9)*x(3)) + &
         2*this%coeff(10)*(this%coeff(4) + this%coeff(7)*x(1) + this%coeff(9)*x(2) + &
         2*this%coeff(10)*x(3)))*(this%coeff(4) + this%coeff(7)*x(1) + this%coeff(9)*x(2) + &
-        2*this%coeff(10)*x(3)))/2
+        2*this%coeff(10)*x(3)))
 
     curvature = clip(curvature, 1e10_r8, 0.0_r8)
 
