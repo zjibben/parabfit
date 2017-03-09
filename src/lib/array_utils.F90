@@ -18,13 +18,15 @@ module array_utils
   private
 
   public :: first_true_loc,last_true_loc,xrange,reorder,insertion_sort,int2str,&
-      containsPair, containsValue, containsPoint, pointIndex, &
+      indexSort, &
+      containsPair, containsValue, containsPoint, pointIndex, signs, &
       reverse,invert,isZero, index_of, clip, &
       meanArithmetic, meanHarmonic, &
       outer_product, &
-      magnitude, magnitude2, normalize, normalizeIfNonzero, projectOnto, orthonormalBasis, &
+      magnitude, magnitude2, normalize, normalizeIfNonzero, projectOnto, crossProduct, &
+      orthonormalBasis, &
       eliminateNoise, interpolate, &
-      det, &
+      det, diag, &
       polynomial_roots
 
   ! interface append
@@ -158,6 +160,19 @@ contains
     integer, intent(in) :: n, array(:)
     containsValue = index_of(n, array) > 0
   end function containsValue
+
+  ! return an array of indicies of a sorted from smallest a to largest a
+  function indexSort (a)
+
+    real(r8), intent(in) :: a(:)
+    integer :: indexSort(size(a))
+    real(r8) :: a_copy(size(a))
+
+    a_copy = a
+    indexSort = xrange(1,size(a))
+    call insertion_sort (indexSort, a_copy)
+
+  end function indexSort
 
   subroutine insertion_sort_3r8r8 (x,key)
     real(r8), intent(inout) :: x(:,:),key(:)
@@ -445,6 +460,15 @@ contains
     projectOnto = dot_product(x1, n2) * n2
   end function projectOnto
 
+  pure function crossProduct (a,b)
+    real(r8), intent(in) :: a(:), b(:)
+    real(r8) :: crossProduct(size(a))
+    crossProduct = [&
+        a(2)*b(3) - a(3)*b(2), &
+        a(3)*b(1) - a(1)*b(3), &
+        a(1)*b(2) - a(2)*b(1)]
+  end function crossProduct
+
   ! given a set of vectors x, return an orthonormal basis q for the same space using Gram-Schmidt
   function orthonormalBasis (x)
 
@@ -520,15 +544,37 @@ contains
     LU = A
     allocate(piv(s))
     call dgetrf (s,s, LU, s, piv, ierr)
-    if (ierr/=0) call LS_fatal ('failed determinant calculation')
+    if (ierr>0) then
+      det = 0.0_r8
+      return
+    else if (ierr<0) then
+      print *, ierr
+      print *, A
+      call LS_fatal ('failed determinant calculation')
+    end if
 
     ! determinant is the product of the diagonal of U in the LU decomposition
     det = 1.0_r8
     do s = 1,size(LU,dim=1)
       det = det * LU(s,s)
+      if (piv(s) /= s) det = -det
     end do
 
   end function det
+
+  function diag (diagonal_elements)
+
+    real(r8), intent(in) :: diagonal_elements(:)
+    real(r8) :: diag(size(diagonal_elements),size(diagonal_elements))
+
+    integer :: i
+
+    diag = 0.0_r8
+    do i = 1,size(diagonal_elements)
+      diag(i,i) = diagonal_elements(i)
+    end do
+
+  end function diag
 
   ! return the roots of the polynomial sum_{i=1}^N coeffs(i) * x^(i-1)
   ! only real roots are returned
@@ -543,7 +589,7 @@ contains
     N = size(coeffs)-1
 
     ! build the companion matrix
-    allocate(comp_mat(N,N), lr(N), li(N), work(5*N), vl(1,N), vr(1,N))
+    allocate(comp_mat(N,N))
     comp_mat = 0.0_r8
     do i = 1,N-1
       comp_mat(i+1,i) = 1.0_r8
@@ -551,11 +597,29 @@ contains
     comp_mat(:,N) = - coeffs(1:N) / coeffs(N+1)
 
     ! the roots are the eigenvalues of the companion matrix
+    allocate(lr(N), li(N), work(5*N), vl(1,N), vr(1,N))
     call dgeev ('N','N', N, comp_mat, N, lr, li, vl, 1, vr, 1, work, 5*N, ierr)
     if (ierr/=0) call LS_fatal ('failed finding polynomial roots')
     
     polynomial_roots = pack(lr, mask=isZero(li))
 
   end function polynomial_roots
+
+  function signs (a)
+
+    real(r8), intent(in) :: a(:)
+    real(r8) :: signs(size(a))
+
+    integer :: i
+
+    do i = 1,size(a)
+      if (isZero(a(i))) then
+        signs(i) = 0.0_r8
+      else
+        signs(i) = sign(1.0_r8, a(i))
+      end if
+    end do
+
+  end function signs
 
 end module array_utils
