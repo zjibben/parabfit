@@ -10,6 +10,10 @@ module region_factories
   !! higher-level procedure which takes a parameter list as input
   public :: alloc_region
 
+  !! low-level factories
+  public :: alloc_plane_region, alloc_sphere_region, alloc_halfsphere_region, &
+      alloc_cylinder_region, alloc_fill_region
+
 contains
 
   subroutine alloc_plane_region (r, n, p)

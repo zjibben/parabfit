@@ -57,16 +57,16 @@ contains
     class(cylinder_region), intent(in) :: this
     real(r8), intent(in) :: x(:)
 
-    real(r8) :: xt(ndim), d, r
+    real(r8) :: xt(ndim), d, r2
 
     ASSERT(size(x)==ndim)
 
     ! get distance from cylinder origin both along and orthogonal to the axis
     xt = x - this%center
     d = dot_product(xt,this%axis)
-    r = magnitude2(xt - d*this%axis)
+    r2 = magnitude2(xt - d*this%axis)
 
-    location_is_inside = r <= this%radius**2 .and. abs(d) <= this%halfheight
+    location_is_inside = r2 <= this%radius**2 .and. abs(d) <= this%halfheight
 
   end function location_is_inside
 

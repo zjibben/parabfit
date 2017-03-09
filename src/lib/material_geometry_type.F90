@@ -43,13 +43,15 @@ module material_geometry_type
     private
     class(scalar_func), allocatable :: matl_index
   contains
-    procedure :: init
+    generic :: init => init_params, init_matl_index
+    procedure, private :: init_params
+    procedure, private :: init_matl_index
     procedure :: index_at => material_at
   end type material_geometry
   
 contains
 
-  subroutine init (this, params, user_matl_id)
+  subroutine init_params (this, params, user_matl_id)
 
     use parameter_list_type
     use region_factories
@@ -94,9 +96,10 @@ contains
 
       ! place as constant in subfunction
       call alloc_const_scalar_func (subfunc(i)%f, real(matl_index, r8))
-
+      
       ! get the user-defined region
-      if (.not.mparams%is_sublist('region')) call LS_fatal (context//'missing "region" sublist parameter')
+      if (.not.mparams%is_sublist('region')) &
+          call LS_fatal (context//'missing "region" sublist parameter')
       rparams => mparams%sublist('region')
       call alloc_region (rgn(i)%r, rparams)
 
@@ -105,9 +108,19 @@ contains
     end do
 
     ! build piecewise-constant function giving the material index over given regions
-    call alloc_piecewise_scalar_func(this%matl_index, subfunc, rgn)
+    call alloc_piecewise_scalar_func (this%matl_index, subfunc, rgn)
 
-  end subroutine init
+  end subroutine init_params
+
+  subroutine init_matl_index (this, matl_index)
+
+    class(material_geometry), intent(out) :: this
+    class(scalar_func), intent(in) :: matl_index
+
+    ! this%matl_index = matl_index
+    allocate(this%matl_index, source=matl_index)
+
+  end subroutine init_matl_index
   
   ! determines and returns the id of the material at point x
   integer function material_at(this, x)
