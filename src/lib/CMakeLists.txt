@@ -53,6 +53,7 @@ set(Pececillo_SOURCE_FILES
     piecewise_scalar_func_type.F90
     scalar_func_factories.F90
     analytic_surface_type.F90
+    paraboloid_type.F90
 
 # Mesh function modules
     bndry_func_class.F90
@@ -101,6 +102,7 @@ set(Pececillo_SOURCE_FILES
     brent_min_class.F90
     brent_root_class.F90
     int_norm_module.F90
+    curvature_hf.F90
     curvature.F90
     curvature_fit_func.F90
     locate_plane_module.F90
