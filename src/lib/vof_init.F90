@@ -16,8 +16,9 @@ module vof_init
   implicit none
   private
 
-  ! hex type to make divide and conquer algorithm simpler
-  type, extends(base_hex) :: dnc_hex
+  ! hex type for the divide and conquer algorithm
+  ! public to expose for testing
+  type, extends(base_hex), public :: dnc_hex
   contains
     procedure         :: divide
     procedure         :: cell_center
@@ -31,8 +32,8 @@ module vof_init
   public :: vof_initialize
 
   ! TODO: make these user-specified parameters
-  integer , parameter :: cell_vof_recursion_limit  = 100
-  real(r8), parameter :: cell_vof_tolerance_factor = 1e-3_r8
+  integer , parameter :: cell_vof_recursion_limit  = 7
+  real(r8), parameter :: cell_vof_tolerance_factor = 1e-4_r8
 
 contains
 
@@ -40,6 +41,7 @@ contains
   ! from a user input function. It calls a divide and conquer algorithm
   ! to calculate the volume fractions given an interface
   subroutine vof_initialize (mesh, plist, vof, matl_ids, nmat) !cell_matls)
+    
     use unstr_mesh_type
     use parameter_list_type
 
@@ -56,19 +58,18 @@ contains
     
     ! first, determine the initial state provided by the user, and assign
     ! the function which will determine what points are inside the materials
-    call matl_init_geometry%init(plist, matl_ids)
+    call matl_init_geometry%init (plist, matl_ids)
 
     tolerance = cell_vof_tolerance_factor * minval(mesh%volume(:))
 
-    ! next, loop though every cell and check if all verteces lie within a single material
+    ! next, loop though every cell and check if all vertices lie within a single material
     ! if so, set the Vof for that material to 1.0.
-    ! if not, divide the hexahedral cell into 8 subdomains defined by the centroid and centers of faces
+    ! if not, divide the hex cell into 8 subdomains defined by the centroid and centers of faces
     ! repeat the process recursively for each subdomain up to a given threshold
 
     !$omp parallel do default(private) shared(vof,mesh,matl_init_geometry,nmat,tolerance)
     do i = 1,mesh%ncell
       ! make a hex type out of the cell before calculating the vof
-      ! this will make it easier to handle
       hex%node = mesh%x(:,mesh%cnode(:,i))
 
       ! calculate the vof
@@ -79,7 +80,8 @@ contains
   end subroutine vof_initialize
 
   ! calculates the volume fractions of materials in a cell
-  recursive function vof(this, matl_geometry, nmat, depth, tolerance) result(hex_vof)
+  recursive function vof (this, matl_geometry, nmat, depth, tolerance) result(hex_vof)
+
     class(dnc_hex),     intent(in) :: this
     class(base_region), intent(in) :: matl_geometry
     integer,            intent(in) :: nmat,depth
@@ -94,20 +96,23 @@ contains
 
     ! if the cell contains an interface (and therefore has at least two materials
     ! and we haven't yet hit our recursion limit, divide the hex and repeat
-    if (this%contains_interface(matl_geometry) .and. depth < cell_vof_recursion_limit .and. this_volume > tolerance) then
-      !if (this%depth <= cell_vof_recursion_limit) then
+    if (this%contains_interface(matl_geometry) .and. depth < cell_vof_recursion_limit) then ! &
+        !.and. this_volume > tolerance) then
       ! divide into 8 smaller hexes
       subhex = this%divide()
 
       ! tally the vof from subhexes
       hex_vof = 0.0_r8
       do i = 1,8
-        hex_vof = hex_vof + subhex(i)%vof(matl_geometry,nmat,depth+1,tolerance) * subhex(i)%calc_volume()/this_volume
+        hex_vof = hex_vof + subhex(i)%vof(matl_geometry,nmat,depth+1,tolerance) !* &
+            !subhex(i)%calc_volume() / this_volume
       end do
+      hex_vof = hex_vof / 8.0_r8
 
     else
-      ! if we are at (or somehow past) the recursion limit or the cell does not contain an interface,
-      ! calculate the vof in this hex based on the materials at its nodes
+      ! if we are past the recursion limit
+      ! or the cell does not contain an interface, calculate
+      ! the vof in this hex based on the materials at its nodes
       hex_vof = this%vof_from_nodes(matl_geometry, nmat)
     end if
 
@@ -117,6 +122,7 @@ contains
   ! and determines if it contains an interface for a given material.
   ! This is done by checking if every vertex lies within the material, or not.
   logical function contains_interface(this, matl_geometry)
+
     class(dnc_hex),     intent(in) :: this
     class(base_region), intent(in) :: matl_geometry
 
@@ -126,15 +132,18 @@ contains
     contains_interface = .false.
     reference_id = matl_geometry%index_at(this%node(:,1))
 
-    ! if any node doesn't have the same material as the first node, there's an interface in this cell
+    ! if any node doesn't have the same material as the first node,
+    ! there's an interface in this cell
     do i = 2,8
-      contains_interface = contains_interface .or. reference_id /= matl_geometry%index_at(this%node(:,i))
+      contains_interface = contains_interface .or. &
+          reference_id /= matl_geometry%index_at(this%node(:,i))
     end do
 
   end function contains_interface
 
   ! the material at each node contributes 1/8th of the vof in the given hex
-  function vof_from_nodes(this, matl_geometry, nmat)
+  function vof_from_nodes (this, matl_geometry, nmat)
+
     class(dnc_hex),     intent(in) :: this
     class(base_region), intent(in) :: matl_geometry
     integer,            intent(in) :: nmat
@@ -152,7 +161,7 @@ contains
   end function vof_from_nodes
 
   ! returns the center of the given hex
-  function cell_center(hex)
+  function cell_center (hex)
     class(dnc_hex), intent(in) :: hex
     real(r8)                   :: cell_center(3)
     cell_center = sum(hex%node, dim=2) / 8.0_r8
@@ -196,6 +205,13 @@ contains
     type(dnc_hex)              :: subhex(8)
 
     real(r8) :: cellc(3), facec(3,6), edgec(3,12)
+    integer :: i,j
+
+    ! do i = 1,8
+    !   do j = 1,8
+    !     subhex(i)%node(:,j) = 0.5_r8 * (this%node(:,i) + this%node(:,j))
+    !   end do
+    ! end do
 
     ! find center points
     cellc = this%cell_center()
@@ -239,7 +255,7 @@ contains
     subhex(4)%node(:,7) = facec(:,1)
     subhex(4)%node(:,8) = edgec(:,8)
 
-    subhex(5)%node(:,1) = edgec(:,1)
+    subhex(5)%node(:,1) = edgec(:,5)
     subhex(5)%node(:,2) = facec(:,2)
     subhex(5)%node(:,3) = cellc(:)
     subhex(5)%node(:,4) = facec(:,3)
