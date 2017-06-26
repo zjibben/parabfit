@@ -22,15 +22,19 @@ module paraboloid_type
     ! perhaps use a mpoly_scalar_func_type here
     real(r8), allocatable :: coeff(:), cr(:)
     logical :: initialized
+    integer :: lwork
   contains
     procedure :: init
     procedure :: bestFit
     !procedure :: canonicalForm
     procedure, private :: taubinCoeffs
     procedure, private :: coeffsinOriginalSpace
+    procedure, private :: paraboloidCoeffsDirect
     procedure, private :: l
     procedure, private :: llong
+    procedure, private :: l_paraboloid
     procedure, private :: Dl
+    procedure, private :: optimalWorkSize
     procedure :: curvature
     procedure :: Fstr
     procedure, private :: print_uf
@@ -46,25 +50,36 @@ contains
   ! perform Taubin's method (1991) to calculate the analytic surface which fits the points x(:,:)
   ! in a least-squares sense
   subroutine init (this, coeff, coeff_rotated)
+
+    external dsysv ! lapack subroutine
+
     class(paraboloid), intent(out) :: this
     real(r8), intent(in) :: coeff(:), coeff_rotated(:)
+
+    real(r8) :: work(1), tmp1(1,1), tmp2(1), tmp3(1)
+    integer :: ierr
+
     this%coeff = coeff
     this%cr = coeff_rotated
     this%initialized = .true.
+
+    this%lwork = this%optimalWorkSize(6)
+
   end subroutine init
 
-  subroutine bestFit (this, x)
+  subroutine bestFit (this, x, weight)
 
     use array_utils, only: normalize, crossProduct, isZero
 
     class(paraboloid), intent(out) :: this
-    real(r8), intent(in) :: x(:,:)
+    real(r8), intent(in) :: x(:,:), weight(:)
 
     real(r8), allocatable :: lr(:), vr(:,:), c(:), cr(:)
     real(r8) :: xcen(3), R(3,3), normal(3), xr(size(x,dim=1), size(x,dim=2))
     integer :: i
 
     ASSERT(size(x,1)==3) ! Exclusively 3D for now. Adding a 2D version would be trivial, though.
+    ASSERT(size(x, dim=2) = size(weight))
 
     ! get the center and normal vector
     xcen = sum(x(:,1:3), dim=2) / 3.0_r8
@@ -79,19 +94,21 @@ contains
     do i = 1,size(x, dim=2)
       xr(:,i) = matmul(R, x(:,i) - xcen)
     end do
-    
+
     ! print *, "xc: ", xcen
     ! print *, "n:  ", normal
     ! print *, "x1: ", xr(:,1)
     ! print *
 
-    ! fit a paraboloid to xr
-    call this%taubinCoeffs (lr,vr, xr)
-    cr = vr(:,minloc(lr, dim=1)) ! coefficients associated with the smallest eigenvalue
+    ! ! fit a paraboloid to xr
+    ! call this%taubinCoeffs (lr,vr, xr)
+    ! cr = vr(:,minloc(lr, dim=1)) ! coefficients associated with the smallest eigenvalue
 
-    ! make sure the z coefficient is nonzero
-    if (isZero(cr(4))) call LS_fatal ('z term zero')
-    cr = - cr / cr(4)
+    ! ! make sure the z coefficient is nonzero
+    ! if (isZero(cr(4))) call LS_fatal ('z term zero')
+    ! cr = - cr / cr(4)
+
+    cr = this%paraboloidCoeffsDirect (xr, weight)
 
     ! print *, minval(lr)
     ! print *
@@ -103,8 +120,68 @@ contains
     c = this%coeffsInOriginalSpace(cr, R, xcen)
 
     call this%init (c, cr)
-    
+
   end subroutine bestFit
+
+  ! take a set of points in a rotated coordinate space
+  ! and return the best fitting paraboloid
+  function paraboloidCoeffsDirect (this, x, weight) result(c)
+
+    use array_utils, only: outer_product
+    external dsysv ! lapack symmetric linear solve
+
+    class(paraboloid), intent(in) :: this
+    real(r8), intent(in) :: x(:,:), weight(:)
+    real(r8), allocatable :: c(:)
+
+    integer :: i, s, ierr, lwork
+    integer, allocatable :: ipiv(:)
+    real(r8), allocatable :: A(:,:), b(:), tmpl(:), work(:)
+
+    ASSERT(size(x, dim=1) == 3)
+    ASSERT(size(x, dim=2) = size(weight))
+
+    s = 6 ! number of terms for direct paraboloid z = f(x)
+
+    ! set up lhs & rhs
+    allocate(A(s,s), b(s), ipiv(s), c(s+1))
+    A = 0; b = 0
+    do i = 1,size(x, dim=2)
+      tmpl = this%l_paraboloid(x(:,i))
+      A = A + weight(i)**2 * outer_product(tmpl,tmpl)
+      b = b + weight(i)**2 * x(3,i) * tmpl
+    end do
+
+    ! get optimal work size
+    lwork = this%optimalWorkSize(s)
+    allocate(work(lwork))
+
+    ! solve the linear system
+    ! note lapack puts the solution in b
+    call dsysv ('U', s, 1, A, s, ipiv, b, s, work, lwork, ierr)
+    if (ierr /= 0) call LS_fatal ('failed symmetric linear solve')
+
+    ! convert coeffs to implicit form
+    c(1:3) = b(1:3)
+    c(4) = -1
+    c(5:) = b(4:)
+
+  end function paraboloidCoeffsDirect
+
+  integer function optimalWorkSize (this, s)
+
+    class(paraboloid), intent(in) :: this
+    integer, intent(in) :: s
+
+    integer :: ipiv(s), ierr
+    real(r8) :: A(s,s), b(s), tmpl(s), work(1)
+
+    call dsysv ('U', s, 1, A, s, ipiv, b, s, work, -1, ierr)
+    if (ierr /= 0) call LS_error ('could not get optimal work size')
+
+    optimalWorkSize = int(work(1))
+
+  end function optimalWorkSize
 
   function coeffsinOriginalSpace (this, c, R, xcen) result(cp)
 
@@ -128,7 +205,7 @@ contains
     cp(1) = dot_product(xcen, matmul(A,xcen)) - dot_product(matmul(transpose(R),br), xcen) + cp(1)
 
     cp = matvec2coeffs(A, b, cp(1))
-    
+
   end function coeffsinOriginalSpace
 
   function coeffs2matrix (c)
@@ -152,12 +229,12 @@ contains
     c(9)  = 2.0_r8 * A(2,3)
     c(10) = A(3,3)
   end function matvec2coeffs
-  
+
   subroutine taubinCoeffs (this, evl, evc, x)
-    
+
     use array_utils, only: outer_product, isZero
     use, intrinsic :: iso_c_binding, only: c_new_line
-    
+
     class(paraboloid), intent(in) :: this
     real(r8), allocatable, intent(out) :: evl(:), evc(:,:)
     real(r8), intent(in) :: x(:,:)
@@ -165,7 +242,7 @@ contains
     real(r8), allocatable :: M(:,:), N(:,:), lr(:), li(:), vr(:,:), tmpM(:,:), tmpV(:), tmpV2(:)
     real(r8) :: tmpR
     integer :: ierr,s,i,j
-    
+
     ! Exclusively 3D for now. Adding a 2D-specific version would be trivial, though.
     ASSERT(size(x,1)==3)
 
@@ -206,12 +283,12 @@ contains
     ! do i = 1,s
     !   print '(10es10.2)', M(:,i)
     ! end do
-    
+
     ! print *, c_new_line, "N:"
     ! do i = 1,s
     !   print '(10es10.2)', N(:,i)
     ! end do
-    
+
         ! print *, c_new_line, "evs:"
     ! do i = 1,s
     !   print '(10es10.2)', lr(i), li(i)
@@ -238,6 +315,14 @@ contains
     ASSERT(size(x)==3)
     l = [1.0_r8, x(1), x(2), x(3), x(1)**2, x(1)*x(2), x(2)**2]
   end function l
+
+  function l_paraboloid (this, x)
+    class(paraboloid), intent(in) :: this
+    real(r8), intent(in) :: x(:)
+    real(r8), allocatable :: l_paraboloid(:)
+    ASSERT(size(x)==3)
+    l_paraboloid = [1.0_r8, x(1), x(2), x(1)**2, x(1)*x(2), x(2)**2]
+  end function l_paraboloid
 
   function llong (this,x)
     class(paraboloid), intent(in) :: this
@@ -278,7 +363,7 @@ contains
     curvature = 2.0_r8 * &
         (this%cr(5) + this%cr(7) + this%cr(5)*this%cr(3)**2 + this%cr(7)*this%cr(2)**2 - &
         this%cr(6)*this%cr(2)*this%cr(3)) / (1.0_r8 + this%cr(2)**2 + this%cr(3)**2)**1.5_r8
-    
+
     curvature = clip(curvature, 1e10_r8, 0.0_r8)
 
   end function curvature
