@@ -25,29 +25,40 @@ module interface_patch_type
   public :: curvature_from_patch
 
 contains
-  
-  real(r8) function curvature_from_patch (interface_reconstructions)
+
+  real(r8) function curvature_from_patch (interface_reconstructions, weight_scale)
 
     use analytic_surface_type
     use paraboloid_type
 
     type(polygon), intent(in) :: interface_reconstructions(:)
+    real(r8), intent(in) :: weight_scale
 
     integer :: i
-    real(r8) :: pts(ndim,3*size(interface_reconstructions))
+    real(r8) :: pts(ndim,3*size(interface_reconstructions)), wgt(size(interface_reconstructions))
     !type(analytic_surface) :: surf
     type(paraboloid) :: surf
 
-    ! get points representing each polygon
     do i = 1,size(interface_reconstructions)
-      pts(:,3*(i-1)+1:3*(i-1)+3) = polygon_points(interface_reconstructions(i))
+      pts(:,i) = interface_reconstructions(i)%centroid()
+      !wgt(i) = 1
+      !wgt(i) = interface_reconstructions(i)%area()
+      !wgt(i) = interface_reconstructions(i)%area() ** (1.0_r8 / 3)
+      wgt(i) = interface_reconstructions(i)%area() ** weight_scale
     end do
+    call surf%bestFit (pts(:,1:size(interface_reconstructions)), &
+        wgt(1:size(interface_reconstructions)))
 
-    ! calculate the analytic surface fit and curvature, calculated at the center point
-    ! by convention, the first element of interface_reconstructions is the center polygon
-    !call surf%bestOneSheetFit (pts)
-    !call surf%bestParaboloidFit (pts)
-    call surf%bestFit (pts)
+    ! ! get points representing each polygon
+    ! do i = 1,size(interface_reconstructions)
+    !   pts(:,3*(i-1)+1:3*(i-1)+3) = polygon_points(interface_reconstructions(i))
+    ! end do
+
+    ! ! calculate the analytic surface fit and curvature, calculated at the center point
+    ! ! by convention, the first element of interface_reconstructions is the center polygon
+    ! !call surf%bestOneSheetFit (pts)
+    ! !call surf%bestParaboloidFit (pts)
+    ! call surf%bestFit (pts)
     curvature_from_patch = surf%curvature(interface_reconstructions(1)%centroid())
 
     ! print '(a,3es14.4,a)', 'c: ',interface_reconstructions(1)%centroid()
@@ -62,22 +73,22 @@ contains
   ! return a collection of 3 points which fit the polygon
   ! these points should surround the centroid, but not touch the edge of the polygon
   function polygon_points (interface_reconstruction)
-    
+
     type(polygon), intent(in) :: interface_reconstruction
     real(r8) :: polygon_points(ndim,3)
-    
+
     real(r8) :: xcent(ndim), q(ndim,2), d
-    
+
     xcent = interface_reconstruction%centroid()
     !polygon_points(:,1) = 0.5_r8 * (xcent + interface_reconstruction%x(:,1))
-    
+
     ! form an equilateral triangle in the scaled basis
     q = interface_reconstruction%basis()
     d = 0.5_r8
     polygon_points(:,1) = xcent + d*q(:,1)
     polygon_points(:,2) = xcent + d*0.5_r8*(-q(:,1) + sqrt(3.0_r8)*q(:,2))
     polygon_points(:,3) = xcent + d*0.5_r8*(-q(:,1) - sqrt(3.0_r8)*q(:,2))
-    
+
   end function polygon_points
 
 end module interface_patch_type
