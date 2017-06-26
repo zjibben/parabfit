@@ -47,26 +47,24 @@ contains
     r%axis = normalize(axis)
     r%radius = radius
     r%halfheight = halfheight
-    
+
   end function cylinder_region_value
 
-  logical function location_is_inside (this, x)
-
-    use array_utils, only: magnitude2
+  pure logical function location_is_inside (this, x)
 
     class(cylinder_region), intent(in) :: this
     real(r8), intent(in) :: x(:)
 
-    real(r8) :: xt(ndim), d, r2
+    real(r8) :: xt(ndim), d, r
 
     ASSERT(size(x)==ndim)
 
     ! get distance from cylinder origin both along and orthogonal to the axis
     xt = x - this%center
     d = dot_product(xt,this%axis)
-    r2 = magnitude2(xt - d*this%axis)
+    r = norm2(xt - d*this%axis)
 
-    location_is_inside = r2 <= this%radius**2 .and. abs(d) <= this%halfheight
+    location_is_inside = r <= this%radius .and. abs(d) <= this%halfheight
 
   end function location_is_inside
 

@@ -1,5 +1,7 @@
-*~
 build/*
-external/tarfiles/xeon/*
-*.gmv*
+external/*
+
+*~
 *.ply
+*gmv*
+*TAGS

@@ -1,4 +1,4 @@
-!! 
+!!
 !! unit_test
 !!
 
@@ -21,15 +21,15 @@ program unit_test
 
   call LS_initialize ([output_unit]) !, LS_VERB_NOISY)
 
-  ! vof initialization
-  call vof_init_test_suite ()
+  ! ! vof initialization
+  ! call vof_init_test_suite ()
 
   ! ! locate plane
   ! call locate_plane_unit_test_suite ()
-  
+
   ! ! fluxing
   ! call volume_track_unit_test_suite ()
-  
+
   ! ! test polyhedrons and surfaces
   ! call polygon_unit_test ()
   ! call polyhedron_unit_test ()
@@ -45,7 +45,8 @@ program unit_test
   ! call intersecting_interfaces_test ()
 
   ! analytic surface
-  call analytic_surface_test_suite ()
+  !call analytic_surface_test_suite ()
+  call curvature_test_suite ()
 
   ! ! misc
   ! call string_test_suite ()

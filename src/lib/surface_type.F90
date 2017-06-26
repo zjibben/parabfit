@@ -247,7 +247,7 @@ contains
   !         is on the order of the mesh spacing, though. This might also add some
   !         complexity by requiring curvature computation in cells containing the
   !         interface first, then looking up the values in a table later.
-  function local_patch (this, cell_id, gmesh)
+  function local_patch (this, cell_id, gmesh, vof)
 
     use mesh_geom_type
     use set_type
@@ -255,6 +255,7 @@ contains
     class(surface), intent(in) :: this
     integer, intent(in) :: cell_id
     type(mesh_geom), intent(in) :: gmesh
+    real(r8), intent(in) :: vof(:)
     type(polygon), allocatable :: local_patch(:)
 
     integer :: e, npolygons
@@ -265,12 +266,12 @@ contains
     !neighbor = pack(gmesh%cneighbor(:,cell_id), mask=gmesh%cneighbor(:,cell_id)>0) ! face neighbors
     neighbor = gmesh%caneighbor(cell_id)%elements ! node neighbors
 
-    ! ! stretch out to neighbors of neighbors
-    ! call ngbr%add (neighbor)
-    ! do e = 1,size(neighbor)
-    !   call ngbr%add (gmesh%caneighbor(neighbor(e))%elements)
-    ! end do
-    ! neighbor = ngbr%elements
+    ! stretch out to neighbors of neighbors
+    call ngbr%add (neighbor)
+    do e = 1,size(neighbor)
+      call ngbr%add (gmesh%caneighbor(neighbor(e))%elements)
+    end do
+    neighbor = ngbr%elements
     
     allocate(polygon_id(size(neighbor)+1))
 
@@ -279,6 +280,7 @@ contains
     npolygons = 1
     do e = 1,size(this%cell_id)
       if (any(this%cell_id(e) == neighbor) .and. this%cell_id(e) /= cell_id) then
+        !if (vof(this%cell_id(e)) <= 1e-2_r8 .or. vof(this%cell_id(e)) >= 1-1e-2_r8) cycle ! WARN?
         npolygons = npolygons + 1
         polygon_id(npolygons) = e
       else if (this%cell_id(e) == cell_id) then

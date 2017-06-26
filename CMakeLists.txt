@@ -43,14 +43,11 @@ if (CMAKE_Fortran_COMPILER_ID STREQUAL "NAG")
   set (CMAKE_Fortran_FLAGS_DEBUG   "-g90 -g -gline -O0 -w=uda -C=all")
   #set (CMAKE_Fortran_FLAGS_DEBUG "-O3 -Oassumed=contig -w=uda -DNDEBUG")
 elseif (CMAKE_Fortran_COMPILER_ID STREQUAL "Intel")
-  #set (CMAKE_Fortran_FLAGS_RELEASE "-O3 -DNDEBUG -assume realloc_lhs")
-  set (CMAKE_Fortran_FLAGS_DEBUG   "-g -traceback -assume realloc_lhs -fp-stack-check -ftrapuv -check bounds,uninit,noarg-temp-created")
-  #set (CMAKE_Fortran_FLAGS_DEBUG   "-g -traceback -assume realloc_lhs -ftrapuv -fp-stack-check -check bounds,uninit,noarg-temp-created,pointer -warn all")
+  set (CMAKE_Fortran_FLAGS_RELEASE "-O3 -g -DNDEBUG -assume realloc_lhs")
+  set (CMAKE_Fortran_FLAGS_DEBUG   "-g -assume realloc_lhs -traceback -fp-stack-check -ftrapuv -check bounds,uninit,noarg-temp-created")
+  #set (CMAKE_Fortran_FLAGS_DEBUG   "-g -traceback -assume realloc_lhs -fp-stack-check -ftrapuv -check bounds,uninit,noarg-temp-created,pointer -warn all")
   # set (CMAKE_Fortran_FLAGS_DEBUG   "-g -O0 -traceback -assume realloc_lhs -ftrapuv -fp-stack-check -check all -warn all -WB")
-  # set (CMAKE_C_FLAGS_DEBUG   "-g -O0 -traceback -ftrapuv -fp-stack-check")
-  # set (CMAKE_CXX_FLAGS_DEBUG   "-g -O0 -traceback -ftrapuv -fp-stack-check")
-  #set (CMAKE_Fortran_FLAGS_DEBUG   "-g -O3 -DNDEBUG -assume realloc_lhs")
-  set (CMAKE_Fortran_FLAGS_DEBUG   "-O3 -DNDEBUG -assume realloc_lhs")
+  set (CMAKE_Fortran_FLAGS_DEBUG   "-O3 -g -DNDEBUG -assume realloc_lhs")
  #message(STATUS "${CMAKE_Fortran_COMPILER_VERSION}")
 endif()
 
@@ -74,12 +71,8 @@ add_subdirectory(external)
 # now we require them to be prebuilt and installed someplace.  EXODUS_LIB_DIR
 # must be set on the command line to the directory containing the libraries.
 # Source tarballs for the packages are in external/tarballs.
-if(NOT EXODUS_LIB_DIR)
-  message(FATAL_ERROR "ERROR! EXODUS_LIB_DIR must be set to the directory "
-          "containing the netcdf and exoIIv2c libraries.")
-endif()
-find_library(EXODUS_LIBRARY exoIIv2c ${EXODUS_LIB_DIR} NO_DEFAULT_PATH)
-find_library(NETCDF_LIBRARY netcdf   ${EXODUS_LIB_DIR} NO_DEFAULT_PATH)
+find_library(EXODUS_LIBRARY exoIIv2c)
+find_library(NETCDF_LIBRARY netcdf)
 if(EXODUS_LIBRARY STREQUAL "EXODUS_LIBRARY-NOTFOUND" OR
    NETCDF_LIBRARY STREQUAL "NETCDF_LIBRARY-NOTFOUND")
   message(FATAL_ERROR "ERROR! Could not find the netcdf and/or exoIIv2c "
@@ -104,4 +97,3 @@ set(Petaca_MODULE_DIR ${Petaca_BINARY_DIR}/mod_files/)
 set(Pececillo_MODULE_DIR ${Pececillo_BINARY_DIR}/mod_files/)
 set(CMAKE_Fortran_MODULE_DIRECTORY ${Pececillo_MODULE_DIR})
 add_subdirectory(src)
-

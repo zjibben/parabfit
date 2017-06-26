@@ -1,6 +1,6 @@
 !!
 !! VOF_INIT
-!! 
+!!
 !! This module provides routines for initializing the
 !! VOF scalar based on shapes provided by the user
 !!
@@ -20,19 +20,19 @@ module vof_init
   ! public to expose for testing
   type, extends(base_hex), public :: dnc_hex
   contains
-    procedure         :: divide
-    procedure         :: cell_center
-    procedure         :: face_centers
-    procedure         :: edge_centers
-    procedure         :: contains_interface
-    procedure         :: vof
-    procedure,private :: vof_from_nodes
+    procedure          :: divide
+    procedure          :: cell_center
+    procedure          :: face_centers
+    procedure          :: edge_centers
+    procedure          :: contains_interface
+    procedure          :: vof
+    procedure, private :: vof_from_nodes
   end type dnc_hex
-  
+
   public :: vof_initialize
 
   ! TODO: make these user-specified parameters
-  integer , parameter :: cell_vof_recursion_limit  = 7
+  integer , parameter :: cell_vof_recursion_limit  = 10
   real(r8), parameter :: cell_vof_tolerance_factor = 1e-4_r8
 
 contains
@@ -41,7 +41,7 @@ contains
   ! from a user input function. It calls a divide and conquer algorithm
   ! to calculate the volume fractions given an interface
   subroutine vof_initialize (mesh, plist, vof, matl_ids, nmat) !cell_matls)
-    
+
     use unstr_mesh_type
     use parameter_list_type
 
@@ -55,7 +55,7 @@ contains
     real(r8)                :: tolerance
     type(dnc_hex)           :: hex
     type(material_geometry) :: matl_init_geometry
-    
+
     ! first, determine the initial state provided by the user, and assign
     ! the function which will determine what points are inside the materials
     call matl_init_geometry%init (plist, matl_ids)
@@ -92,22 +92,24 @@ contains
     type(dnc_hex) :: subhex(8)
     real(r8)      :: this_volume
 
-    this_volume = this%calc_volume()
+    !this_volume = this%calc_volume()
 
     ! if the cell contains an interface (and therefore has at least two materials
     ! and we haven't yet hit our recursion limit, divide the hex and repeat
     if (this%contains_interface(matl_geometry) .and. depth < cell_vof_recursion_limit) then ! &
-        !.and. this_volume > tolerance) then
+      !.and. this_volume > tolerance) then
       ! divide into 8 smaller hexes
       subhex = this%divide()
 
       ! tally the vof from subhexes
+      ! WARN: For nonorthogonal meshes, the subhex volumes are not all equal,
+      !       so we must calculate the ratio of volumes.
       hex_vof = 0.0_r8
       do i = 1,8
         hex_vof = hex_vof + subhex(i)%vof(matl_geometry,nmat,depth+1,tolerance) !* &
             !subhex(i)%calc_volume() / this_volume
       end do
-      hex_vof = hex_vof / 8.0_r8
+      hex_vof = hex_vof / 8
 
     else
       ! if we are past the recursion limit
@@ -137,6 +139,7 @@ contains
     do i = 2,8
       contains_interface = contains_interface .or. &
           reference_id /= matl_geometry%index_at(this%node(:,i))
+      if (contains_interface) return
     end do
 
   end function contains_interface
@@ -196,7 +199,7 @@ contains
     do e = 1,12
       edge_centers(:,e) = sum(this%node(:,hex_e(:,e)), dim=2) / 2.0_r8
     end do
-    
+
   end function edge_centers
 
   ! this function takes a hex and returns an array of 8 hexes obtained from dividing the input
