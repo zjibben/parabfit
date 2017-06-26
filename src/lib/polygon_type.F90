@@ -29,6 +29,7 @@ module polygon_type
   contains
     procedure :: init => init_polygon
     procedure :: centroid
+    procedure :: area
     procedure :: order
     procedure :: basis
     procedure :: update_plane_normal
@@ -243,5 +244,35 @@ contains
     print '(a,3es15.5)', 'norm ',this%norm
 
   end subroutine print_data
+
+  ! calculate the area of a convex polygon
+  ! assumes polygon vertices are ordered
+  real(r8) function area (this)
+
+    class(polygon), intent(in) :: this
+
+    real(r8) :: xc(ndim), a, b, c, s
+    integer :: v, w
+
+    xc = this%centroid()
+    
+    ! polygon area is the sum of the areas associated
+    ! with triangles connecting edges and the centroid
+    area = 0
+    do v = 1,this%nVerts
+      ! next vertex
+      w = modulo(v,this%nVerts) + 1
+
+      ! triangle lengths
+      a = norm2(xc - this%x(:,v))
+      b = norm2(xc - this%x(:,w))
+      c = norm2(this%x(:,w) - this%x(:,v))
+
+      ! calculate the area using Heron's formula
+      s = (a + b + c) / 2
+      area = area + sqrt(s*(s-a)*(s-b)*(s-c))
+    end do
+
+  end function area
 
 end module polygon_type
