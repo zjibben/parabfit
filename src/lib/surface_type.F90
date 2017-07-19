@@ -6,7 +6,7 @@
 !!
 !! WARNING: This type is currently not thread safe, and should not be used
 !!          to store interface reconstructions in threaded environments.
-!! 
+!!
 !! Zechariah J. Jibben <zjibben@lanl.gov>
 !! October 2015
 !!
@@ -95,7 +95,7 @@ contains
 
       this%element(f) = face
     end do
-    
+
   end subroutine append_polyhedron
 
   ! append elements of another surface to
@@ -150,7 +150,7 @@ contains
     ! To plot the surface elements, gmv needs data there.
     ! Or, at least, paraview won't open the file without it. Paraview won't display
     ! surfaces anyways, though, so it could be paraview that is wrong.
-    fakedata = 0.0_r8 
+    fakedata = 0.0_r8
 
     j = 1
     do e = 1,Nelements
@@ -266,13 +266,13 @@ contains
     !neighbor = pack(gmesh%cneighbor(:,cell_id), mask=gmesh%cneighbor(:,cell_id)>0) ! face neighbors
     neighbor = gmesh%caneighbor(cell_id)%elements ! node neighbors
 
-    ! stretch out to neighbors of neighbors
-    call ngbr%add (neighbor)
-    do e = 1,size(neighbor)
-      call ngbr%add (gmesh%caneighbor(neighbor(e))%elements)
-    end do
-    neighbor = ngbr%elements
-    
+    ! ! stretch out to neighbors of neighbors
+    ! call ngbr%add (neighbor)
+    ! do e = 1,size(neighbor)
+    !   call ngbr%add (gmesh%caneighbor(neighbor(e))%elements)
+    ! end do
+    ! neighbor = ngbr%elements
+
     allocate(polygon_id(size(neighbor)+1))
 
     ! get polygons from these cells

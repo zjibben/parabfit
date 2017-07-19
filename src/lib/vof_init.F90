@@ -32,8 +32,7 @@ module vof_init
   public :: vof_initialize
 
   ! TODO: make these user-specified parameters
-  integer , parameter :: cell_vof_recursion_limit  = 10
-  real(r8), parameter :: cell_vof_tolerance_factor = 1e-4_r8
+  integer , parameter :: cell_vof_recursion_limit = 12
 
 contains
 
@@ -52,7 +51,6 @@ contains
     real(r8),             intent(inout) :: vof(:,:)
 
     integer                 :: i
-    real(r8)                :: tolerance
     type(dnc_hex)           :: hex
     type(material_geometry) :: matl_init_geometry
 
@@ -60,32 +58,29 @@ contains
     ! the function which will determine what points are inside the materials
     call matl_init_geometry%init (plist, matl_ids)
 
-    tolerance = cell_vof_tolerance_factor * minval(mesh%volume(:))
-
     ! next, loop though every cell and check if all vertices lie within a single material
     ! if so, set the Vof for that material to 1.0.
     ! if not, divide the hex cell into 8 subdomains defined by the centroid and centers of faces
     ! repeat the process recursively for each subdomain up to a given threshold
 
-    !$omp parallel do default(private) shared(vof,mesh,matl_init_geometry,nmat,tolerance)
+    !$omp parallel do default(private) shared(vof,mesh,matl_init_geometry,nmat)
     do i = 1,mesh%ncell
       ! make a hex type out of the cell before calculating the vof
       hex%node = mesh%x(:,mesh%cnode(:,i))
 
       ! calculate the vof
-      vof(:,i) = hex%vof (matl_init_geometry, nmat, 0, tolerance)
+      vof(:,i) = hex%vof (matl_init_geometry, nmat, 0)
     end do
     !$omp end parallel do
 
   end subroutine vof_initialize
 
   ! calculates the volume fractions of materials in a cell
-  recursive function vof (this, matl_geometry, nmat, depth, tolerance) result(hex_vof)
+  recursive function vof (this, matl_geometry, nmat, depth) result(hex_vof)
 
     class(dnc_hex),     intent(in) :: this
     class(base_region), intent(in) :: matl_geometry
     integer,            intent(in) :: nmat,depth
-    real(r8),           intent(in) :: tolerance
     real(r8)                       :: hex_vof(nmat)
 
     integer       :: i
@@ -96,17 +91,16 @@ contains
 
     ! if the cell contains an interface (and therefore has at least two materials
     ! and we haven't yet hit our recursion limit, divide the hex and repeat
-    if (this%contains_interface(matl_geometry) .and. depth < cell_vof_recursion_limit) then ! &
-      !.and. this_volume > tolerance) then
+    if (this%contains_interface(matl_geometry) .and. depth < cell_vof_recursion_limit) then
       ! divide into 8 smaller hexes
       subhex = this%divide()
 
       ! tally the vof from subhexes
       ! WARN: For nonorthogonal meshes, the subhex volumes are not all equal,
       !       so we must calculate the ratio of volumes.
-      hex_vof = 0.0_r8
+      hex_vof = 0
       do i = 1,8
-        hex_vof = hex_vof + subhex(i)%vof(matl_geometry,nmat,depth+1,tolerance) !* &
+        hex_vof = hex_vof + subhex(i)%vof(matl_geometry,nmat,depth+1) !* &
             !subhex(i)%calc_volume() / this_volume
       end do
       hex_vof = hex_vof / 8

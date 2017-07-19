@@ -21,6 +21,7 @@ module paraboloid_type
     private
     ! perhaps use a mpoly_scalar_func_type here
     real(r8), allocatable :: coeff(:), cr(:)
+    real(r8) :: rot(3,3), offset(3)
     logical :: initialized
     integer :: lwork
   contains
@@ -35,8 +36,11 @@ module paraboloid_type
     procedure, private :: l_paraboloid
     procedure, private :: Dl
     procedure, private :: optimalWorkSize
+    procedure, private :: localCoords
     procedure :: curvature
+    procedure :: curvatureQdrtc
     procedure :: Fstr
+    procedure :: fstr_rot
     procedure, private :: print_uf
     procedure, private :: print_f
     generic :: write(unformatted) => print_uf
@@ -67,38 +71,45 @@ contains
 
   end subroutine init
 
-  subroutine bestFit (this, x, weight)
+  subroutine bestFit (this, x, weight, normal)
 
     use array_utils, only: normalize, crossProduct, isZero
+    use logging_services
 
     class(paraboloid), intent(out) :: this
     real(r8), intent(in) :: x(:,:), weight(:)
+    real(r8), intent(in), optional :: normal(:)
 
     real(r8), allocatable :: lr(:), vr(:,:), c(:), cr(:)
-    real(r8) :: xcen(3), R(3,3), normal(3), xr(size(x,dim=1), size(x,dim=2))
+    real(r8) :: xcen(3), R(3,3), normalh(3), xr(size(x,dim=1), size(x,dim=2))
     integer :: i
 
     ASSERT(size(x,1)==3) ! Exclusively 3D for now. Adding a 2D version would be trivial, though.
     ASSERT(size(x, dim=2) = size(weight))
 
     ! get the center and normal vector
-    xcen = sum(x(:,1:3), dim=2) / 3.0_r8
-    normal = normalize(crossProduct(x(:,2) - x(:,1), x(:,3) - x(:,1)))
+    !xcen = sum(x(:,1:3), dim=2) / 3.0_r8
+    xcen = x(:,1)
+    if (present(normal)) then
+      normalh = normal
+    else
+      ! this is valid only when we passed in 3 points per polygon
+      normalh = normalize(crossProduct(x(:,2) - x(:,1), x(:,3) - x(:,1)))
+      call LS_fatal ("disabling cross product normals for now")
+    end if
 
     ! set up the rotation matrix
-    R(3,:) = normal
-    R(2,:) = normalize(crossProduct([0.0_r8,0.0_r8,1.0_r8], normal))
-    R(1,:) = crossProduct(R(2,:), normal)
+    R(3,:) = normalh
+    R(2,:) = normalize(crossProduct([0.0_r8,0.0_r8,1.0_r8], normalh))
+    R(1,:) = crossProduct(R(2,:), normalh)
+
+    this%rot = R
+    this%offset = xcen
 
     ! get the set of points in the rotated and translated coordinate space
     do i = 1,size(x, dim=2)
       xr(:,i) = matmul(R, x(:,i) - xcen)
     end do
-
-    ! print *, "xc: ", xcen
-    ! print *, "n:  ", normal
-    ! print *, "x1: ", xr(:,1)
-    ! print *
 
     ! ! fit a paraboloid to xr
     ! call this%taubinCoeffs (lr,vr, xr)
@@ -109,6 +120,12 @@ contains
     ! cr = - cr / cr(4)
 
     cr = this%paraboloidCoeffsDirect (xr, weight)
+
+    ! print '(a)', this%Fstr_rot(cr)
+    ! do i = 1,size(xr,dim=2)
+    !   print '(a,3es14.4)', 'xr: ', xr(:,i)
+    ! end do
+    ! print *
 
     ! print *, minval(lr)
     ! print *
@@ -183,7 +200,7 @@ contains
 
   end function optimalWorkSize
 
-  function coeffsinOriginalSpace (this, c, R, xcen) result(cp)
+  function coeffsInOriginalSpace (this, c, R, xcen) result(cp)
 
     class(paraboloid), intent(in) :: this
     real(r8), intent(in) :: c(:), R(:,:), xcen(:)
@@ -197,16 +214,16 @@ contains
     cp(8) = c(7)
 
     Ar = coeffs2matrix(cp)
-    br = cp(1:3)
+    br = cp(2:4)
 
     ! convert to original space
     A = matmul(transpose(R), matmul(Ar, R))
-    b = matmul(transpose(R), br) - 2.0_r8 * matmul(A, xcen)
+    b = matmul(transpose(R), br) - 2 * matmul(A, xcen)
     cp(1) = dot_product(xcen, matmul(A,xcen)) - dot_product(matmul(transpose(R),br), xcen) + cp(1)
 
     cp = matvec2coeffs(A, b, cp(1))
 
-  end function coeffsinOriginalSpace
+  end function coeffsInOriginalSpace
 
   function coeffs2matrix (c)
     real(r8), intent(in) :: c(:)
@@ -358,15 +375,97 @@ contains
     class(paraboloid), intent(in) :: this
     real(r8), intent(in) :: x(:)
 
+    real(r8) :: xr(3)
+
     ASSERT(size(x)==3)
 
-    curvature = 2.0_r8 * &
-        (this%cr(5) + this%cr(7) + this%cr(5)*this%cr(3)**2 + this%cr(7)*this%cr(2)**2 - &
-        this%cr(6)*this%cr(2)*this%cr(3)) / (1.0_r8 + this%cr(2)**2 + this%cr(3)**2)**1.5_r8
+    ! curvature = 2.0_r8 * &
+    !     (this%cr(5) + this%cr(7) + this%cr(5)*this%cr(3)**2 + this%cr(7)*this%cr(2)**2 - &
+    !     this%cr(6)*this%cr(2)*this%cr(3)) / (1.0_r8 + this%cr(2)**2 + this%cr(3)**2)**1.5_r8
+
+    xr = this%localCoords(x)
+
+    ! print *, curvature
+    ! print *, x
+    ! print *, xr
+
+    curvature = 2 * (-2*(this%cr(4) + this%cr(6))*((this%cr(2) + 2*this%cr(4)*xr(1) + &
+        this%cr(5)*xr(2))**2 + (this%cr(3) + this%cr(5)*xr(1) + 2*this%cr(6)*xr(2))**2 + 1) + &
+        (2*this%cr(4)*(this%cr(2) + 2*this%cr(4)*xr(1) + this%cr(5)*xr(2)) + &
+        this%cr(5)*(this%cr(3) + this%cr(5)*xr(1) + 2*this%cr(6)*xr(2)))*(this%cr(2) + &
+        2*this%cr(4)*xr(1) + this%cr(5)*xr(2)) + (this%cr(5)*(this%cr(2) + 2*this%cr(4)*xr(1) + &
+        this%cr(5)*xr(2)) + 2*this%cr(6)*(this%cr(3) + this%cr(5)*xr(1) + &
+        2*this%cr(6)*xr(2)))*(this%cr(3) + this%cr(5)*xr(1) + 2*this%cr(6)*xr(2)))*((this%cr(2) + &
+        2*this%cr(4)*xr(1) + this%cr(5)*xr(2))**2 + (this%cr(3) + this%cr(5)*xr(1) + &
+        2*this%cr(6)*xr(2))**2 + 1)**(-1.5_r8)
+
+    ! print *, curvature
+
+    ! xr = 0
+    ! curvature = 2 * (-2*(this%cr(4) + this%cr(6))*((this%cr(2) + 2*this%cr(4)*xr(1) + &
+    !     this%cr(5)*xr(2))**2 + (this%cr(3) + this%cr(5)*xr(1) + 2*this%cr(6)*xr(2))**2 + 1) + &
+    !     (2*this%cr(4)*(this%cr(2) + 2*this%cr(4)*xr(1) + this%cr(5)*xr(2)) + &
+    !     this%cr(5)*(this%cr(3) + this%cr(5)*xr(1) + 2*this%cr(6)*xr(2)))*(this%cr(2) + &
+    !     2*this%cr(4)*xr(1) + this%cr(5)*xr(2)) + (this%cr(5)*(this%cr(2) + 2*this%cr(4)*xr(1) + &
+    !     this%cr(5)*xr(2)) + 2*this%cr(6)*(this%cr(3) + this%cr(5)*xr(1) + &
+    !     2*this%cr(6)*xr(2)))*(this%cr(3) + this%cr(5)*xr(1) + 2*this%cr(6)*xr(2)))*((this%cr(2) + &
+    !     2*this%cr(4)*xr(1) + this%cr(5)*xr(2))**2 + (this%cr(3) + this%cr(5)*xr(1) + &
+    !     2*this%cr(6)*xr(2))**2 + 1)**(-1.5_r8)
+    ! print *, curvature
 
     curvature = clip(curvature, 1e10_r8, 0.0_r8)
 
   end function curvature
+
+  function localCoords(this, x) result(xr)
+
+    class(paraboloid), intent(in) :: this
+    real(r8), intent(in) :: x(:)
+    real(r8) :: xr(3)
+
+    xr = matmul(this%rot, x - this%offset)
+
+  end function localCoords
+
+  ! calculate the curvature at a point x
+  real(r8) function curvatureQdrtc (this,x)
+
+    use consts, only: alittle
+    use array_utils, only: clip
+
+    class(paraboloid), intent(in) :: this
+    real(r8), intent(in) :: x(:)
+
+    ASSERT(size(x)==3)
+
+    curvatureQdrtc = &
+        ((this%coeff(2) + 2*this%coeff(5)*x(1) + this%coeff(6)*x(2) + this%coeff(7)*x(3))**2 + &
+        (this%coeff(3) + this%coeff(6)*x(1) + 2*this%coeff(8)*x(2) + this%coeff(9)*x(3))**2 + &
+        (this%coeff(4) + this%coeff(7)*x(1) + this%coeff(9)*x(2) + &
+        2*this%coeff(10)*x(3))**2)**(-1.5)*(-2*(this%coeff(5) + this%coeff(8) + &
+        this%coeff(10))*((this%coeff(2) + 2*this%coeff(5)*x(1) + this%coeff(6)*x(2) + &
+        this%coeff(7)*x(3))**2 + (this%coeff(3) + this%coeff(6)*x(1) + 2*this%coeff(8)*x(2) + &
+        this%coeff(9)*x(3))**2 + (this%coeff(4) + this%coeff(7)*x(1) + this%coeff(9)*x(2) + &
+        2*this%coeff(10)*x(3))**2) + (2*this%coeff(5)*(this%coeff(2) + 2*this%coeff(5)*x(1) + &
+        this%coeff(6)*x(2) + this%coeff(7)*x(3)) + this%coeff(6)*(this%coeff(3) + &
+        this%coeff(6)*x(1) + 2*this%coeff(8)*x(2) + this%coeff(9)*x(3)) + &
+        this%coeff(7)*(this%coeff(4) + this%coeff(7)*x(1) + this%coeff(9)*x(2) + &
+        2*this%coeff(10)*x(3)))*(this%coeff(2) + 2*this%coeff(5)*x(1) + this%coeff(6)*x(2) + &
+        this%coeff(7)*x(3)) + (this%coeff(6)*(this%coeff(2) + 2*this%coeff(5)*x(1) + &
+        this%coeff(6)*x(2) + this%coeff(7)*x(3)) + 2*this%coeff(8)*(this%coeff(3) + &
+        this%coeff(6)*x(1) + 2*this%coeff(8)*x(2) + this%coeff(9)*x(3)) + &
+        this%coeff(9)*(this%coeff(4) + this%coeff(7)*x(1) + this%coeff(9)*x(2) + &
+        2*this%coeff(10)*x(3)))*(this%coeff(3) + this%coeff(6)*x(1) + 2*this%coeff(8)*x(2) + &
+        this%coeff(9)*x(3)) + (this%coeff(7)*(this%coeff(2) + 2*this%coeff(5)*x(1) + &
+        this%coeff(6)*x(2) + this%coeff(7)*x(3)) + this%coeff(9)*(this%coeff(3) + &
+        this%coeff(6)*x(1) + 2*this%coeff(8)*x(2) + this%coeff(9)*x(3)) + &
+        2*this%coeff(10)*(this%coeff(4) + this%coeff(7)*x(1) + this%coeff(9)*x(2) + &
+        2*this%coeff(10)*x(3)))*(this%coeff(4) + this%coeff(7)*x(1) + this%coeff(9)*x(2) + &
+        2*this%coeff(10)*x(3)))
+
+    curvatureQdrtc = clip(curvatureQdrtc, 1e10_r8, 0.0_r8)
+
+  end function curvatureQdrtc
 
   function Fstr (this)
 
@@ -380,6 +479,7 @@ contains
     integer :: i
 
     terms = ['1','x','y','z','x**2','x*y','x*z','y**2','y*z','z**2']
+    !terms = ['1','x','y','x**2','x*y','y**2']
     Fstr = ''
 
     do i = 1,size(this%coeff)
@@ -394,6 +494,34 @@ contains
     end do
 
   end function Fstr
+
+  function Fstr_rot (this,cr) result(Fstr)
+
+    use array_utils, only: isZero
+
+    class(paraboloid), intent(in) :: this
+    real(r8), intent(in) :: cr(:)
+    character(:), allocatable :: Fstr
+
+    character(:), allocatable :: terms(:)
+    character(32) :: term_str
+    integer :: i
+
+    terms = ['1','x','y','z','x**2','x*y','y**2']
+    Fstr = ''
+
+    do i = 1,size(cr)
+      if (.not.isZero(cr(i),1e-5_r8)) then
+        if (cr(i) > 0.0_r8) then
+          write(term_str,'(a,es10.3,2a)') '  + ',cr(i),'*',terms(i)
+        else
+          write(term_str,'(a,es10.3,2a)') '  - ',abs(cr(i)),'*',terms(i)
+        end if
+        Fstr = Fstr // trim(term_str)
+      end if
+    end do
+
+  end function Fstr_Rot
 
   subroutine print_f (this, unit, iotype, vlist, iostat, iomsg)
 

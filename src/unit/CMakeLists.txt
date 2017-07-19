@@ -6,6 +6,8 @@ include_directories(${Pececillo_MODULE_DIR} ${Petaca_MODULE_DIR})
 set(SOURCE_FILES
   vof_init_test.F90
   analytic_surface_type_test.F90
+  normal_vector_test.F90
+  interface_point_test.F90
   polygon_type_test.F90
   polyhedron_type_test.F90
   locate_plane_nd_test.F90

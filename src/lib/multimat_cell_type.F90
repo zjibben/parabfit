@@ -31,7 +31,7 @@ module multimat_cell_type
     procedure :: outward_volflux
     procedure :: interface_polygon
   end type multimat_cell
-  
+
 contains
 
   ! given a set of VoFs, normals, and an order,
@@ -55,16 +55,16 @@ contains
     allocate(this%mat_poly(size(vof)))
     this%mat_poly(:)%nVerts = 0
     this%m = 0
-    
+
     call remainder%init (this)
-    
+
     this%nmat = count(vof > cutvof)
     nm = 0
-    
+
     do m = 1,size(vof)
       if (vof(m) < cutvof) cycle
       nm = nm+1 ! update the counter of how many materials we've seen thus far
-      
+
       ! reconstruct the plane from the remaining free space
       ! use the plane to generate the polyhedron for this material,
       ! and update the free-space polyhedron
@@ -93,7 +93,7 @@ contains
         this%mat_poly(m) = tmp(2)
       end if
     end do
-    
+
   contains
 
     subroutine partitionError ()
@@ -103,7 +103,7 @@ contains
 
       write(*,*)
       write(*,*) 'partition error!'
-      
+
       write(*,*) 'cell:'
       call this%print_data ()
 
@@ -123,11 +123,11 @@ contains
       write(*,*) 'remaining vof: ',rem
       rem = rem - tmp(2)%volume() / this%volume()
       write(*,*) 'remaining after last cutout vof: ',rem
-      
+
       write(*,*)
       write(*,*) 'previous remainder polyhedron data: '
       call remainder%print_data ()
-      
+
       write(*,*)
       write(*,*) 'material ',m,' cutout: '
       call tmp(2)%print_data ()
@@ -156,7 +156,7 @@ contains
   function volumes_behind_plane (this, P, ierr) result(vol)
 
     use plane_type
-    
+
     class(multimat_cell), intent(in) :: this
     class(plane),         intent(in) :: P
     integer,              intent(out) :: ierr
@@ -179,7 +179,7 @@ contains
 
     use consts, only: nfc,cutvof
     use plane_type
-    
+
     class(multimat_cell), intent(inout) :: this !inout because of call to volume
     real(r8),             intent(in)    :: adv_dt, fluxing_velocity(:), face_area(:)
     !real(r8), optional,   intent(in)    :: face_area(:) ! WARNING: this isn't really optional, and maybe should be copied into the object
@@ -204,7 +204,7 @@ contains
         xf = sum(this%x(:,this%face_vid(1:nV,f)),dim=2) / real(nV,r8) ! face center
 
         flux_plane%rho  = sum(xf*flux_plane%normal) + adv_dt * fluxing_velocity(f)
-        
+
         ! find the volume of the materials behind the flux plane
         if (this%nmat==1) then
           ! pure hex cells are easy, don't cut up polyhedrons to calculate the flux volume
@@ -222,7 +222,7 @@ contains
         if (any(outward_volflux(:,f) < 0.0_r8)) then
           write(*,*)
           write(*,'(a,i6,4es14.4)') 'f,volflux: ',f,outward_volflux(:,f)
-          write(*,'(a,es10.4)') 'correct tot volflux: ', adv_dt * fluxing_velocity(f) * face_area(f)
+          write(*,'(a,es14.4)') 'correct tot volflux: ', adv_dt * fluxing_velocity(f) * face_area(f)
 
           write(*,'(a,4es20.10)') 'flux plane n,p: ',flux_plane%normal, flux_plane%rho
           write(*,*) 'nmat ',this%nmat, this%m
@@ -255,7 +255,7 @@ contains
     ! by the convention set in polyhedron_type%polyhedron_on_side_of_plane,
     ! the face corresponding to the phase interface is the last face in the polyhedron
     interface_face_id = this%mat_poly(m)%nFaces
-    
+
     ! count how many real vertices are listed for this face (0s represent non-existent vertices)
     nVerts = count(this%mat_poly(m)%face_vid(:,interface_face_id)/=0)
 

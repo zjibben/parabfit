@@ -16,6 +16,8 @@ program unit_test
   use locate_plane_nd_test
   use vof_solver_type_test
   use analytic_surface_type_test
+  use normal_vector_test
+  use interface_point_test
   use vof_init_test
   implicit none
 
@@ -46,9 +48,9 @@ program unit_test
 
   ! analytic surface
   !call analytic_surface_test_suite ()
-  call curvature_test_suite ()
 
-  ! ! misc
-  ! call string_test_suite ()
+  call curvature_test_suite ()
+  !call normal_vector_test_suite()
+  !call interface_point_test_suite()
 
 end program unit_test

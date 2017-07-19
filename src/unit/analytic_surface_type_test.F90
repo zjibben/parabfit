@@ -50,7 +50,8 @@ contains
     write (98, '(a)') '# dx l1 l2 l3'
     write (99, '(a)') '# dx l1 l2 l3'
 
-    do i = 2,2 !4
+    do i = 1,4
+    !do i = 1,1
       ncell = 10 * 2**i
     ! do i = 1,25
     !   ncell = floor(10 * 1.15_r8**i)
@@ -447,6 +448,7 @@ contains
     use multimat_cell_type
     use hex_types, only: hex_f, hex_e
     use array_utils, only: normalize, isZero
+    use curvature_hf, only: heightFunction
 
     real(r8), intent(in) :: vof(:,:), int_norm(:,:,:)
     type(unstr_mesh), intent(in) :: mesh
@@ -458,7 +460,21 @@ contains
     type(surface) :: intrec
     type(multimat_cell) :: cell
     real(r8) :: int_norm_local(3,2), err, curvature(mesh%ncell), wgt_scale
-    real(r8), allocatable :: weight_scales(:)
+    real(r8), allocatable :: weight_scales(:), int_norm_hf(:,:), throwaway(:), int_norm_hf2(:,:,:)
+
+    call heightFunction (throwaway, int_norm_hf, vof(1,:), int_norm(:,1,:), mesh, gmesh)
+
+    ! 2d override. important on boundary cells
+    int_norm_hf(3,:) = 0
+    do i = 1,mesh%ncell
+      int_norm_hf(:,i) = normalize(int_norm_hf(:,i))
+    end do
+
+    allocate(int_norm_hf2(3,2,mesh%ncell))
+    int_norm_hf2(:,1,:) =  int_norm_hf
+    int_norm_hf2(:,2,:) = -int_norm_hf
+
+    !int_norm_hf2 = int_norm
 
     ! get the interface reconstructions
     do i = 1,mesh%ncell
@@ -471,16 +487,17 @@ contains
       ! int_norm_local(:,2) = -int_norm_local(:,1)
       ! !call cell%partition (vof(:,i), int_norm_local)
 
-      call cell%partition (vof(:,i), int_norm(:,:,i))
+      call cell%partition (vof(:,i), int_norm_hf2(:,:,i))
+      !call cell%partition (vof(:,i), int_norm(:,:,i))
 
       call intrec%append (cell%interface_polygon(1), i)
     end do
 
     ! get the curvature
     !weight_scales = [0.0_r8, 1.0_r8, 2.0_r8, 3.0_r8, 1.0_r8 / 2, 1.0_r8 / 3, 1.0_r8 / 4, 1.0_r8 / 8]
-    do w = 1,20 !size(weight_scales)
-      !wgt_scale = weight_scales(w)
-      wgt_scale = (2.0_r8 ** (w - 1) - 1) * 3.0_r8 / 2.0_r8 ** 19
+    do w = 1,1
+      !wgt_scale = (2.0_r8 ** (w - 1) - 1) * 3.0_r8 / 2.0_r8 ** 19
+      wgt_scale = 0
 
       curvature = 0; lnorm = 0; nvofcell = 0
       do i = 1,mesh%ncell
@@ -489,7 +506,8 @@ contains
         ! TODO: this really should be in any cell neighboring a cell containing the interface
         !if (vof(1,i) > cutvof .and. vof(1,i) < 1-cutvof) then !.and. .not.isZero(curvature(i))) then
         if (vof(1,i) > 1e-2_r8 .and. vof(1,i) < 1-1e-2_r8) then
-          curvature(i) = abs(curvature_from_patch (intrec%local_patch(i,gmesh, vof(1,:)), wgt_scale))
+          curvature(i) = abs(curvature_from_patch (intrec%local_patch(i,gmesh, vof(1,:)), &
+              wgt_scale, int_norm_hf2(:,1,i)))
           if (isZero(curvature(i))) cycle
 
           ! append to norms
@@ -500,18 +518,20 @@ contains
           lnorm(2) = lnorm(2) + err**2
           lnorm(3) = max(lnorm(3),err)
 
-          ! if (err > 3.6e-2_r8) then
-          !   print '(i6, 3es14.4)', i, curvature(i), curvature_ex, err !, c_new_line
-          !   print '(2es15.5)', vof(1,i), 1.0_r8 - vof(1,i)
-          !   print *, 'nvofs: ', vof(1,gmesh%cneighbor(:,i))
-          !   call LS_fatal ("large curvature error")
-          ! end if
+          if (err > 9e-2_r8) then
+            print '(i6, 3es14.4)', i, curvature(i), curvature_ex, err !, c_new_line
+            print '(2es15.5)', vof(1,i), 1.0_r8 - vof(1,i)
+            print *, 'nvofs: ', vof(1,gmesh%cneighbor(:,i))
+            print '(a, 3es14.4)', 'yn: ', int_norm(:,1,i)
+            print '(a, 3es14.4)', 'hn: ', int_norm_hf2(:,1,i)
+            call LS_fatal ("large curvature error")
+          end if
         end if
       end do
       lnorm(1) = lnorm(1) / nvofcell
       lnorm(2) = sqrt(lnorm(2) / nvofcell)
 
-      print '(es10.2, a,3es10.2)', wgt_scale, '  FT L1,L2,Linf = ',lnorm
+      !print '(es10.2, a,3es10.2)', wgt_scale, '  FT L1,L2,Linf = ',lnorm
     end do
     ! print '(i5, a,4es15.4)', 0.5_r8 - abs(vof(1,imax) - 0.5_r8)
 

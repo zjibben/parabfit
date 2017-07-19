@@ -1,0 +1,18 @@
+{
+    "initial-vof": {
+    	    "mat2": {
+    		"material-id": 2,
+                "region": {
+                    "type": "plane",
+    		    "normal": [0.8, 0.6, 0.0],
+                    "plane-const": 0.0
+                }
+    	    },
+	    "mat1": {
+    		"material-id": 1,
+                "region": {
+                    "type": "fill"
+                }
+            }
+    }
+}

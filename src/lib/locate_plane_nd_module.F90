@@ -34,7 +34,7 @@ module locate_plane_nd_module
     procedure :: f => func_signed_eval
     !procedure :: f => func_eval
   end type vof_error_func
-  
+
 contains
 
   ! given a polyhedron, a normal, and a volume, calculate a plane constant
@@ -46,10 +46,10 @@ contains
     use consts, only: cutvof,ndim
     use polyhedron_type
     use plane_type
-    
+
     type(polyhedron), intent(in) :: poly
     real(r8),         intent(in) :: norm(:), vol, cell_volume
-    
+
     real(r8)             :: rho_min,rho_mid,rho_max
     integer              :: ierr
     type(vof_error_func) :: vof_error
@@ -61,7 +61,7 @@ contains
 
     ! get bounds for Brent's method
     call rho_bracket (rho_min, rho_mid, rho_max, norm, poly, vof_error)
-    
+
     ! start Brent's method
     locate_plane_nd%normal = norm
     vof_error%eps = 0.5_r8*cutvof; vof_error%maxitr = 30
@@ -77,7 +77,7 @@ contains
   ! thereby bracketing the allowed range of plane constants
   subroutine rho_bracket (rho_min,rho_mid,rho_max, norm, poly, volume_error)
     use logging_services
-    
+
     real(r8),                intent(out) :: rho_min, rho_mid, rho_max
     real(r8),                intent(in)  :: norm(:)
     type(polyhedron),        intent(in)  :: poly ! we could instead just pass in poly%x
@@ -99,7 +99,7 @@ contains
       if (rho <= rho_min .or. rho >= rho_max) cycle
 
       err = volume_error%signed_eval (rho)
-      
+
       if (0.0_r8 < err .and. err < err_max) then
         err_max = err
         rho_max = rho
@@ -162,7 +162,7 @@ contains
     this%poly   = poly
     this%tvol   = tvol
     this%parvol = parvol
-    
+
   end subroutine func_init
 
   real(r8) function func_eval (this, x)
@@ -183,9 +183,9 @@ contains
 
     P%rho = x; P%normal = this%norm
     func_signed_eval = (this%poly%volume_behind_plane (P,ierr) - this%tvol) / this%parvol
-    
+
     if (ierr /= 0) call LS_fatal ("func_signed_eval failed")
-    
+
   end function func_signed_eval
-  
+
 end module locate_plane_nd_module

@@ -67,12 +67,12 @@ contains
     hex%node(:,8) = xc + 0.5_r8 * dx * [-1.0_r8,  1.0_r8,  1.0_r8]
 
     ! calculate the vof
-    vof = hex%vof (matl_geom, 2, 0, tiny(1.0_r8))
+    vof = hex%vof (matl_geom, 2, 0)
 
     ! print results
     vof_ex = 0.614298769812239_r8
     print '(a,3es15.5)', "vof, vofex, err: ", vof(2), vof_ex, abs(vof(2) - vof_ex)
-    
+
   end subroutine cylinder_test
 
 end module vof_init_test

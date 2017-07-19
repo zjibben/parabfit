@@ -26,13 +26,14 @@ module interface_patch_type
 
 contains
 
-  real(r8) function curvature_from_patch (interface_reconstructions, weight_scale)
+  real(r8) function curvature_from_patch (interface_reconstructions, weight_scale, normal)
 
     use analytic_surface_type
     use paraboloid_type
 
     type(polygon), intent(in) :: interface_reconstructions(:)
     real(r8), intent(in) :: weight_scale
+    real(r8), intent(in) :: normal(:)
 
     integer :: i
     real(r8) :: pts(ndim,3*size(interface_reconstructions)), wgt(size(interface_reconstructions))
@@ -41,13 +42,11 @@ contains
 
     do i = 1,size(interface_reconstructions)
       pts(:,i) = interface_reconstructions(i)%centroid()
-      !wgt(i) = 1
-      !wgt(i) = interface_reconstructions(i)%area()
-      !wgt(i) = interface_reconstructions(i)%area() ** (1.0_r8 / 3)
       wgt(i) = interface_reconstructions(i)%area() ** weight_scale
+      !wgt(i) = 1 / (1 + norm2(pts(:,i) - pts(:,1))) ** weight_scale
     end do
     call surf%bestFit (pts(:,1:size(interface_reconstructions)), &
-        wgt(1:size(interface_reconstructions)))
+        wgt(1:size(interface_reconstructions)), normal)
 
     ! ! get points representing each polygon
     ! do i = 1,size(interface_reconstructions)
@@ -61,11 +60,12 @@ contains
     ! call surf%bestFit (pts)
     curvature_from_patch = surf%curvature(interface_reconstructions(1)%centroid())
 
-    ! print '(a,3es14.4,a)', 'c: ',interface_reconstructions(1)%centroid()
-    ! do i = 1,size(pts,2)
-    !   print '(a,3es20.10)', 'x: ',pts(:,i)
+    ! do i = 1,size(interface_reconstructions)
+    !   print '(a,3es20.10)', 'x: ', pts(:,i)
     ! end do
-    ! print *, 'curvature ', curvature_from_patch
+    ! print '(a,3es14.4)', 'n: ', normal
+    ! print '(a,f10.4)', 'curvature0 ', curvature_from_patch
+    ! print '(a,f10.4)', 'curvature1 ', surf%curvatureQdrtc(interface_reconstructions(1)%centroid())
     ! print '(dt)', surf
 
   end function curvature_from_patch
