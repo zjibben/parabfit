@@ -17,7 +17,7 @@ set(SOURCE_FILES
   volume_track_test.F90
   volume_track_nd_test.F90
   vof_solver_type_test.F90
-  #string_type_test.F90
+  bfgs_min_class_test.F90
   unit_test.F90)
 
 # Create a library (so we can unit test)

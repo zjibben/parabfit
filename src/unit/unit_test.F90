@@ -19,6 +19,7 @@ program unit_test
   use normal_vector_test
   use interface_point_test
   use vof_init_test
+  use bfgs_min_class_test
   implicit none
 
   call LS_initialize ([output_unit]) !, LS_VERB_NOISY)
@@ -49,8 +50,10 @@ program unit_test
   ! analytic surface
   !call analytic_surface_test_suite ()
 
-  call curvature_test_suite ()
+  !call curvature_test_suite ()
   !call normal_vector_test_suite()
   !call interface_point_test_suite()
+
+  call bfgs_min_class_test_suite()
 
 end program unit_test

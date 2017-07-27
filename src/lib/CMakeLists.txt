@@ -29,7 +29,7 @@ set(Pececillo_SOURCE_FILES
     halfsphere_region_type.F90
     cylinder_region_type.F90
     region_factories.F90
-    
+
 # Mesh modules
     unstr_mesh_type.F90
     unstr_mesh_factory.F90
@@ -92,7 +92,7 @@ set(Pececillo_SOURCE_FILES
     predictor_module.F90
     fischer_guess_type.F90
     projection_module.F90
-    
+
 # Vof modules
     consts.F90
     hex_types.F90
@@ -101,6 +101,7 @@ set(Pececillo_SOURCE_FILES
     truncate_volume_module.F90
     brent_min_class.F90
     brent_root_class.F90
+    bfgs_min_class.F90
     int_norm_module.F90
     curvature_hf.F90
     curvature.F90
@@ -117,17 +118,16 @@ set(Pececillo_SOURCE_FILES
     surface_type.F90
     interface_patch_type.F90
     vof_solver_type.F90
-    
+
 # Output modules
     gmvwrite.c
     gmvwrite_fortran_binding.F90
     unstr_mesh_gmv.F90
     )
-    
+
 add_library(pececillo ${Pececillo_SOURCE_FILES})
 add_dependencies(pececillo hypre)
 target_link_libraries(pececillo petaca ${HYPRE_LIBRARIES} exodus lapack)
 install(TARGETS pececillo DESTINATION lib)
 
 add_subdirectory(test)
-
