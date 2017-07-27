@@ -103,6 +103,7 @@ set(Pececillo_SOURCE_FILES
     brent_root_class.F90
     bfgs_min_class.F90
     int_norm_module.F90
+    lvira_normals.F90
     curvature_hf.F90
     curvature.F90
     curvature_fit_func.F90

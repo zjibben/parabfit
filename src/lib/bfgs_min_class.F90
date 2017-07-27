@@ -17,7 +17,7 @@ module bfgs_min_class
   type, abstract, public :: bfgs_min
     real(r8) :: tol = 1e-6_r8
     integer :: maxitr = 20
-    integer :: line_search_max = 100
+    integer :: line_search_max = 20
     integer :: numitr = 0
   contains
     procedure, non_overridable :: find_minimum
@@ -47,8 +47,8 @@ contains
 
     integer :: i
     real(r8) :: l, f, gradf(size(x)), d(size(x)), s(size(x)), y(size(x)), &
-        hess_inv(size(x),size(x)), identity(size(x),size(x)), &
-        xhist(size(x), this%maxitr+1)
+        hess_inv(size(x),size(x)), identity(size(x),size(x)) !, &
+    ! xhist(size(x), this%maxitr+1)
 
     identity = 0
     do i = 1,size(x)
@@ -59,7 +59,7 @@ contains
     gradf = this%gradf(x, 1e-3_r8)
     hess_inv = identity
 
-    xhist(:,1) = x
+    ! xhist(:,1) = x
 
     do i = 1,this%maxitr
       ! calculate the search direction
@@ -67,7 +67,7 @@ contains
 
       ! get new position
       call this%line_search(l, s, f, x, d, gradf, status)
-      xhist(:,i+1) = x
+      ! xhist(:,i+1) = x
       if (status==1) exit
 
       ! update the hessian inverse and gradient
@@ -79,21 +79,21 @@ contains
         hess_inv = hess_inv + outer_product(s,s) / dot_product(y,s)
       end if
 
-      print '(a,2es13.3)', 'd: ', d
-      print '(a,2es13.3)', 's: ', s
-      print '(a,2es13.3)', 'x: ', x
-      print '(a,2es13.3)', 'g: ', gradf
-      print '(a,2es13.3)', 'ys: ', dot_product(y,s)
-      print *
+      ! print '(a,2es13.3)', 'd: ', d
+      ! print '(a,2es13.3)', 's: ', s
+      ! print '(a,2es13.3)', 'x: ', x
+      ! print '(a,2es13.3)', 'g: ', gradf
+      ! print '(a,2es13.3)', 'ys: ', dot_product(y,s)
+      ! print *
 
       if (norm2(gradf) < this%tol) exit
     end do
     this%numitr = i
     if (this%numitr > this%maxitr) status = 1
 
-    do i = 1,this%numitr+1
-      print *, '[',xhist(1,i), ', ', xhist(2,i),'],'
-    end do
+    ! do i = 1,this%numitr+1
+    !   print *, '[',xhist(1,i), ', ', xhist(2,i),'],'
+    ! end do
 
   end subroutine find_minimum
 
@@ -111,7 +111,7 @@ contains
 
     status = 0
     goalval = 1e-4_r8 * dot_product(gradf,d)
-    print *, 'line-search g:    ', goalval
+    ! print *, 'line-search g:    ', goalval
 
     ! initial guess for step length
     l = min(1.0_r8, 100/(1+norm2(gradf)))
@@ -123,7 +123,7 @@ contains
       f = fnext
       return
     end if
-    print *, 'line-search l:    ', l
+    ! print *, 'line-search l:    ', l
 
     ! quadratic guess for step length
     c(1) = f ! xi(0)
@@ -141,17 +141,15 @@ contains
       f = fnext
       return
     end if
-    print *, 'line-search l:    ', l
-
-    print *, 'line-search g:    ', goalval
+    ! print *, 'line-search l:    ', l
+    ! print *, 'line-search g:    ', goalval
 
     ! cubic guesses for step length
     do i = 1,this%line_search_max
       b = [fnext - c(1) - c(2)*l, fprev - c(1) - c(2)*lprev]
-      Ainv(:,1) = [lprev**3, -l**3]
-      Ainv(:,2) = [-lprev**2, l**2]
+      Ainv(:,1) = [lprev**3, -lprev**2]
+      Ainv(:,2) = [-l**3, l**2]
       Ainv = Ainv / (lprev**3*l**2 - l**3*lprev**2)
-      Ainv = transpose(Ainv)
       c(3:4) = matmul(Ainv,b)
 
       ! local minimum of cubic
@@ -163,13 +161,13 @@ contains
       xnext = x + s
       fnext = this%f(xnext)
 
-      print '(a,i6)',      'line-search i:    ', i
-      print '(a,5es13.3)', 'line-search c:    ', c
-      print '(a,5es13.3)', 'line-search f:    ', fnext, f, fnext - f
-      print '(a,5es13.3)', 'line-search x:    ', norm2(s)
-      print '(a,6es13.3)', 'line-search diff: ', fnext - f, l*goalval, l, &
-          (-c(3) + sqrt(c(3)**2 - 3*c(4)*c(2))) / (3*c(4)) / lprev, &
-          l/lprev
+      ! print '(a,i6)',      'line-search i:    ', i
+      ! print '(a,5es13.3)', 'line-search c:    ', c
+      ! print '(a,5es13.3)', 'line-search f:    ', fnext, f, fnext - f
+      ! print '(a,5es13.3)', 'line-search x:    ', norm2(s)
+      ! print '(a,6es13.3)', 'line-search diff: ', fnext - f, l*goalval, l, &
+      !     (-c(3) + sqrt(c(3)**2 - 3*c(4)*c(2))) / (3*c(4)) / lprev, &
+      !     l/lprev
       if (fnext <= f + l*goalval) exit
     end do
 
