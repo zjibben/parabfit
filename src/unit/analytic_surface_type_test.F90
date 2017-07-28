@@ -37,8 +37,13 @@ contains
 
   subroutine curvature_test_suite ()
 
+    use, intrinsic :: iso_fortran_env, only: output_unit
+    use timer_tree_type
+
     integer :: i, ncell
     real(r8) :: lnormFT(3), lnormHF(3)
+
+    call set_timer_type (realtime_timing)
 
     print '(a)'
     print '(a)', 'CURVATURE'
@@ -50,8 +55,8 @@ contains
     write (98, '(a)') '# dx l1 l2 l3'
     write (99, '(a)') '# dx l1 l2 l3'
 
-    do i = 1,4
-    !do i = 1,1
+    !do i = 1,4
+    do i = 1,1
       ncell = 10 * 2**i
     ! do i = 1,25
     !   ncell = floor(10 * 1.15_r8**i)
@@ -64,6 +69,8 @@ contains
 
     print '(a)', '===================================================='
     print '(a)'
+
+    call write_timer_tree (output_unit, indent=3)
 
   end subroutine curvature_test_suite
 
@@ -449,6 +456,7 @@ contains
     use hex_types, only: hex_f, hex_e
     use array_utils, only: normalize, isZero
     use curvature_hf, only: heightFunction
+    use lvira_normals
 
     real(r8), intent(in) :: vof(:,:), int_norm(:,:,:)
     type(unstr_mesh), intent(in) :: mesh
@@ -460,9 +468,13 @@ contains
     type(surface) :: intrec
     type(multimat_cell) :: cell
     real(r8) :: int_norm_local(3,2), err, curvature(mesh%ncell), wgt_scale
-    real(r8), allocatable :: weight_scales(:), int_norm_hf(:,:), throwaway(:), int_norm_hf2(:,:,:)
+    real(r8), allocatable :: weight_scales(:), int_norm_hf(:,:), throwaway(:), int_norm_hf2(:,:,:), &
+        int_norm_lvira(:,:,:)
 
-    call heightFunction (throwaway, int_norm_hf, vof(1,:), int_norm(:,1,:), mesh, gmesh)
+    !call heightFunction (throwaway, int_norm_hf, vof(1,:), int_norm(:,1,:), mesh, gmesh)
+
+    call interface_normal_lvira(int_norm_lvira, vof, mesh, gmesh)
+    int_norm_hf = int_norm_lvira(:,1,:)
 
     ! 2d override. important on boundary cells
     int_norm_hf(3,:) = 0

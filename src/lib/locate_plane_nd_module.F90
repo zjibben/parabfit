@@ -94,7 +94,7 @@ contains
 
     ! find the outer bounds
     do i = 1,poly%nVerts
-      rho = sum(poly%x(:,i)*norm)
+      rho = dot_product(poly%x(:,i),norm)
 
       if (rho <= rho_min .or. rho >= rho_max) cycle
 
@@ -106,6 +106,14 @@ contains
       else if (err_min < err .and. err < 0.0_r8) then
         err_min = err
         rho_min = rho
+      else if (err == 0) then
+        err_min = err
+        err_max = err
+
+        rho_min = rho
+        rho_max = rho
+        rho_mid = rho
+        return
       end if
     end do
 

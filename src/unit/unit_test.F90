@@ -50,10 +50,10 @@ program unit_test
   ! analytic surface
   !call analytic_surface_test_suite ()
 
-  !call curvature_test_suite ()
+  call curvature_test_suite ()
   !call normal_vector_test_suite()
   !call interface_point_test_suite()
 
-  call bfgs_min_class_test_suite()
+  !call bfgs_min_class_test_suite()
 
 end program unit_test

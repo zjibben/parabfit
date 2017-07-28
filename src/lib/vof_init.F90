@@ -32,7 +32,7 @@ module vof_init
   public :: vof_initialize
 
   ! TODO: make these user-specified parameters
-  integer , parameter :: cell_vof_recursion_limit = 12
+  integer , parameter :: cell_vof_recursion_limit = 10 !12
 
 contains
 
@@ -43,6 +43,7 @@ contains
 
     use unstr_mesh_type
     use parameter_list_type
+    use timer_tree_type
 
     type(unstr_mesh),     intent(in)    :: mesh
     type(parameter_list), intent(in)    :: plist
@@ -53,6 +54,8 @@ contains
     integer                 :: i
     type(dnc_hex)           :: hex
     type(material_geometry) :: matl_init_geometry
+
+    call start_timer("vof init")
 
     ! first, determine the initial state provided by the user, and assign
     ! the function which will determine what points are inside the materials
@@ -72,6 +75,8 @@ contains
       vof(:,i) = hex%vof (matl_init_geometry, nmat, 0)
     end do
     !$omp end parallel do
+
+    call stop_timer("vof init")
 
   end subroutine vof_initialize
 

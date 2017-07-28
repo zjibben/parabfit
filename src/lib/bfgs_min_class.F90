@@ -47,19 +47,20 @@ contains
 
     integer :: i
     real(r8) :: l, f, gradf(size(x)), d(size(x)), s(size(x)), y(size(x)), &
-        hess_inv(size(x),size(x)), identity(size(x),size(x)) !, &
-    ! xhist(size(x), this%maxitr+1)
+        hess_inv(size(x),size(x)), identity(size(x),size(x)), &
+        xhist(size(x), this%maxitr+1)
 
     identity = 0
     do i = 1,size(x)
       identity(i,i) = 1
     end do
     status = 0
+    f = this%f(x)
     ! WARN: initial guess for a good difference step size here is assumed
     gradf = this%gradf(x, 1e-3_r8)
     hess_inv = identity
 
-    ! xhist(:,1) = x
+    xhist(:,1) = x
 
     do i = 1,this%maxitr
       ! calculate the search direction
@@ -67,11 +68,11 @@ contains
 
       ! get new position
       call this%line_search(l, s, f, x, d, gradf, status)
-      ! xhist(:,i+1) = x
+      xhist(:,i+1) = x
       if (status==1) exit
 
       ! update the hessian inverse and gradient
-      y = this%gradf(x, l / 10) - gradf ! use factor of step length as difference spacing
+      y = this%gradf(x, norm2(s) / 100) - gradf ! use factor of step length as difference spacing
       gradf = gradf + y
       if (dot_product(y,s) > 0) then
         hess_inv = matmul(hess_inv, identity - outer_product(y,s) / dot_product(y,s))
@@ -79,15 +80,18 @@ contains
         hess_inv = hess_inv + outer_product(s,s) / dot_product(y,s)
       end if
 
+      ! print *, i
       ! print '(a,2es13.3)', 'd: ', d
       ! print '(a,2es13.3)', 's: ', s
       ! print '(a,2es13.3)', 'x: ', x
-      ! print '(a,2es13.3)', 'g: ', gradf
+      ! print '(a,2es13.3)', 'f: ', f
+      ! print '(a,3es13.3)', 'g: ', gradf, norm2(gradf)
       ! print '(a,2es13.3)', 'ys: ', dot_product(y,s)
       ! print *
 
       if (norm2(gradf) < this%tol) exit
     end do
+
     this%numitr = i
     if (this%numitr > this%maxitr) status = 1
 
@@ -119,6 +123,7 @@ contains
     xnext = x + s
     fnext = this%f(xnext)
     if (fnext - f < l*goalval) then
+      !print '(a,es13.3)', 'df: ', fnext - f
       x = xnext
       f = fnext
       return
@@ -137,6 +142,7 @@ contains
     xnext = x + s
     fnext = this%f(xnext)
     if (fnext - f < l*goalval) then
+      !print '(a,es13.3)', 'df: ', fnext - f
       x = xnext
       f = fnext
       return
@@ -145,6 +151,8 @@ contains
     ! print *, 'line-search g:    ', goalval
 
     ! cubic guesses for step length
+    ! print '(a,5es13.3)', 'line-search d:    ', d
+    ! print '(a,5es13.3)', 'line-search g:    ', gradf
     do i = 1,this%line_search_max
       b = [fnext - c(1) - c(2)*l, fprev - c(1) - c(2)*lprev]
       Ainv(:,1) = [lprev**3, -lprev**2]
@@ -171,8 +179,12 @@ contains
       if (fnext <= f + l*goalval) exit
     end do
 
-    if (i > this%line_search_max) status = 1
-
+    if (i > this%line_search_max) then
+      print *, "too many backtracks in line search"
+      status = 1
+    end if
+    ! print *
+    ! print '(a,es13.3)', 'df: ', fnext - f
     x = xnext
     f = fnext
 

@@ -7,6 +7,8 @@ module lvira_normals
   implicit none
   private
 
+  public :: interface_normal_lvira
+
   type, extends(bfgs_min) :: lvira_error
     private
     integer :: ncell
@@ -27,7 +29,7 @@ contains
     use mesh_geom_type
     use consts, only: cutvof
 
-    real(r8), intent(out) :: int_norm(:,:,:)
+    real(r8), allocatable, intent(out) :: int_norm(:,:,:)
     real(r8), intent(in) :: vof(:,:)
     type(unstr_mesh), intent(in) :: mesh
     type(mesh_geom), intent(in) :: gmesh
@@ -36,6 +38,10 @@ contains
     real(r8) :: sphn(2)
     type(lvira_error) :: norm_error
 
+    integer :: ii,jj,nn
+    real(r8) :: ds(2), s(2)
+    real(r8), parameter :: pi = 3.141592653_r8
+
     call start_timer("lvira normals")
 
     ! get the initial guess from Youngs' method
@@ -43,16 +49,40 @@ contains
 
     m = 1 ! WARN: right now assuming 1 material
     do i = 1,mesh%ncell
-      if (vof(m,i) > 1-cutvof .and. vof(m,i) < cutvof) cycle
+      if (vof(m,i) > 1-cutvof .or. vof(m,i) < cutvof) cycle
+      print *, i, mesh%ncell
+
+      ! print '(a,es20.10)', 'vof:           ',vof(m,i)
+      ! print *, vof(m,i) > 1-cutvof, vof(m,i) < cutvof
+
+      ! print '(a,3es13.3)', 'int_norm_grad: ',int_norm(:,m,i)
 
       ! convert normal to spherical coordinates
       sphn(1) = acos(int_norm(3,m,i))
       sphn(2) = atan2(int_norm(2,m,i), int_norm(1,m,i))
 
+      !print '(a,3es13.3)', 'external s:    ',sphn
+
       ! find the normal that minimizes the lvira error function
       call norm_error%init(i, vof(m,:), mesh, gmesh)
+
+      ! ! DEBUGGING ########
+      ! open (99, file="err_contour.txt")
+      ! nn = 200
+      ! ds(1) = pi / (nn-1)
+      ! ds(2) = 2*pi / (nn-1)
+      ! do ii = 1,nn
+      !   do jj = 1,nn
+      !     s = [(ii-1)*ds(1), (jj-1)*ds(2)]
+      !     write (99,'(es15.5,a,es15.5,a,es15.5)'), s(1),', ',s(2),', ', norm_error%f(s)
+      !   end do
+      ! end do
+      ! close(99)
+      ! ! ##################
+
+
       call norm_error%find_minimum(sphn, ierr)
-      if (ierr /= 0) call LS_Fatal ("could not minimize lvira error")
+      !if (ierr /= 0) call lvira_error_fatal(norm_error)
 
       ! convert spherical coordinates of normal back to physical coordinates
       int_norm(1,m,i) = sin(sphn(1))*cos(sphn(2))
@@ -63,6 +93,18 @@ contains
     int_norm(:,2,:) = - int_norm(:,1,:) ! WARN: right now assuming 1 material
 
     call stop_timer("lvira normals")
+
+  contains
+
+    subroutine lvira_error_fatal(norm_error)
+
+      type(lvira_error), intent(in) :: norm_error
+
+      print *, norm_error%numitr
+
+      call LS_Fatal ("could not minimize lvira error")
+
+    end subroutine lvira_error_fatal
 
   end subroutine interface_normal_lvira
 
@@ -117,7 +159,7 @@ contains
     ! get the normal vector from the input angles in spherical coordinates
     n(1) = sin(x(1))*cos(x(2))
     n(2) = sin(x(1))*sin(x(2))
-    n(3) = cos(x(2))
+    n(3) = cos(x(1))
 
     ! locate the plane by matching vofs on the target cell
     interface_plane = locate_plane_nd(this%cell(1), n, &
@@ -130,6 +172,9 @@ contains
 
       lvira_error_f = lvira_error_f + (lvira_vof - this%vof(c))**2
     end do
+
+    ! print *, 'f: ',lvira_error_f
+    ! stop
 
   end function lvira_error_f
 
