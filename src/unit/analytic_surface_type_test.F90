@@ -55,8 +55,8 @@ contains
     write (98, '(a)') '# dx l1 l2 l3'
     write (99, '(a)') '# dx l1 l2 l3'
 
-    !do i = 1,4
-    do i = 1,1
+    do i = 1,4
+    !do i = 1,1
       ncell = 10 * 2**i
     ! do i = 1,25
     !   ncell = floor(10 * 1.15_r8**i)

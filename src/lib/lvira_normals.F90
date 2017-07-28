@@ -40,7 +40,7 @@ contains
     type(lvira_error) :: norm_error
 
     integer :: ii,jj,nn
-    real(r8) :: ds(2), s(2), tmp(3), tmp2(3), tmp3
+    real(r8) :: ds(2), s(2), tmp(3), tmp2(3), tmp3, smin(2), smax(2)
     real(r8), parameter :: pi = 3.141592653_r8
 
     call start_timer("lvira normals")
@@ -75,36 +75,53 @@ contains
       ! ! DEBUGGING ########
       ! open (99, file="err_contour.txt")
       ! nn = 200
-      ! ds(1) = pi / (nn-1)
-      ! ds(2) = 2*pi / (nn-1)
+      ! smin = [0.4_r8*pi, 0.4_r8*pi]
+      ! smax = [0.6_r8*pi, 0.5_r8*pi]
+
+      ! ds = (smax - smin) / (nn-1)
       ! do ii = 1,nn
       !   do jj = 1,nn
-      !     s = [(ii-1)*ds(1), (jj-1)*ds(2)]
+      !     s = smin + [(ii-1)*ds(1), (jj-1)*ds(2)]
       !     write (99,'(es15.5,a,es15.5,a,es15.5)'), s(1),', ',s(2),', ', norm_error%f(s)
       !   end do
       ! end do
       ! close(99)
       ! ! ##################
-      print *, norm_error%f(sphn)
+      ! print *
+      ! print *, 'grad: ',norm_error%f(sphn)
+      ! print *
 
       call norm_error%find_minimum(sphn, ierr)
-      print *, norm_error%f(sphn)
+      ! sphn = [1.58342508284915_r8, 1.43749657637297_r8] ! converged value
+      ! print *, 'conv: ',norm_error%f(sphn)
+      ! print *
+      !print *, 'conv: ', sphn
       !if (ierr /= 0) call lvira_error_fatal(norm_error)
 
       ! convert spherical coordinates of normal back to physical coordinates
-      tmp = int_norm(:,m,i)
+      !tmp = int_norm(:,m,i)
       int_norm(1,m,i) = sin(sphn(1))*cos(sphn(2))
       int_norm(2,m,i) = sin(sphn(1))*sin(sphn(2))
       int_norm(3,m,i) = cos(sphn(1))
 
-      print *, norm2(int_norm(:,m,i) - tmp)
-      print *, tmp
-      print *, int_norm(:,m,i)
-      call HFCell(tmp3, tmp2, vof(m,:), tmp, mesh, gmesh, i)
-      print *, tmp2
+      ! print *, norm2(int_norm(:,m,i) - tmp)
+      ! print *, tmp
+      ! print *, int_norm(:,m,i)
+      ! call HFCell(tmp3, tmp2, vof(m,:), tmp, mesh, gmesh, i)
+      ! print *, tmp2
 
-      print *
-      stop
+      ! sphn(1) = acos(tmp2(3))
+      ! sphn(2) = atan2(tmp2(2), tmp2(1))
+
+      ! sphn = [1.57079632679490_r8, 1.46797267946713_r8] ! hf value
+      ! !print *, sphn
+      ! print *, 'hf:   ',norm_error%f(sphn)
+
+      ! sphn = [1.57079632679490_r8, 1.43749657637297_r8] ! z-perp value
+      ! print *, 'zprp: ',norm_error%f(sphn)
+
+      ! print *
+      ! stop
     end do
     !!$omp end parallel do
 
@@ -142,6 +159,8 @@ contains
 
     this%ncell = gmesh%caneighbor(i)%n_elements + 1
 
+    !print *, 'nc: ',this%ncell
+
     allocate(this%cell(this%ncell), this%vof(this%ncell), this%cell_vol(this%ncell))
 
     ! initialize target cell
@@ -159,6 +178,7 @@ contains
       this%vof(c) = vof(cid)
       this%cell_vol(c) = mesh%volume(cid)
     end do
+    !print *, 'vf: ',this%vof(1)
 
   end subroutine lvira_error_init
 
@@ -195,6 +215,8 @@ contains
       !     lvira_vof - this%vof(c), (lvira_vof - this%vof(c))**2
 
       lvira_error_f = lvira_error_f + (lvira_vof - this%vof(c))**2
+      ! if ((lvira_vof - this%vof(c))**2 > 1e-7_r8) &
+      !     print '(i4,es13.3)', c, (lvira_vof - this%vof(c))**2
     end do
 
     ! print *, 'f: ',lvira_error_f
