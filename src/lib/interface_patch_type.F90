@@ -30,6 +30,7 @@ contains
 
     use analytic_surface_type
     use paraboloid_type
+    use timer_tree_type
 
     type(polygon), intent(in) :: interface_reconstructions(:)
     real(r8), intent(in) :: weight_scale
@@ -39,6 +40,8 @@ contains
     real(r8) :: pts(ndim,3*size(interface_reconstructions)), wgt(size(interface_reconstructions))
     !type(analytic_surface) :: surf
     type(paraboloid) :: surf
+
+    call start_timer ("fit curvature")
 
     do i = 1,size(interface_reconstructions)
       pts(:,i) = interface_reconstructions(i)%centroid()
@@ -67,6 +70,8 @@ contains
     ! print '(a,f10.4)', 'curvature0 ', curvature_from_patch
     ! print '(a,f10.4)', 'curvature1 ', surf%curvatureQdrtc(interface_reconstructions(1)%centroid())
     ! print '(dt)', surf
+
+    call stop_timer ("fit curvature")
 
   end function curvature_from_patch
 

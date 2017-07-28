@@ -62,6 +62,8 @@ contains
 
   function curvatureHF (volfrac, normal, mesh, gmesh)
 
+    use timer_tree_type
+
     real(r8), intent(in) :: volfrac(:), normal(:,:)
     type(unstr_mesh), intent(in) :: mesh
     type(mesh_geom), intent(in) :: gmesh
@@ -70,6 +72,8 @@ contains
     integer :: i
     real(r8) :: throwaway(3)
 
+    call start_timer ("height function")
+
     do i = 1,mesh%ncell
       if (isMixedCell(volfrac(i))) then
         call HFCell(curvatureHF(i), throwaway, volfrac, normal(:,i), mesh, gmesh, i)
@@ -77,6 +81,8 @@ contains
         curvatureHF(i) = 0
       end if
     end do
+
+    call stop_timer ("height function")
 
   end function curvatureHF
 
