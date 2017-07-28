@@ -62,6 +62,8 @@ contains
 
     xhist(:,1) = x
 
+    if (norm2(gradf) < this%tol) return
+
     do i = 1,this%maxitr
       ! calculate the search direction
       d = - matmul(hess_inv, gradf)
@@ -87,6 +89,7 @@ contains
       ! print '(a,2es13.3)', 'f: ', f
       ! print '(a,3es13.3)', 'g: ', gradf, norm2(gradf)
       ! print '(a,2es13.3)', 'ys: ', dot_product(y,s)
+      ! print '(a,1es13.3)', 'dx: ', norm2(s) / 100
       ! print *
 
       if (norm2(gradf) < this%tol) exit

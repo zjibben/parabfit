@@ -23,6 +23,8 @@ contains
 
   subroutine heightFunction (curvature_hf, normal_hf, volfrac, normal, mesh, gmesh)
 
+    use timer_tree_type
+
     real(r8), allocatable, intent(out) :: curvature_hf(:), normal_hf(:,:)
     real(r8), intent(in) :: volfrac(:), normal(:,:)
     type(unstr_mesh), intent(in) :: mesh
@@ -30,6 +32,8 @@ contains
     real(r8) :: curvatureHF(size(volfrac))
 
     integer :: i
+
+    call start_timer ("height function")
 
     if (allocated(curvature_hf)) deallocate(curvature_hf)
     if (allocated(normal_hf)) deallocate(normal_hf)
@@ -51,6 +55,8 @@ contains
         normal_hf(:,i) = 0
       end if
     end do
+
+    call stop_timer ("height function")
 
   end subroutine heightFunction
 

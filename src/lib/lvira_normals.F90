@@ -50,7 +50,7 @@ contains
     m = 1 ! WARN: right now assuming 1 material
     do i = 1,mesh%ncell
       if (vof(m,i) > 1-cutvof .or. vof(m,i) < cutvof) cycle
-      print *, i, mesh%ncell
+      ! print *, i, mesh%ncell
 
       ! print '(a,es20.10)', 'vof:           ',vof(m,i)
       ! print *, vof(m,i) > 1-cutvof, vof(m,i) < cutvof
