@@ -32,7 +32,7 @@ module vof_init
   public :: vof_initialize
 
   ! TODO: make these user-specified parameters
-  integer , parameter :: cell_vof_recursion_limit = 12
+  integer , parameter :: cell_vof_recursion_limit = 10 !12
 
 contains
 

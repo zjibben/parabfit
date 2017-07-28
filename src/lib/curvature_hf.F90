@@ -17,7 +17,7 @@ module curvature_hf
   implicit none
   private
 
-  public :: curvatureHF, heightFunction
+  public :: curvatureHF, heightFunction, HFCell
 
 contains
 

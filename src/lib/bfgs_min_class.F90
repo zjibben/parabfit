@@ -48,7 +48,7 @@ contains
     integer :: i
     real(r8) :: l, f, gradf(size(x)), d(size(x)), s(size(x)), y(size(x)), &
         hess_inv(size(x),size(x)), identity(size(x),size(x)), &
-        xhist(size(x), this%maxitr+1)
+        xhist(size(x), this%maxitr+1) ! DEBUGGING
 
     identity = 0
     do i = 1,size(x)
@@ -57,10 +57,13 @@ contains
     status = 0
     f = this%f(x)
     ! WARN: initial guess for a good difference step size here is assumed
-    gradf = this%gradf(x, 1e-3_r8)
+    gradf = this%gradf(x, 1e-7_r8)
     hess_inv = identity
 
     xhist(:,1) = x
+    print '(a,2es13.3)', 'x: ', x
+    print '(a,2es13.3)', 'f: ', f
+    print '(a,3es13.3)', 'g: ', gradf, norm2(gradf)
 
     if (norm2(gradf) < this%tol) return
 
@@ -74,7 +77,7 @@ contains
       if (status==1) exit
 
       ! update the hessian inverse and gradient
-      y = this%gradf(x, norm2(s) / 100) - gradf ! use factor of step length as difference spacing
+      y = this%gradf(x, 1e-6_r8) - gradf
       gradf = gradf + y
       if (dot_product(y,s) > 0) then
         hess_inv = matmul(hess_inv, identity - outer_product(y,s) / dot_product(y,s))
@@ -82,15 +85,15 @@ contains
         hess_inv = hess_inv + outer_product(s,s) / dot_product(y,s)
       end if
 
-      ! print *, i
-      ! print '(a,2es13.3)', 'd: ', d
-      ! print '(a,2es13.3)', 's: ', s
-      ! print '(a,2es13.3)', 'x: ', x
-      ! print '(a,2es13.3)', 'f: ', f
-      ! print '(a,3es13.3)', 'g: ', gradf, norm2(gradf)
-      ! print '(a,2es13.3)', 'ys: ', dot_product(y,s)
-      ! print '(a,1es13.3)', 'dx: ', norm2(s) / 100
-      ! print *
+      print *, i
+      print '(a,2es13.3)', 'd: ', d
+      print '(a,2es13.3)', 's: ', s
+      print '(a,2es13.3)', 'x: ', x
+      print '(a,2es13.3)', 'f: ', f
+      print '(a,3es13.3)', 'g: ', gradf, norm2(gradf)
+      print '(a,2es13.3)', 'ys: ', dot_product(y,s)
+      print '(a,1es13.3)', 'dx: ', norm2(s) / 100
+      print *
 
       if (norm2(gradf) < this%tol) exit
     end do
@@ -112,7 +115,7 @@ contains
     real(r8), intent(in) :: d(:), gradf(:)
     integer, intent(out) :: status
 
-    real(r8), parameter :: blow = 0.1_r8, bhigh = 0.8_r8
+    real(r8), parameter :: blow = 0.1_r8, bhigh = 0.5_r8
     integer :: i
     real(r8) :: goalval, fnext, xnext(size(x)), c(4), fprev, lprev, b(2), Ainv(2,2)
 
@@ -125,7 +128,7 @@ contains
     s = l*d
     xnext = x + s
     fnext = this%f(xnext)
-    if (fnext - f < l*goalval) then
+    if (fnext <= f + l*goalval) then
       !print '(a,es13.3)', 'df: ', fnext - f
       x = xnext
       f = fnext
@@ -144,7 +147,7 @@ contains
     s = l*d
     xnext = x + s
     fnext = this%f(xnext)
-    if (fnext - f < l*goalval) then
+    if (fnext <= f + l*goalval) then
       !print '(a,es13.3)', 'df: ', fnext - f
       x = xnext
       f = fnext
@@ -154,8 +157,8 @@ contains
     ! print *, 'line-search g:    ', goalval
 
     ! cubic guesses for step length
-    ! print '(a,5es13.3)', 'line-search d:    ', d
-    ! print '(a,5es13.3)', 'line-search g:    ', gradf
+    print '(a,5es13.3)', 'line-search d:    ', d
+    print '(a,5es13.3)', 'line-search g:    ', gradf
     do i = 1,this%line_search_max
       b = [fnext - c(1) - c(2)*l, fprev - c(1) - c(2)*lprev]
       Ainv(:,1) = [lprev**3, -lprev**2]
@@ -172,13 +175,13 @@ contains
       xnext = x + s
       fnext = this%f(xnext)
 
-      ! print '(a,i6)',      'line-search i:    ', i
-      ! print '(a,5es13.3)', 'line-search c:    ', c
-      ! print '(a,5es13.3)', 'line-search f:    ', fnext, f, fnext - f
-      ! print '(a,5es13.3)', 'line-search x:    ', norm2(s)
-      ! print '(a,6es13.3)', 'line-search diff: ', fnext - f, l*goalval, l, &
-      !     (-c(3) + sqrt(c(3)**2 - 3*c(4)*c(2))) / (3*c(4)) / lprev, &
-      !     l/lprev
+      print '(a,i6)',      'line-search i:    ', i
+      print '(a,5es13.3)', 'line-search c:    ', c
+      print '(a,5es13.3)', 'line-search f:    ', fnext, f, fnext - f
+      print '(a,5es13.3)', 'line-search x:    ', norm2(s)
+      print '(a,6es13.3)', 'line-search diff: ', fnext - f, l*goalval, l, &
+          (-c(3) + sqrt(c(3)**2 - 3*c(4)*c(2))) / (3*c(4)) / lprev, &
+          l/lprev
       if (fnext <= f + l*goalval) exit
     end do
 

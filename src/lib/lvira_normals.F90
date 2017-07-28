@@ -28,6 +28,7 @@ contains
     use unstr_mesh_type
     use mesh_geom_type
     use consts, only: cutvof
+    use curvature_hf, only: HFCell ! DEBUGGING
 
     real(r8), allocatable, intent(out) :: int_norm(:,:,:)
     real(r8), intent(in) :: vof(:,:)
@@ -39,7 +40,7 @@ contains
     type(lvira_error) :: norm_error
 
     integer :: ii,jj,nn
-    real(r8) :: ds(2), s(2)
+    real(r8) :: ds(2), s(2), tmp(3), tmp2(3), tmp3
     real(r8), parameter :: pi = 3.141592653_r8
 
     call start_timer("lvira normals")
@@ -47,9 +48,14 @@ contains
     ! get the initial guess from Youngs' method
     int_norm = interface_normal(vof, mesh, gmesh, .false.)
 
-    m = 1 ! WARN: right now assuming 1 material
+    m = 1 ! WARN: right now assuming 2 materials
+    !!$omp parallel do private(sphn, norm_error)
     do i = 1,mesh%ncell
-      if (vof(m,i) > 1-cutvof .or. vof(m,i) < cutvof) cycle
+      if (vof(m,i) > 1-cutvof .or. vof(m,i) < cutvof) then
+        int_norm(:,:,i) = 0
+        cycle
+      end if
+      if (any(gmesh%cneighbor(:,i)<1)) cycle ! WARN: skipping boundaries. BCs might be automatic?
       ! print *, i, mesh%ncell
 
       ! print '(a,es20.10)', 'vof:           ',vof(m,i)
@@ -79,16 +85,28 @@ contains
       ! end do
       ! close(99)
       ! ! ##################
-
+      print *, norm_error%f(sphn)
 
       call norm_error%find_minimum(sphn, ierr)
+      print *, norm_error%f(sphn)
       !if (ierr /= 0) call lvira_error_fatal(norm_error)
 
       ! convert spherical coordinates of normal back to physical coordinates
+      tmp = int_norm(:,m,i)
       int_norm(1,m,i) = sin(sphn(1))*cos(sphn(2))
       int_norm(2,m,i) = sin(sphn(1))*sin(sphn(2))
-      int_norm(3,m,i) = cos(sphn(2))
+      int_norm(3,m,i) = cos(sphn(1))
+
+      print *, norm2(int_norm(:,m,i) - tmp)
+      print *, tmp
+      print *, int_norm(:,m,i)
+      call HFCell(tmp3, tmp2, vof(m,:), tmp, mesh, gmesh, i)
+      print *, tmp2
+
+      print *
+      stop
     end do
+    !!$omp end parallel do
 
     int_norm(:,2,:) = - int_norm(:,1,:) ! WARN: right now assuming 1 material
 
@@ -148,6 +166,7 @@ contains
 
     use locate_plane_nd_module
     use plane_type
+    use timer_tree_type
 
     class(lvira_error), intent(in) :: this
     real(r8), intent(in) :: x(:)
@@ -155,6 +174,8 @@ contains
     integer :: c, ierr
     real(r8) :: n(3), lvira_vof
     type(plane) :: interface_plane
+
+    call start_timer("lvira error")
 
     ! get the normal vector from the input angles in spherical coordinates
     n(1) = sin(x(1))*cos(x(2))
@@ -167,14 +188,18 @@ contains
 
     lvira_error_f = 0
     do c = 1,this%ncell
-      lvira_vof = this%cell(c)%volume_behind_plane(interface_plane, ierr)
+      lvira_vof = this%cell(c)%volume_behind_plane(interface_plane, ierr) / this%cell_vol(c)
       if (ierr /= 0) call LS_fatal ("could not calculate volume behind lvira plane")
+
+      ! print '(a,4es13.3)', 'lv: ', lvira_vof, this%vof(c), &
+      !     lvira_vof - this%vof(c), (lvira_vof - this%vof(c))**2
 
       lvira_error_f = lvira_error_f + (lvira_vof - this%vof(c))**2
     end do
 
     ! print *, 'f: ',lvira_error_f
     ! stop
+    call stop_timer("lvira error")
 
   end function lvira_error_f
 
