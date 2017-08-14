@@ -9,7 +9,7 @@
 !!
 !! References:
 !!     1. Hopcroft and Kahn. A Paradigm for Robust Geometric Algorithms. Algorithmica, 1992
-!! 
+!!
 
 #include "f90_assert.fpp"
 
@@ -50,7 +50,7 @@ module polyhedron_type
   end type polyhedron
 
 contains
-  
+
   ! subroutine polyhedron_delete (this)
   !   type(polyhedron) :: this
   !   if (allocated(this%x)) deallocate(this%x)
@@ -66,9 +66,9 @@ contains
     real(r8),           intent(in)  :: x(:,:)
     integer,            intent(in)  :: face_v(:,:), edge_v(:,:)
     real(r8), optional, intent(in)  :: vol, face_normal(:,:)
-    
+
     integer :: f,nV
-    
+
     this%nVerts = size(x,     dim=2)
     this%nEdges = size(edge_v,dim=2)
     this%nFaces = size(face_v,dim=2)
@@ -78,18 +78,18 @@ contains
     if (allocated(this%face_vid))    deallocate(this%face_vid)
     if (allocated(this%edge_vid))    deallocate(this%edge_vid)
     if (allocated(this%face_normal)) deallocate(this%face_normal)
-    
+
     allocate(this%x(ndim,this%nVerts),& !this%face(this%nFaces),&
          this%face_vid(size(face_v,dim=1),this%nFaces),&
          this%edge_vid(size(edge_v,dim=1),this%nEdges),&
          this%face_normal(ndim,this%nFaces))
-    
+
     this%x = x
     this%edge_vid = edge_v
     this%face_vid = face_v
-    
+
     this%vol = merge(vol, 0.0_r8, present(vol))
-    
+
     if (present(face_normal)) then
       this%face_normal = face_normal
     else
@@ -104,16 +104,16 @@ contains
       call this%print_data()
       write(*,*)
     end if
-    
+
     ! if the faces are of type polygon
     ! do f = 1,this%nFaces
     !   nV = count(face_v(:,f) /= 0) ! number of vertices on this face
     !   call this%face(f)%init (x(:,face_v(1:nV,f)))
     ! end do
-    
+
     ! note that by taking the cross product between edges described in a
     ! counter-clockwise manner, we guarantee the normal to be outward facing
-    
+
   end subroutine init_polyhedron
 
   function is_valid (this) result(ierr)
@@ -361,7 +361,7 @@ contains
 
     class(polyhedron), intent(inout) :: this
     !integer, intent(out) :: ierr
-    
+
     integer :: f,nV,v
     real(r8) :: tmp(ndim), n(ndim), t(ndim)
     type(polygon) :: face
@@ -372,7 +372,7 @@ contains
 
     ! scale the polyhedron (see note 1)
     call this%scale ()
-    
+
     ! sum up the integral of n_x*x over all faces (could just as easily be any other direction)
     volume = 0.0_r8
     do f = 1,this%nFaces
@@ -394,7 +394,7 @@ contains
       !   print *, 'x: ',this%x(:,this%face_vid(1,v))
       ! end do
     end do
-    volume = volume/6.0_r8
+    volume = volume / 6
     this%vol = volume
 
     ! rescale the polyhedron
@@ -436,7 +436,7 @@ contains
     real(r8) :: x(ndim,this%nEdges),intx(ndim)
 
     if (present(v_assoc_pe)) v_assoc_pe = -1
-    
+
     ! loop through all edges
     Nintersections = 0
     do e = 1,this%nEdges
@@ -457,29 +457,29 @@ contains
         end if
       end if
     end do
-    
+
     ! pass the intersection points to the polygon constructor
     if (Nintersections>2) then
       call intersection_verts%init (x(:,1:Nintersections))
-      
+
       ! this probably doesn't need to be called every time this function is used
       if (present(v_assoc_pe)) then
         call intersection_verts%order (v_assoc_pe)
       else
         call intersection_verts%order ()
       end if
-      
+
       ! make sure the vertices are ordered counter-clockwise
       if (sum(intersection_verts%norm*P%normal)<0.0_r8) then
         ! reverse both x and v_assoc_pe
         intersection_verts%x = reverse (intersection_verts%x)
-        
+
         if (present(v_assoc_pe)) then
           do e = 1,size(v_assoc_pe)
             if (v_assoc_pe(e)>0) v_assoc_pe(e) = Nintersections - v_assoc_pe(e)+1
           end do
         end if
-        
+
         call intersection_verts%update_plane_normal ()
       end if
     ! else
@@ -488,7 +488,7 @@ contains
     !   call P%print_data()
     !   call LS_fatal ("not enough intersection points")
     end if
-    
+
   end function intersection_verts
 
   ! return a list of the edge ids for edges intersected by the plane
@@ -500,7 +500,7 @@ contains
 
     integer :: e
     logical :: inte(this%nEdges)
-    
+
     do e = 1,this%nEdges
       inte(e) = P%intersects(this%x(:,this%edge_vid(:,e)))
     end do
@@ -520,7 +520,7 @@ contains
 
     use consts, only: alpha
     use plane_type
-    
+
     class(polyhedron), intent(in) :: this
     class(plane),      intent(in) :: P
     type(polyhedron), intent(out) :: split_poly(:)
@@ -532,7 +532,7 @@ contains
 
     ASSERT(size(split_poly)==2)
     ierr = 0
-    
+
     ! check which side of the plane each vertex lies
     ! vertices within distance alpha of the plane are considered to lie on it
     !  dist  >  alpha => side =  1
@@ -542,7 +542,7 @@ contains
       dist = P%signed_distance (this%x(:,v)) ! calculate the signed distance from the plane
       side(v) = merge(int(sign(1.0_r8, dist)), 0, abs(dist) > alpha) ! decide where it lies
     end do
-    
+
     if (.not.any(side<0)) then
       split_poly(1) = this
       call split_poly(2)%init ()
@@ -597,10 +597,10 @@ contains
       write(*,'(15i3)') side
       call P%print_data()
 
-      write(*,*) 
+      write(*,*)
       call intpoly%print_data ()
       write(*,*)
-      
+
       write(*,*) 'problematic vols: ',tmp1,tmp2
       ierr = 1
       !call LS_fatal ('polyhedron split failed: invalid volume')
@@ -635,7 +635,7 @@ contains
       dist = P%signed_distance (this%x(:,v)) ! calculate the signed distance from the plane
       side(v) = merge(int(sign(1.0_r8, dist)), 0, abs(dist) > alpha) ! decide where it lies
     end do
-    
+
     if (.not.any(side>0)) then
       behind = this
     else if (any(side>0) .and. any(side<0)) then
@@ -657,7 +657,7 @@ contains
       volume_behind_plane = 0.0_r8
       return
     end if
-    
+
     ! if any of the polyhedrons have a face with less than 3 vertices, throw an error
     if (allocated(behind%face_vid)) then
       if (any(count(behind%face_vid /= 0, dim=1) < 3)) then
@@ -674,7 +674,7 @@ contains
       write(*,*) 'problematic vol: ',volume_behind_plane
       call LS_fatal ('polyhedron split failed: invalid volume')
     end if
-    
+
   contains
 
     subroutine dumpData ()
@@ -682,16 +682,16 @@ contains
       write(*,*) 'parent:'
       call this%print_data ()
       write(*,*)
-      
+
       write(*,*) 'child:'
       call behind%print_data ()
       write(*,*)
-      
+
       write(*,*) 'other data:'
       write(*,'(15i3)') side
       call P%print_data()
-      
-      write(*,*) 
+
+      write(*,*)
       call intpoly%print_data ()
       write(*,*)
     end subroutine dumpData
@@ -720,7 +720,7 @@ contains
          p2c_vid(this%nVerts), & ! parent to child vertex id conversion table for cases they correspond
          edge_vid(2,this%nEdges+intpoly%nVerts), & ! can have intpoly%nVerts more edges than parent
          face_vid(size(this%face_vid,dim=1)+2,this%nFaces+1) ! could have 1 more face and faces could be 2 longer than parent
-    
+
     ! note: an updated planar face can only include 1 more node than the original,
     !       but I'm not sure if there is a limit to how many nodes the entirely new face can have.
     !       For cubes the number is 2.
@@ -750,7 +750,7 @@ contains
         call find_faces (face_vid,nFaces,ierr, &
             this,side,valid_side,p2c_vid,nParVerts,nVerts,intpoly%nVerts,v_assoc_pe)
         if (ierr /= 0) call fatal()
-        
+
         ! initialize final polyhedron
         tmp = maxval(count(face_vid(:,:) /= 0,dim=1)) ! the maximum number of vertices on a face
         if (nVerts < 3) then
@@ -761,7 +761,7 @@ contains
         end if
         call polyhedron_on_side_of_plane%init (ierr, x(:,1:nVerts), face_vid(1:tmp,1:nFaces), &
             edge_vid(:,1:nEdges))
-        
+
         !write(*,*) 'poly', nVerts, tmp, nFaces, nEdges
         if (ierr /= 0) call fatal()
       end if
@@ -939,7 +939,7 @@ contains
             face_vid(1:nV,nFaces) = p2c_vid(this%face_vid(1:nV,f))
           else
             ! if some vertices are on the valid side of the face, this face is modified
-            ! write(*,*) 
+            ! write(*,*)
             ! write(*,*) 'f: ',nFaces
             ! write(*,*) this%face_vid(1:nV,f)
             ! write(*,*) side(this%face_vid(1:nV,f))
@@ -947,7 +947,7 @@ contains
             call modified_parent_face (face_vid(:,nFaces),ierr, this%face_vid(1:nV,f), p2c_vid, &
                 edge_vid(:,1:nEdges), side, valid_side, nParVerts, nPolyVerts, v_assoc_pe, &
                 edge_cont_verts)
-            
+
             ! check that the face is valid by making sure each pair of points corresponds to an edge
             nV = count(face_vid(:,nFaces)/=0)
             do v = 1,nV
@@ -958,7 +958,7 @@ contains
                 exit
               end if
             end do
-            
+
             if (ierr /= 0) then
               nV = count(this%face_vid(:,f) /= 0)
               write(*,*) 'invalid face'
@@ -1030,7 +1030,7 @@ contains
       v = first_true_loc (side(par_face_vid)==valid_side)
       if (v==1) v = modulo(last_true_loc (side(par_face_vid)/=valid_side),nV)+1
       !write(*,*) 'v', v, nV, modulo(v-2,nV)+1, modulo(v-1,nV)+1
-      
+
       ! the edge [v-1,v] *must* intersect with the plane
       ecv = edge_cont_verts(par_face_vid(modulo(v-2,nV)+1),par_face_vid(modulo(v-1,nV)+1))
       if (ecv < 1) then
@@ -1062,7 +1062,7 @@ contains
       face_vid(cvid) = nParVerts + v_assoc_pe(ecv)
       cvid = cvid+1
       !write(*,*) '3',face_vid(cvid-1), ecv, nParVerts, v_assoc_pe(ecv)
-      
+
       ! add additional vertices on this face which lie on the plane
       ! stop when a complete face is formed
       !write(*,*) 'edge: ',[face_vid(1),face_vid(cvid-1)]
@@ -1094,9 +1094,9 @@ contains
     logical :: normalizedh
 
     normalizedh = merge(normalized, .false., present(normalized))
-    
+
     write(*,*) 'POLYHEDRON DATA:'
-    
+
     if (allocated(this%x)) then
       if (normalizedh) then
         x0 = minval(this%x,dim=2)
@@ -1111,14 +1111,14 @@ contains
       end if
       write(*,*)
     end if
-    
+
     if (allocated(this%edge_vid)) then
       do e = 1,this%nEdges
         write(*,'(a,i3,a,2i4)') 'edge ',e,':  ',this%edge_vid(:,e)
       end do
       write(*,*)
     end if
-    
+
     if (allocated(this%face_vid)) then
       do f = 1,this%nFaces
         write(*,'(a,i3,a,10i4)') 'face ',f,':  ',this%face_vid(:,f)
