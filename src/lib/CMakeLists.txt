@@ -98,6 +98,7 @@ set(Pececillo_SOURCE_FILES
     hex_types.F90
     material_geometry_type.F90
     vof_init.F90
+    vof_init_ex_circle.F90
     truncate_volume_module.F90
     brent_min_class.F90
     brent_root_class.F90
