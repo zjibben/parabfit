@@ -46,8 +46,9 @@ contains
     integer, intent(out) :: status
 
     integer :: i
-    real(r8) :: l, f, gradf(size(x)), d(size(x)), s(size(x)), y(size(x)), &
+    real(r8) :: l, f, gradf(size(x)), d(size(x)), s(size(x)), y(size(x)), xold(size(x)), &
         hess_inv(size(x),size(x)), identity(size(x),size(x)), &
+        gradfnew(size(x)), &
         xhist(size(x), this%maxitr+1) ! DEBUGGING
 
     identity = 0
@@ -72,13 +73,16 @@ contains
       d = - matmul(hess_inv, gradf)
 
       ! get new position
+      xold = x
       call this%line_search(l, s, f, x, d, gradf, status)
       xhist(:,i+1) = x
       if (status==1) exit
 
       ! update the hessian inverse and gradient
-      y = this%gradf(x, 1e-7_r8) - gradf
-      gradf = gradf + y
+      gradfnew = this%gradf(x, 1e-7_r8) ! 1e-7_r8
+      y = gradfnew - gradf
+      gradf = gradfnew
+      !gradf = gradf + y
       if (dot_product(y,s) > 0) then
         hess_inv = matmul(hess_inv, identity - outer_product(y,s) / dot_product(y,s))
         hess_inv = matmul(identity - outer_product(s,y) / dot_product(y,s), hess_inv)
@@ -94,17 +98,21 @@ contains
       ! print '(a,2es13.3)', 'ys: ', dot_product(y,s)
       ! print *
 
-      if (norm2(gradf) < this%tol) exit
+      if (norm2(gradf) < this%tol .or. norm2(x-xold) < 1e-10_r8) exit
     end do
 
     this%numitr = i
     if (this%numitr > this%maxitr) then
-      print *, "too many iterations in bfgs"
+      !print *, "too many iterations in bfgs", i
       status = 1
     end if
 
     ! do i = 1,this%numitr+1
     !   print *, '[',xhist(1,i), ', ', xhist(2,i),'],'
+    ! end do
+
+    ! do i = 2,this%numitr+1
+    !   print *, norm2(xhist(:,i) - xhist(:,i-1))
     ! end do
 
   end subroutine find_minimum
@@ -188,7 +196,7 @@ contains
     end do
 
     if (i > this%line_search_max) then
-      print *, "too many backtracks in line search"
+      !print *, "too many backtracks in line search"
       status = 1
     end if
     ! print *

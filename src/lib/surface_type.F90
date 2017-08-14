@@ -280,7 +280,7 @@ contains
     npolygons = 1
     do e = 1,size(this%cell_id)
       if (any(this%cell_id(e) == neighbor) .and. this%cell_id(e) /= cell_id) then
-        !if (vof(this%cell_id(e)) <= 1e-2_r8 .or. vof(this%cell_id(e)) >= 1-1e-2_r8) cycle ! WARN?
+        if (vof(this%cell_id(e)) < 1e-3_r8 .or. vof(this%cell_id(e)) > 1-1e-3_r8) cycle ! WARN?
         npolygons = npolygons + 1
         polygon_id(npolygons) = e
       else if (this%cell_id(e) == cell_id) then

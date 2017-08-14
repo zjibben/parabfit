@@ -40,7 +40,7 @@ contains
     use, intrinsic :: iso_fortran_env, only: output_unit
     use timer_tree_type
 
-    integer :: i, ncell
+    integer :: i, ncell, fh1, fh2
     real(r8) :: lnormFT(3), lnormHF(3)
 
     call set_timer_type (realtime_timing)
@@ -49,23 +49,24 @@ contains
     print '(a)', 'CURVATURE'
     print '(a)', '===================================================='
 
-    open (98, file="ft_conv_dump.txt")
-    open (99, file="hf_conv_dump.txt")
+    open(newunit=fh1, file="ft_conv_dump.txt")
+    open(newunit=fh2, file="hf_conv_dump.txt")
 
-    write (98, '(a)') '# dx l1 l2 l3'
-    write (99, '(a)') '# dx l1 l2 l3'
+    write (fh1, '(a)') '# dx l1 l2 l3'
+    write (fh2, '(a)') '# dx l1 l2 l3'
 
-    do i = 1,4
-    !do i = 1,1
+    !do i = 1,4
+    do i = 2,2
       ncell = 10 * 2**i
     ! do i = 1,25
     !   ncell = floor(10 * 1.15_r8**i)
-      call mesh_2d_test (ncell, 'cylinder.json', lnormFT, lnormHF)
-      write (98, '(4es15.5)') 1.0_r8 / ncell, lnormFT
-      write (99, '(4es15.5)') 1.0_r8 / ncell, lnormHF
+      !call mesh_2d_test (ncell, 'cylinder.json', lnormFT, lnormHF)
+      call mesh_3d_test (ncell, 'sphere.json', lnormFT, lnormHF)
+      write (fh1, '(4es15.5)') 1.0_r8 / ncell, lnormFT
+      write (fh2, '(4es15.5)') 1.0_r8 / ncell, lnormHF
     end do
 
-    close(98); close(99)
+    close(fh1); close(fh2)
 
     print '(a)', '===================================================='
     print '(a)'
@@ -397,26 +398,26 @@ contains
     use hex_types, only: hex_f, hex_e
     use array_utils, only: normalize, isZero
     use curvature_hf
+    use vof_io
+    use vof_init_ex_circle
 
     integer, intent(in) :: mesh_size
     character(*), intent(in) :: shape_filename
     real(r8), intent(out) :: lnormFT(:), lnormHF(:)
 
-    character(:), allocatable :: errmsg
+    character(:), allocatable :: errmsg, filename
+    character(30) :: tmp
     type(unstr_mesh) :: mesh
     type(mesh_geom) :: gmesh
     type(parameter_list), pointer :: plist
-    real(r8) :: curvature_ex, &
-        !vof(2,mesh_size**3), curvature(mesh_size**3)
-        vof(2,mesh_size*mesh_size*3), curvature(mesh_size*mesh_size*3)
+    real(r8) :: curvature_ex, vof(2,mesh_size*mesh_size*3), curvature(mesh_size*mesh_size*3), &
+        vof_ex(2,mesh_size*mesh_size*3)
     real(r8), allocatable :: int_norm(:,:,:)
     integer :: infile
 
     ! create a regular 2D mesh
     mesh = new_unstr_mesh ([-0.5_r8, -0.5_r8, -3*0.5_r8/mesh_size], &
         [0.5_r8, 0.5_r8, 3*0.5_r8 / mesh_size], [mesh_size,mesh_size,3])
-    ! mesh = new_unstr_mesh ([-0.5_r8, -0.5_r8, -0.5_r8], &
-    !     [0.5_r8, 0.5_r8, 0.5_r8], [mesh_size,mesh_size,mesh_size])
     call gmesh%init (mesh)
 
     ! fill the mesh with volume fractions for a circle
@@ -429,15 +430,25 @@ contains
     close(infile)
 
     plist => plist%sublist('initial-vof')
-    call vof_initialize (mesh, plist, vof, [1,2], 2)
-    !curvature_ex = 1.0_r8/0.35_r8 + 1.0_r8/0.35_r8 ! sphere
-    curvature_ex = 1/0.25_r8 + 0 ! cylinder
+
+    write (tmp, '(a,i0,a)') "vof_2d_", mesh_size, ".dat"
+    filename = trim(adjustl(tmp))
+    if (file_exists(filename)) then
+      call read_vof_field(filename, vof)
+    else
+      call vof_initialize (mesh, plist, vof, [1,2], 2)
+      call store_vof_field(filename, vof)
+    end if
+    call vof_init_circle(mesh, 0.25_r8, vof_ex)
     deallocate(plist)
+
+    call compare_vof_fields(vof, vof_ex)
 
     ! get the interface reconstructions
     int_norm = interface_normal (vof, mesh, gmesh, .false.)
 
     ! calculate errors for FT and HF curvature methods
+    curvature_ex = 1 / 0.25_r8 ! cylinder
     lnormFT = ft_mesh_test (vof, int_norm, mesh, gmesh, curvature_ex)
     lnormHF = hf_mesh_test (vof, int_norm, mesh, gmesh, curvature_ex)
 
@@ -445,6 +456,76 @@ contains
         ',  HF L1,L2,Linf = ',lnormHF
 
   end subroutine mesh_2d_test
+
+  subroutine mesh_3d_test (mesh_size, shape_filename, lnormFT, lnormHF)
+
+    use,intrinsic :: iso_c_binding, only: C_NEW_LINE
+    use consts, only: cutvof
+    use unstr_mesh_factory
+    use surface_type
+    use parameter_list_type
+    use parameter_list_json
+    use int_norm_module
+    use interface_patch_type
+    use vof_init
+    use multimat_cell_type
+    use hex_types, only: hex_f, hex_e
+    use array_utils, only: normalize, isZero
+    use curvature_hf
+    use vof_io
+
+    integer, intent(in) :: mesh_size
+    character(*), intent(in) :: shape_filename
+    real(r8), intent(out) :: lnormFT(:), lnormHF(:)
+
+    character(:), allocatable :: errmsg, filename
+    character(30) :: tmp
+    type(unstr_mesh) :: mesh
+    type(mesh_geom) :: gmesh
+    type(parameter_list), pointer :: plist
+    real(r8) :: curvature_ex, vof(2,mesh_size**3), curvature(mesh_size**3)
+    real(r8), allocatable :: int_norm(:,:,:)
+    integer :: infile
+
+    ! create a regular 2D mesh
+    mesh = new_unstr_mesh ([-0.5_r8, -0.5_r8, -0.5_r8], &
+        [0.5_r8, 0.5_r8, 0.5_r8], [mesh_size,mesh_size,mesh_size])
+    call gmesh%init (mesh)
+
+    ! fill the mesh with volume fractions for a circle
+    ! right now this relies on an input file to describe the cylinder. In the future I'd like to
+    ! initialize material_geometry_types without a parameter_list_type, or initialize a
+    ! parameter_list_type without a JSON file
+    open(newunit=infile,file=shape_filename,action='read',access='stream')
+    call parameter_list_from_json_stream (infile, plist, errmsg)
+    if (.not.associated(plist)) call LS_fatal ("error reading input file:" // C_NEW_LINE // errmsg)
+    close(infile)
+
+    plist => plist%sublist('initial-vof')
+
+    write (tmp, '(a,i0,a)') "vof_3d_", mesh_size, ".dat"
+    filename = trim(adjustl(tmp))
+    if (file_exists(filename)) then
+      call read_vof_field(filename, vof)
+    else
+      call vof_initialize (mesh, plist, vof, [1,2], 2)
+      call store_vof_field(filename, vof)
+    end if
+    deallocate(plist)
+
+    ! get the interface reconstructions
+    int_norm = interface_normal (vof, mesh, gmesh, .false.)
+
+    ! calculate errors for FT and HF curvature methods
+    curvature_ex = 2 / 0.25_r8 ! sphere
+    !curvature_ex = 1 / 0.25_r8 ! sphere
+    lnormFT = ft_mesh_test (vof, int_norm, mesh, gmesh, curvature_ex)
+    lnormHF = hf_mesh_test (vof, int_norm, mesh, gmesh, curvature_ex)
+
+    print '(i5, 2(a,3es10.2))', mesh_size, '  FT L1,L2,Linf = ',lnormFT, &
+        ',  HF L1,L2,Linf = ',lnormHF
+
+  end subroutine mesh_3d_test
 
   function ft_mesh_test (vof, int_norm, mesh, gmesh, curvature_ex) result(lnorm)
 
@@ -471,22 +552,28 @@ contains
     real(r8), allocatable :: weight_scales(:), int_norm_hf(:,:), throwaway(:), int_norm_hf2(:,:,:), &
         int_norm_lvira(:,:,:)
 
-    !call heightFunction (throwaway, int_norm_hf, vof(1,:), int_norm(:,1,:), mesh, gmesh)
+    ! call heightFunction (throwaway, int_norm_hf, vof(1,:), int_norm(:,1,:), mesh, gmesh)
 
     call interface_normal_lvira(int_norm_lvira, vof, mesh, gmesh)
     int_norm_hf = int_norm_lvira(:,1,:)
 
     ! 2d override. important on boundary cells
-    int_norm_hf(3,:) = 0
-    do i = 1,mesh%ncell
-      int_norm_hf(:,i) = normalize(int_norm_hf(:,i))
-    end do
+    ! print *, 'WARNING: 2D override'
+    ! int_norm_hf(3,:) = 0
+    ! do i = 1,mesh%ncell
+    !   int_norm_hf(:,i) = normalize(int_norm_hf(:,i))
+    ! end do
+
+    ! do i = 1,mesh%ncell
+    !   if (any(gmesh%cneighbor(:,i)<1)) then
+    !     int_norm_hf(3,i) = 0
+    !     int_norm_hf(:,i) = normalize(int_norm_hf(:,i))
+    !   end if
+    ! end do
 
     allocate(int_norm_hf2(3,2,mesh%ncell))
     int_norm_hf2(:,1,:) =  int_norm_hf
     int_norm_hf2(:,2,:) = -int_norm_hf
-
-    !int_norm_hf2 = int_norm
 
     ! get the interface reconstructions
     do i = 1,mesh%ncell
@@ -504,6 +591,8 @@ contains
 
       call intrec%append (cell%interface_polygon(1), i)
     end do
+
+    call intrec%write_ply("ft_test.ply")
 
     ! get the curvature
     !weight_scales = [0.0_r8, 1.0_r8, 2.0_r8, 3.0_r8, 1.0_r8 / 2, 1.0_r8 / 3, 1.0_r8 / 4, 1.0_r8 / 8]
@@ -530,7 +619,7 @@ contains
           lnorm(2) = lnorm(2) + err**2
           lnorm(3) = max(lnorm(3),err)
 
-          if (err > 9e-2_r8) then
+          if (err > 5.4e-1_r8) then
             print '(i6, 3es14.4)', i, curvature(i), curvature_ex, err !, c_new_line
             print '(2es15.5)', vof(1,i), 1.0_r8 - vof(1,i)
             print *, 'nvofs: ', vof(1,gmesh%cneighbor(:,i))
@@ -592,5 +681,13 @@ contains
     lnorm(2) = sqrt(lnorm(2) / nvofcell)
 
   end function hf_mesh_test
+
+  subroutine compare_vof_fields(vof, vofex)
+
+    real(r8), intent(in) :: vof(:,:), vofex(:,:)
+
+
+
+  end subroutine compare_vof_fields
 
 end module analytic_surface_type_test

@@ -5,7 +5,7 @@
                 "region": {
                     "type": "sphere",
     		    "center": [0.0, 0.0, 0.0],
-    		    "radius": 0.35
+    		    "radius": 0.25
                 }
     	    },
 	    "mat1": {

@@ -64,7 +64,7 @@ contains
 
     ! start Brent's method
     locate_plane_nd%normal = norm
-    vof_error%eps = 0.5_r8*cutvof; vof_error%maxitr = 30
+    vof_error%eps = cutvof / 100; vof_error%maxitr = 50
     call vof_error%find_root (rho_min, rho_max, locate_plane_nd%rho, ierr)
     !call vof_error%find_minimum (rho_min, rho_mid, rho_max, locate_plane_nd%rho, ierr)
     !locate_plane_nd%rho = brent (vof_error, rho_min, rho_mid, rho_max, cutvof/2.0_r8, 30)
