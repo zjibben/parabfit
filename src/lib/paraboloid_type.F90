@@ -103,9 +103,6 @@ contains
     R(2,:) = normalize(crossProduct([0.0_r8,0.0_r8,1.0_r8], normalh))
     R(1,:) = crossProduct(R(2,:), normalh)
 
-    this%rot = R
-    this%offset = xcen
-
     ! get the set of points in the rotated and translated coordinate space
     do i = 1,size(x, dim=2)
       xr(:,i) = matmul(R, x(:,i) - xcen)
@@ -137,6 +134,9 @@ contains
     c = this%coeffsInOriginalSpace(cr, R, xcen)
 
     call this%init (c, cr)
+
+    this%rot = R
+    this%offset = xcen
 
   end subroutine bestFit
 
@@ -389,15 +389,35 @@ contains
     ! print *, x
     ! print *, xr
 
-    curvature = 2 * (-2*(this%cr(4) + this%cr(6))*((this%cr(2) + 2*this%cr(4)*xr(1) + &
-        this%cr(5)*xr(2))**2 + (this%cr(3) + this%cr(5)*xr(1) + 2*this%cr(6)*xr(2))**2 + 1) + &
-        (2*this%cr(4)*(this%cr(2) + 2*this%cr(4)*xr(1) + this%cr(5)*xr(2)) + &
-        this%cr(5)*(this%cr(3) + this%cr(5)*xr(1) + 2*this%cr(6)*xr(2)))*(this%cr(2) + &
-        2*this%cr(4)*xr(1) + this%cr(5)*xr(2)) + (this%cr(5)*(this%cr(2) + 2*this%cr(4)*xr(1) + &
-        this%cr(5)*xr(2)) + 2*this%cr(6)*(this%cr(3) + this%cr(5)*xr(1) + &
-        2*this%cr(6)*xr(2)))*(this%cr(3) + this%cr(5)*xr(1) + 2*this%cr(6)*xr(2)))*((this%cr(2) + &
-        2*this%cr(4)*xr(1) + this%cr(5)*xr(2))**2 + (this%cr(3) + this%cr(5)*xr(1) + &
-        2*this%cr(6)*xr(2))**2 + 1)**(-1.5_r8)
+    ! curvature = 2 * (-2*(this%cr(4) + this%cr(6))*((this%cr(2) + 2*this%cr(4)*xr(1) + &
+    !     this%cr(5)*xr(2))**2 + (this%cr(3) + this%cr(5)*xr(1) + 2*this%cr(6)*xr(2))**2 + 1) + &
+    !     (2*this%cr(4)*(this%cr(2) + 2*this%cr(4)*xr(1) + this%cr(5)*xr(2)) + &
+    !     this%cr(5)*(this%cr(3) + this%cr(5)*xr(1) + 2*this%cr(6)*xr(2)))*(this%cr(2) + &
+    !     2*this%cr(4)*xr(1) + this%cr(5)*xr(2)) + (this%cr(5)*(this%cr(2) + 2*this%cr(4)*xr(1) + &
+    !     this%cr(5)*xr(2)) + 2*this%cr(6)*(this%cr(3) + this%cr(5)*xr(1) + &
+    !     2*this%cr(6)*xr(2)))*(this%cr(3) + this%cr(5)*xr(1) + 2*this%cr(6)*xr(2)))*((this%cr(2) + &
+    !     2*this%cr(4)*xr(1) + this%cr(5)*xr(2))**2 + (this%cr(3) + this%cr(5)*xr(1) + &
+    !     2*this%cr(6)*xr(2))**2 + 1)**(-1.5_r8)
+
+    ! curvature = 2 * (-2*(this%cr(4) + this%cr(6))*((this%cr(2) + 2*this%cr(4)*xr(1) + &
+    !     this%cr(5)*xr(2))**2 + (this%cr(3) + this%cr(5)*xr(1) + 2*this%cr(6)*xr(2))**2 + 1) + &
+    !     (2*this%cr(4)*(this%cr(2) + 2*this%cr(4)*xr(1) + this%cr(5)*xr(2)) + &
+    !     this%cr(5)*(this%cr(3) + this%cr(5)*xr(1) + 2*this%cr(6)*xr(2)))*(this%cr(2) + &
+    !     2*this%cr(4)*xr(1) + this%cr(5)*xr(2)) + (this%cr(5)*(this%cr(2) + 2*this%cr(4)*xr(1) + &
+    !     this%cr(5)*xr(2)) + 2*this%cr(6)*(this%cr(3) + this%cr(5)*xr(1) + &
+    !     2*this%cr(6)*xr(2)))*(this%cr(3) + this%cr(5)*xr(1) + 2*this%cr(6)*xr(2)))*((this%cr(2) + &
+    !     2*this%cr(4)*xr(1) + this%cr(5)*xr(2))**2 + (this%cr(3) + this%cr(5)*xr(1) + &
+    !     2*this%cr(6)*xr(2))**2 + 1)**(-1.5_r8)
+
+    curvature = (-2*(this%cr(5) + this%cr(7))*((this%cr(2) + 2*this%cr(5)*xr(1) + &
+        this%cr(6)*xr(2))**2 + (this%cr(3) + this%cr(6)*xr(1) + 2*this%cr(7)*xr(2))**2 + 1) + &
+        (2*this%cr(5)*(this%cr(2) + 2*this%cr(5)*xr(1) + this%cr(6)*xr(2)) + &
+        this%cr(6)*(this%cr(3) + this%cr(6)*xr(1) + 2*this%cr(7)*xr(2)))*(this%cr(2) + &
+        2*this%cr(5)*xr(1) + this%cr(6)*xr(2)) + (this%cr(6)*(this%cr(2) + 2*this%cr(5)*xr(1) + &
+        this%cr(6)*xr(2)) + 2*this%cr(7)*(this%cr(3) + this%cr(6)*xr(1) + &
+        2*this%cr(7)*xr(2)))*(this%cr(3) + this%cr(6)*xr(1) + 2*this%cr(7)*xr(2)))/((this%cr(2) + &
+        2*this%cr(5)*xr(1) + this%cr(6)*xr(2))**2 + (this%cr(3) + this%cr(6)*xr(1) + &
+        2*this%cr(7)*xr(2))**2 + 1)**1.5_r8
 
     ! print *, curvature
 
