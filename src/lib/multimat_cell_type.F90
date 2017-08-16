@@ -69,7 +69,7 @@ contains
       ! use the plane to generate the polyhedron for this material,
       ! and update the free-space polyhedron
       if (nm==this%nmat .or. (1.0_r8-cutvof)*remainder%volume() < vof(m)*this%volume() .or. &
-          isZero(remainder%volume())) then
+          isZero(remainder%volume() / this%volume())) then
         ! if this is the final material in the cell,
         ! or its volume is within a cutvof of the remaining volume,
         ! it gets the entire remainder of the polyhedron
