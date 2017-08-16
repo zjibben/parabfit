@@ -20,4 +20,8 @@ add_executable(test_hypre_hybrid_type test_hypre_hybrid_type.F90)
 target_link_libraries(test_hypre_hybrid_type pececillo)
 add_test(hypre_hybrid_type test_hypre_hybrid_type)
 
+add_executable(test_analytic_parabola_curvature test_analytic_parabola_curvature.F90)
+target_link_libraries(test_analytic_parabola_curvature pececillo)
+add_test(analytic_parabola_curvature test_analytic_parabola_curvature)
+
 #set_property(TEST hypre_hybrid_type PROPERTY LABELS UNIT)
