@@ -22,11 +22,11 @@ module interface_patch_type
   implicit none
   private
 
-  public :: curvature_from_patch
+  public :: curvature_from_patch, normal_from_patch
 
 contains
 
-  real(r8) function curvature_from_patch (interface_reconstructions, weight_scale, normal)
+  real(r8) function curvature_from_patch (interface_reconstructions, weight_scale, normal, verbose)
 
     use analytic_surface_type
     use paraboloid_type
@@ -35,16 +35,24 @@ contains
     type(polygon), intent(in) :: interface_reconstructions(:)
     real(r8), intent(in) :: weight_scale
     real(r8), intent(in) :: normal(:)
+    logical, intent(in), optional :: verbose
 
     integer :: i
-    real(r8) :: pts(ndim,3*size(interface_reconstructions)), wgt(size(interface_reconstructions))
+    real(r8) :: pts(ndim,3*size(interface_reconstructions)), wgt(3*size(interface_reconstructions))
     !type(analytic_surface) :: surf
     type(paraboloid) :: surf
+    logical :: verboseh
+
+    if (present(verbose)) then
+      verboseh = verbose
+    else
+      verboseh = .false.
+    end if
 
     call start_timer ("fit curvature")
 
     do i = 1,size(interface_reconstructions)
-      pts(:,i) = interface_reconstructions(i)%centroid()
+      pts(:,i) = interface_reconstructions(i)%centroid2()
       wgt(i) = interface_reconstructions(i)%area() ** weight_scale
       !wgt(i) = 1 / (1 + norm2(pts(:,i) - pts(:,1))) ** weight_scale
     end do
@@ -54,26 +62,90 @@ contains
     ! ! get points representing each polygon
     ! do i = 1,size(interface_reconstructions)
     !   pts(:,3*(i-1)+1:3*(i-1)+3) = polygon_points(interface_reconstructions(i))
+    !   wgt(3*(i-1)+1:3*(i-1)+3) = interface_reconstructions(i)%area() ** weight_scale
     ! end do
 
     ! ! calculate the analytic surface fit and curvature, calculated at the center point
     ! ! by convention, the first element of interface_reconstructions is the center polygon
     ! !call surf%bestOneSheetFit (pts)
     ! !call surf%bestParaboloidFit (pts)
-    ! call surf%bestFit (pts)
+    ! call surf%bestFit (pts, wgt, normal)
+
+
     curvature_from_patch = surf%curvature(interface_reconstructions(1)%centroid())
 
-    ! do i = 1,size(interface_reconstructions)
-    !   print '(a,3es20.10)', 'x: ', pts(:,i)
-    ! end do
-    ! print '(a,3es14.4)', 'n: ', normal
-    ! print '(a,f10.4)', 'curvature0 ', curvature_from_patch
-    ! print '(a,f10.4)', 'curvature1 ', surf%curvatureQdrtc(interface_reconstructions(1)%centroid())
-    ! print '(dt)', surf
+    if (verboseh) then
+      do i = 1,size(interface_reconstructions)
+        !print '(a,3es20.10)', 'x: ', pts(:,i)
+        print '(3(a,es20.10),a)', '[',pts(1,i),',',pts(2,i),',',pts(3,i),'],'
+      end do
+      print *
+      do i = 1,size(interface_reconstructions)
+        print '(a,es20.10)', 'd: ', abs(norm2(pts(:2,i)) - 0.35_r8)
+      end do
+
+      print *
+      do i = 1,size(interface_reconstructions)
+        !print '(a,3es20.10)', 'x: ', pts(:,i)
+        print '(3es20.10)', interface_reconstructions(i)%centroid2()
+      end do
+      print *
+      do i = 1,size(interface_reconstructions)
+        !print '(a,3es20.10)', 'x: ', pts(:,i)
+        print '(3es20.10)', norm2(interface_reconstructions(i)%centroid2() - pts(:,i))
+      end do
+
+      print '(a,3es18.8)', 'n:  ', normal
+      print '(a,3es18.8)', 'n2: ', surf%normal(interface_reconstructions(1)%centroid())
+      print '(a,f10.4)', 'curvature0 ', curvature_from_patch
+      print '(a,f10.4)', 'curvature1 ', surf%curvatureQdrtc(interface_reconstructions(1)%centroid())
+      print '(dt)', surf
+
+      call interface_reconstructions(1)%print_data()
+    end if
 
     call stop_timer ("fit curvature")
 
   end function curvature_from_patch
+
+  function normal_from_patch (interface_reconstructions, weight_scale, normal, verbose)
+
+    use analytic_surface_type
+    use paraboloid_type
+    use timer_tree_type
+
+    type(polygon), intent(in) :: interface_reconstructions(:)
+    real(r8), intent(in) :: weight_scale
+    real(r8), intent(in) :: normal(:)
+    logical, intent(in), optional :: verbose
+    real(r8) :: normal_from_patch(3)
+
+    integer :: i
+    real(r8) :: pts(ndim,3*size(interface_reconstructions)), wgt(3*size(interface_reconstructions))
+    !type(analytic_surface) :: surf
+    type(paraboloid) :: surf
+    logical :: verboseh
+
+    if (present(verbose)) then
+      verboseh = verbose
+    else
+      verboseh = .false.
+    end if
+
+    call start_timer ("fit normals")
+
+    do i = 1,size(interface_reconstructions)
+      pts(:,i) = interface_reconstructions(i)%centroid2()
+      wgt(i) = interface_reconstructions(i)%area() ** weight_scale
+    end do
+    call surf%bestFit (pts(:,1:size(interface_reconstructions)), &
+        wgt(1:size(interface_reconstructions)), normal)
+
+    normal_from_patch = surf%normal(interface_reconstructions(1)%centroid())
+
+    call stop_timer ("fit normals")
+
+  end function normal_from_patch
 
   ! return a collection of 3 points which fit the polygon
   ! these points should surround the centroid, but not touch the edge of the polygon
