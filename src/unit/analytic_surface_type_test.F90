@@ -28,6 +28,7 @@ contains
     ! call messy_test2 ()
     ! call messy_test3 ()
     ! call messy_test4 ()
+    call messy_test5()
     ! print *
 
     print '(a)', '===================================================='
@@ -56,12 +57,12 @@ contains
     write (fh2, '(a)') '# dx l1 l2 l3'
 
     !do i = 1,4
-    do i = 2,2
+    do i = 4,4
       ncell = 10 * 2**i
     ! do i = 1,25
     !   ncell = floor(10 * 1.15_r8**i)
-      !call mesh_2d_test (ncell, 'cylinder.json', lnormFT, lnormHF)
-      call mesh_3d_test (ncell, 'sphere.json', lnormFT, lnormHF)
+      call mesh_2d_test (ncell, 'cylinder.json', lnormFT, lnormHF)
+      !call mesh_3d_test (ncell, 'sphere.json', lnormFT, lnormHF)
       write (fh1, '(4es15.5)') 1.0_r8 / ncell, lnormFT
       write (fh2, '(4es15.5)') 1.0_r8 / ncell, lnormHF
     end do
@@ -383,6 +384,61 @@ contains
 
   end subroutine messy_test4
 
+  subroutine messy_test5 ()
+
+    integer :: i
+    real(r8), allocatable :: x(:,:), weight(:)
+    real(r8) :: curvature, R
+    type(paraboloid) :: surf
+
+    R = 0.35_r8
+
+    x = reshape([&
+        6.4153003891E-02_r8,    3.4406901123E-01_r8,    0.0000000000E+00_r8, &
+        6.7276826530E-02_r8,    3.4347202777E-01_r8,   -6.2500000000E-03_r8, &
+        7.1875000000E-02_r8,    3.4253552490E-01_r8,   -6.2500000000E-03_r8, &
+        5.9375000000E-02_r8,    3.4492210380E-01_r8,   -6.2500000000E-03_r8, &
+        6.4153003885E-02_r8,    3.4406901123E-01_r8,   -6.2500000000E-03_r8, &
+        6.7276826531E-02_r8,    3.4347202777E-01_r8,    0.0000000000E+00_r8, &
+        7.1875000000E-02_r8,    3.4253552490E-01_r8,    0.0000000000E+00_r8, &
+        5.9375000000E-02_r8,    3.4492210379E-01_r8,    0.0000000000E+00_r8, &
+        6.7276826531E-02_r8,    3.4347202777E-01_r8,    6.2500000000E-03_r8, &
+        7.1875000000E-02_r8,    3.4253552490E-01_r8,    6.2500000000E-03_r8, &
+        5.9375000000E-02_r8,    3.4492210380E-01_r8,    6.2500000000E-03_r8, &
+        6.4153003884E-02_r8,    3.4406901123E-01_r8,    6.2500000000E-03_r8], [3,12])
+
+    ! x = reshape([&
+    !     6.4153003891E-02_r8,    3.4406901123E-01_r8,    0.0000000000E+00_r8, &
+    !     6.7276826531E-02_r8,    3.4347202777E-01_r8,    0.0000000000E+00_r8, &
+    !     !7.1875000000E-02_r8,    3.4253552490E-01_r8,    0.0000000000E+00_r8, &
+    !     5.9375000000E-02_r8,    3.4492210379E-01_r8,    0.0000000000E+00_r8, &
+    !     6.4153003885E-02_r8,    3.4406901123E-01_r8,   -6.2500000000E-03_r8, &
+    !     6.7276826530E-02_r8,    3.4347202777E-01_r8,   -6.2500000000E-03_r8, &
+    !     !7.1875000000E-02_r8,    3.4253552490E-01_r8,   -6.2500000000E-03_r8, &
+    !     5.9375000000E-02_r8,    3.4492210380E-01_r8,   -6.2500000000E-03_r8, &
+    !     6.4153003884E-02_r8,    3.4406901123E-01_r8,    6.2500000000E-03_r8, &
+    !     6.7276826531E-02_r8,    3.4347202777E-01_r8,    6.2500000000E-03_r8, &
+    !     !7.1875000000E-02_r8,    3.4253552490E-01_r8,    6.2500000000E-03_r8, &
+    !     5.9375000000E-02_r8,    3.4492210380E-01_r8,    6.2500000000E-03_r8 & !, &
+    !     ], [3,9])
+
+    do i = 1,size(x,dim=2)
+      print *, 'd: ', abs(norm2(x(:2,i)) - R)
+
+      if (abs(norm2(x(:2,i)) - R) > 4e-6) &
+          x(2,i) = sqrt(R**2 - x(1,i)**2)
+    end do
+
+    allocate(weight(size(x,dim=2)))
+    weight = 1
+
+    call surf%bestFit (x, weight, [-1.89492268E-01_r8, -9.81882213E-01_r8, 9.46296280E-08_r8])
+    curvature = surf%curvature(x(:,1))
+    print '(dt,2(a,es15.5))', surf, ',     curvature: ', curvature, &
+        ',   err: ', abs(curvature + 1/R) * R
+
+  end subroutine messy_test5
+
   subroutine mesh_2d_test (mesh_size, shape_filename, lnormFT, lnormHF)
 
     use,intrinsic :: iso_c_binding, only: C_NEW_LINE
@@ -405,19 +461,20 @@ contains
     character(*), intent(in) :: shape_filename
     real(r8), intent(out) :: lnormFT(:), lnormHF(:)
 
+    integer, parameter :: thck = 5
     character(:), allocatable :: errmsg, filename
     character(30) :: tmp
     type(unstr_mesh) :: mesh
     type(mesh_geom) :: gmesh
     type(parameter_list), pointer :: plist
-    real(r8) :: curvature_ex, vof(2,mesh_size*mesh_size*3), curvature(mesh_size*mesh_size*3), &
-        vof_ex(2,mesh_size*mesh_size*3)
+    real(r8) :: curvature_ex, vof(2,mesh_size*mesh_size*thck), curvature(mesh_size*mesh_size*thck), &
+        vofex(2,mesh_size*mesh_size*thck)
     real(r8), allocatable :: int_norm(:,:,:)
     integer :: infile
 
     ! create a regular 2D mesh
-    mesh = new_unstr_mesh ([-0.5_r8, -0.5_r8, -3*0.5_r8/mesh_size], &
-        [0.5_r8, 0.5_r8, 3*0.5_r8 / mesh_size], [mesh_size,mesh_size,3])
+    mesh = new_unstr_mesh ([-0.5_r8, -0.5_r8, -thck*0.5_r8/mesh_size], &
+        [0.5_r8, 0.5_r8, thck*0.5_r8 / mesh_size], [mesh_size,mesh_size,thck])
     call gmesh%init (mesh)
 
     ! fill the mesh with volume fractions for a circle
@@ -431,24 +488,25 @@ contains
 
     plist => plist%sublist('initial-vof')
 
-    write (tmp, '(a,i0,a)') "vof_2d_", mesh_size, ".dat"
-    filename = trim(adjustl(tmp))
-    if (file_exists(filename)) then
-      call read_vof_field(filename, vof)
-    else
-      call vof_initialize (mesh, plist, vof, [1,2], 2)
-      call store_vof_field(filename, vof)
-    end if
-    call vof_init_circle(mesh, 0.25_r8, vof_ex)
+    ! write (tmp, '(a,i0,a)') "vof_2d_", mesh_size, ".dat"
+    ! filename = trim(adjustl(tmp))
+    ! if (file_exists(filename)) then
+    !   call read_vof_field(filename, vof)
+    ! else
+    !   call vof_initialize (mesh, plist, vof, [1,2], 2)
+    !   call store_vof_field(filename, vof)
+    ! end if
     deallocate(plist)
 
-    call compare_vof_fields(vof, vof_ex)
+    call vof_init_circle(mesh, 0.35_r8, vofex)
+    !call compare_vof_fields(vof, vofex)
+    vof = vofex
 
     ! get the interface reconstructions
     int_norm = interface_normal (vof, mesh, gmesh, .false.)
 
     ! calculate errors for FT and HF curvature methods
-    curvature_ex = 1 / 0.25_r8 ! cylinder
+    curvature_ex = 1 / 0.35_r8 ! cylinder
     lnormFT = ft_mesh_test (vof, int_norm, mesh, gmesh, curvature_ex)
     lnormHF = hf_mesh_test (vof, int_norm, mesh, gmesh, curvature_ex)
 
@@ -538,6 +596,7 @@ contains
     use array_utils, only: normalize, isZero
     use curvature_hf, only: heightFunction
     use lvira_normals
+    use fit_normals
 
     real(r8), intent(in) :: vof(:,:), int_norm(:,:,:)
     type(unstr_mesh), intent(in) :: mesh
@@ -545,7 +604,7 @@ contains
     real(r8), intent(in) :: curvature_ex
     real(r8) :: lnorm(3)
 
-    integer :: i, nvofcell, ierr, imax, w
+    integer :: i, nvofcell, ierr, imax, w, fh
     type(surface) :: intrec
     type(multimat_cell) :: cell
     real(r8) :: int_norm_local(3,2), err, curvature(mesh%ncell), wgt_scale
@@ -554,7 +613,8 @@ contains
 
     ! call heightFunction (throwaway, int_norm_hf, vof(1,:), int_norm(:,1,:), mesh, gmesh)
 
-    call interface_normal_lvira(int_norm_lvira, vof, mesh, gmesh)
+    call interface_normals_lvira(int_norm_lvira, vof, mesh, gmesh)
+    !call interface_normals_fit(int_norm_lvira, vof, mesh, gmesh)
     int_norm_hf = int_norm_lvira(:,1,:)
 
     ! 2d override. important on boundary cells
@@ -596,16 +656,20 @@ contains
 
     ! get the curvature
     !weight_scales = [0.0_r8, 1.0_r8, 2.0_r8, 3.0_r8, 1.0_r8 / 2, 1.0_r8 / 3, 1.0_r8 / 4, 1.0_r8 / 8]
+    open(newunit=fh, file="curv_err.txt")
     do w = 1,1
       !wgt_scale = (2.0_r8 ** (w - 1) - 1) * 3.0_r8 / 2.0_r8 ** 19
       wgt_scale = 0
 
       curvature = 0; lnorm = 0; nvofcell = 0
+      !i = 18178
       do i = 1,mesh%ncell
         if (any(gmesh%cneighbor(:,i)<1)) cycle ! WARN: skipping boundaries. BCs might be automatic?
+        if (.not.isZero(gmesh%xc(3,i))) cycle
 
         ! TODO: this really should be in any cell neighboring a cell containing the interface
         !if (vof(1,i) > cutvof .and. vof(1,i) < 1-cutvof) then !.and. .not.isZero(curvature(i))) then
+        err = 0
         if (vof(1,i) > 1e-2_r8 .and. vof(1,i) < 1-1e-2_r8) then
           curvature(i) = abs(curvature_from_patch (intrec%local_patch(i,gmesh, vof(1,:)), &
               wgt_scale, int_norm_hf2(:,1,i)))
@@ -619,22 +683,95 @@ contains
           lnorm(2) = lnorm(2) + err**2
           lnorm(3) = max(lnorm(3),err)
 
-          if (err > 5.4e-1_r8) then
+          !if (err > 6.5e-2_r8) then
+          !if (i==47291 .or. i==47131) then
+          !if (i==47131) then
+          if (i==72891) then
+
+            call print_details(i)
+
+            print *
+            curvature(i) = abs(curvature_from_patch (intrec%local_patch(i,gmesh, vof(1,:)), &
+                wgt_scale, int_norm_hf2(:,1,i), .true.))
+            print *
             print '(i6, 3es14.4)', i, curvature(i), curvature_ex, err !, c_new_line
-            print '(2es15.5)', vof(1,i), 1.0_r8 - vof(1,i)
+            print '(2es15.5)', vof(1,i), 1 - vof(1,i)
+            print '(2es15.5)', gmesh%xc(1:2,i)
+            print '(2es15.5)', minval(mesh%x(1,mesh%cnode(:,i))), minval(mesh%x(2,mesh%cnode(:,i)))
             print *, 'nvofs: ', vof(1,gmesh%cneighbor(:,i))
-            print '(a, 3es14.4)', 'yn: ', int_norm(:,1,i)
-            print '(a, 3es14.4)', 'hn: ', int_norm_hf2(:,1,i)
-            call LS_fatal ("large curvature error")
+            ! print '(a, 3es14.4)', 'yn: ', int_norm(:,1,i)
+            ! print '(a, 3es14.4)', 'hn: ', int_norm_hf2(:,1,i)
+            print *
+            !call LS_fatal ("large curvature error")
           end if
         end if
+        !write (fh, '(2(es15.5,a),es15.5)') gmesh%xc(1,i),',', gmesh%xc(2,i),',', err
+        write (fh, '(2(es15.5,a),es15.5)') &
+            minval(mesh%x(1,mesh%cnode(:,i))),',', minval(mesh%x(2,mesh%cnode(:,i))),',', err
       end do
       lnorm(1) = lnorm(1) / nvofcell
       lnorm(2) = sqrt(lnorm(2) / nvofcell)
+      close(fh)
 
       !print '(es10.2, a,3es10.2)', wgt_scale, '  FT L1,L2,Linf = ',lnorm
     end do
     ! print '(i5, a,4es15.4)', 0.5_r8 - abs(vof(1,imax) - 0.5_r8)
+
+  contains
+
+    subroutine print_details (i)
+
+      use polygon_type
+      use array_utils, only: normalize, crossProduct
+
+      integer, intent(in) :: i
+
+      integer :: nc, sint, j
+      type(polygon), allocatable :: interface_reconstruction(:)
+      real(r8), allocatable :: centroid(:,:), normal(:,:)
+      real(r8) :: x(3), R(3,3)
+
+      interface_reconstruction = intrec%local_patch(i,gmesh, vof(1,:))
+      sint = size(interface_reconstruction)
+
+      allocate(centroid(3,sint), normal(3,sint))
+
+      nc = 0
+      do j = 1,sint
+        x = interface_reconstruction(j)%centroid2()
+
+        if (isZero(x(3), 1e-9_r8)) then
+          nc = nc + 1
+          centroid(:,nc) = x
+          normal(:,nc) = interface_reconstruction(j)%norm
+
+          call interface_reconstruction(j)%print_data()
+          print *
+        end if
+      end do
+      print *
+
+      print '(a,2es20.10)', 'curvature: ', curvature(i), err
+      print *
+      do j = 1,nc
+        print '(a,3es20.10)', 'x: ', centroid(:,j)
+      end do
+      print *
+      do j = 1,nc
+        print '(a,3es20.10)', 'n: ', normal(:,j)
+      end do
+
+
+      R(3,:) = normal(:,1)
+      R(2,:) = normalize(crossProduct([0.0_r8,0.0_r8,1.0_r8], normal(:,1)))
+      R(1,:) = crossProduct(R(2,:), normal(:,1))
+
+      print *
+      do j = 1,nc
+        print '(3es20.10)', matmul(R, centroid(:,j) - centroid(:,1))
+      end do
+
+    end subroutine print_details
 
   end function ft_mesh_test
 
@@ -686,7 +823,14 @@ contains
 
     real(r8), intent(in) :: vof(:,:), vofex(:,:)
 
+    integer :: i
 
+    do i = 1,size(vof, dim=2)
+      if (abs(vof(1,i) - vofex(1,i)) > 1e-2) then
+        print *, i, vof(1,i), vofex(1,i)
+        call LS_Fatal ("vof initialization error")
+      end if
+    end do
 
   end subroutine compare_vof_fields
 
