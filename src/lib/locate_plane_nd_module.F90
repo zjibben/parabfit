@@ -64,8 +64,9 @@ contains
 
     ! start Brent's method
     locate_plane_nd%normal = norm
-    vof_error%eps = cutvof / 100; vof_error%maxitr = 50
+    vof_error%eps = cutvof / 1e3_r8; vof_error%maxitr = 50
     call vof_error%find_root (rho_min, rho_max, locate_plane_nd%rho, ierr)
+    !print *, 'niter: ', vof_error%numitr
     !call vof_error%find_minimum (rho_min, rho_mid, rho_max, locate_plane_nd%rho, ierr)
     !locate_plane_nd%rho = brent (vof_error, rho_min, rho_mid, rho_max, cutvof/2.0_r8, 30)
     ! note ~30 iterations seem to be necessary to pass current unit tests
