@@ -38,6 +38,7 @@ module paraboloid_type
     procedure, private :: optimalWorkSize
     procedure, private :: localCoords
     procedure :: curvature
+    procedure :: normal
     procedure :: curvatureQdrtc
     procedure :: Fstr
     procedure :: fstr_rot
@@ -54,8 +55,6 @@ contains
   ! perform Taubin's method (1991) to calculate the analytic surface which fits the points x(:,:)
   ! in a least-squares sense
   subroutine init (this, coeff, coeff_rotated)
-
-    external dsysv ! lapack subroutine
 
     class(paraboloid), intent(out) :: this
     real(r8), intent(in) :: coeff(:), coeff_rotated(:)
@@ -187,6 +186,8 @@ contains
 
   integer function optimalWorkSize (this, s)
 
+    external dsysv ! lapack symmetric linear solve
+
     class(paraboloid), intent(in) :: this
     integer, intent(in) :: s
 
@@ -229,9 +230,9 @@ contains
     real(r8), intent(in) :: c(:)
     real(r8) :: coeffs2matrix(3,3)
     coeffs2matrix = reshape([&
-        c(5), c(6)/2.0_r8, c(7)/2.0_r8,&
-        c(6)/2.0_r8, c(8), c(9)/2.0_r8,&
-        c(7)/2.0_r8, c(9)/2.0_r8, c(10)], [3,3])
+        c(5), c(6)/2, c(7)/2,&
+        c(6)/2, c(8), c(9)/2,&
+        c(7)/2, c(9)/2, c(10)], [3,3])
   end function coeffs2matrix
 
   function matvec2coeffs (A, b, k) result(c)
@@ -240,10 +241,10 @@ contains
     c(1) = k
     c(2:4) = b
     c(5)  = A(1,1)
-    c(6)  = 2.0_r8 * A(1,2)
-    c(7)  = 2.0_r8 * A(1,3)
+    c(6)  = 2 * A(1,2)
+    c(7)  = 2 * A(1,3)
     c(8)  = A(2,2)
-    c(9)  = 2.0_r8 * A(2,3)
+    c(9)  = 2 * A(2,3)
     c(10) = A(3,3)
   end function matvec2coeffs
 
@@ -267,7 +268,7 @@ contains
 
     ! build the matrices for the generalized eigen-problem
     allocate(M(s,s), N(s,s))
-    M = 0.0_r8; N = 0.0_r8
+    M = 0; N = 0
     do i = 1,size(x,2)
       tmpV = this%l(x(:,i))
       tmpM = this%Dl(x(:,i))
@@ -419,6 +420,8 @@ contains
         2*this%cr(5)*xr(1) + this%cr(6)*xr(2))**2 + (this%cr(3) + this%cr(6)*xr(1) + &
         2*this%cr(7)*xr(2))**2 + 1)**1.5_r8
 
+    !print *, 'c2', 2*this%cr(7)
+
     ! print *, curvature
 
     ! xr = 0
@@ -436,6 +439,28 @@ contains
     curvature = clip(curvature, 1e10_r8, 0.0_r8)
 
   end function curvature
+
+  function normal (this, x)
+
+    use array_utils, only: normalize
+
+    class(paraboloid), intent(in) :: this
+    real(r8), intent(in) :: x(:)
+    real(r8) :: normal(3)
+
+    real(r8) :: xr(3)
+
+    ASSERT(size(x)==3)
+
+    xr = this%localCoords(x)
+
+    normal(1) = this%cr(2) + 2*this%cr(5)*xr(1) + this%cr(6)*xr(2)
+    normal(2) = this%cr(3) + this%cr(6)*xr(1) + 2*this%cr(7)*xr(2)
+    normal(3) = -1.0_r8
+
+    normal = matmul(transpose(this%rot), normalize(-normal))
+
+  end function normal
 
   function localCoords(this, x) result(xr)
 
@@ -515,12 +540,11 @@ contains
 
   end function Fstr
 
-  function Fstr_rot (this,cr) result(Fstr)
+  function Fstr_rot (this) result(Fstr)
 
     use array_utils, only: isZero
 
     class(paraboloid), intent(in) :: this
-    real(r8), intent(in) :: cr(:)
     character(:), allocatable :: Fstr
 
     character(:), allocatable :: terms(:)
@@ -530,12 +554,12 @@ contains
     terms = ['1','x','y','z','x**2','x*y','y**2']
     Fstr = ''
 
-    do i = 1,size(cr)
-      if (.not.isZero(cr(i),1e-5_r8)) then
-        if (cr(i) > 0.0_r8) then
-          write(term_str,'(a,es10.3,2a)') '  + ',cr(i),'*',terms(i)
+    do i = 1,size(this%cr)
+      if (.not.isZero(this%cr(i),1e-5_r8)) then
+        if (this%cr(i) > 0.0_r8) then
+          write(term_str,'(a,es10.3,2a)') '  + ',this%cr(i),'*',terms(i)
         else
-          write(term_str,'(a,es10.3,2a)') '  - ',abs(cr(i)),'*',terms(i)
+          write(term_str,'(a,es10.3,2a)') '  - ',abs(this%cr(i)),'*',terms(i)
         end if
         Fstr = Fstr // trim(term_str)
       end if
@@ -552,7 +576,7 @@ contains
     integer, intent(out) :: iostat
     character(*), intent(inout) :: iomsg
 
-    write (unit, '(2a)', iostat=iostat) this%Fstr(), ' = 0'
+    write (unit, '(2a)', iostat=iostat) this%Fstr_rot(), ' = 0'
 
   end subroutine print_f
 
@@ -563,7 +587,7 @@ contains
     integer, intent(out) :: iostat
     character(*), intent(inout) :: iomsg
 
-    write (unit, '(2a)', iostat=iostat) this%Fstr(), ' = 0'
+    write (unit, '(2a)', iostat=iostat) this%Fstr_rot(), ' = 0'
 
   end subroutine print_uf
 
