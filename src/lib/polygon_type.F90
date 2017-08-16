@@ -10,7 +10,7 @@
 !! References:
 !!     1. Mirtich. Fast and Accurate Computation of Polehedral Mass Properties.
 !!        Journal of Graphics Tools, 1996.
-!! 
+!!
 
 #include "f90_assert.fpp"
 
@@ -26,19 +26,24 @@ module polygon_type
     integer :: nVerts
     real(r8), allocatable :: x(:,:) !, norm(:)
     real(r8) :: norm(ndim)
+    real(r8) :: rot(3,3)
   contains
     procedure :: init => init_polygon
     procedure :: centroid
+    procedure :: centroid2
     procedure :: area
     procedure :: order
     procedure :: basis
     procedure :: update_plane_normal
     procedure :: print_data
   end type polygon
-  
+
 contains
 
   subroutine init_polygon (this, x, norm)
+
+    use array_utils, only: normalize, crossProduct
+
     class(polygon),     intent(out)   :: this
     real(r8),           intent(in)    :: x(:,:)
     real(r8), optional, intent(inout) :: norm(:)
@@ -51,7 +56,11 @@ contains
     else
       call this%update_plane_normal ()
     end if
-    
+
+    this%rot(3,:) = this%norm
+    this%rot(2,:) = normalize(crossProduct([0.0_r8,0.0_r8,1.0_r8], this%norm))
+    this%rot(1,:) = crossProduct(this%rot(2,:), this%norm)
+
   end subroutine init_polygon
 
   ! calculate the normal via cross product from vectors defined by 3 vertices
@@ -63,9 +72,9 @@ contains
 
     class(polygon),     intent(inout) :: this
     real(r8), optional, intent(inout) :: norm(:) ! return the newly calculated norm if it wasn't known
-    
+
     integer :: i,j
-    
+
     ! the direction of the normal is assumed from the node ordering (and assuming convex)
 
     ! if the polygon has >3 verteces, it could be non-planar and we should subdivide
@@ -93,13 +102,74 @@ contains
     end if
 
   end subroutine update_plane_normal
-  
+
   function centroid (this)
     use consts, only: ndim
     class(polygon), intent(in) :: this
-    real(r8)                   :: centroid(ndim)
-    centroid = sum(this%x, dim=2) / real(this%nVerts,r8)
+    real(r8) :: centroid(ndim)
+    centroid = sum(this%x, dim=2) / this%nVerts
   end function centroid
+
+  function centroid2 (this) result(centroid)
+
+    use consts, only: ndim
+
+    class(polygon), intent(in) :: this
+
+    integer :: i, j
+    real(r8) :: centroid(ndim), c(2), xr(ndim,this%nVerts), a, tmp
+
+    ! get vertex coordinates in the plane of the polygon
+
+    do i = 1,this%nVerts
+      xr(:,i) = matmul(this%rot, this%x(:,i) - this%x(:,1))
+    end do
+
+    ! calculate the centroid in the plane of the polygon
+    c = 0; a = 0
+    do i = 1,this%nVerts
+      j = modulo(i,this%nVerts) + 1
+      tmp = (xr(1,i)*xr(2,j) - xr(1,j)*xr(2,i))
+      c = c + (xr(:2,i) + xr(:2,j)) * tmp
+      a = a + tmp
+    end do
+    a = a / 2
+    c = c / (6*a)
+
+    ! rotate the centroid back into real space
+    centroid = matmul(transpose(this%rot), [c(1), c(2), 0.0_r8]) + this%x(:,1)
+
+  end function centroid2
+
+  ! calculate the area of a convex polygon
+  ! assumes polygon vertices are ordered
+  real(r8) function area (this)
+
+    class(polygon), intent(in) :: this
+
+    real(r8) :: xc(ndim), a, b, c, s
+    integer :: v, w
+
+    xc = this%centroid()
+
+    ! polygon area is the sum of the areas associated
+    ! with triangles connecting edges and the centroid
+    area = 0
+    do v = 1,this%nVerts
+      ! next vertex
+      w = modulo(v,this%nVerts) + 1
+
+      ! triangle lengths
+      a = norm2(xc - this%x(:,v))
+      b = norm2(xc - this%x(:,w))
+      c = norm2(this%x(:,w) - this%x(:,v))
+
+      ! calculate the area using Heron's formula
+      s = (a + b + c) / 2
+      area = area + sqrt(s*(s-a)*(s-b)*(s-c))
+    end do
+
+  end function area
 
   ! order the vertices of a convex polygon
   !
@@ -117,14 +187,14 @@ contains
     real(r8), allocatable :: q(:,:)
     real(r8) :: xc(ndim), t(this%nVerts), t2(this%nVerts), prjx(2), xl(ndim,this%nVerts), tmp
     integer  :: i,ind(size(this%x,dim=2))
-    
+
     ! calculate the location of the centroid, and the vertex coordinates with respect to the centroid
     ! normalize to avoid floating point cutoffs, since the polygon may be very tiny
     xc = this%centroid ()
     do i = 1,this%nVerts
       xl(:,i) = normalize(this%x(:,i) - xc(:))
     end do
-    
+
     ! the projection coordinate directions
     ! WARNING: problems will occur here if the vertices are slightly non-planar
     q = orthonormalBasis(xl)
@@ -142,14 +212,14 @@ contains
       call this%print_data ()
       call LS_fatal ("polygon ordering failed: unable to calculate polygon-plane coordinates")
     end if
-        
+
     ! calculate the rotation angle
     !t(1) = 0.0_r8
     do i = 1,this%nVerts
       ! get coordinates for the vertex in the 2D plane defined by the polygon
       prjx(1) = dot_product(xl(:,i),q(:,1))
       prjx(2) = dot_product(xl(:,i),q(:,2))
-      
+
       ! find the angle made by this vertex with respect to the first vertex
       t(i) = atan2(prjx(2),prjx(1))
       !write(*,'(i6, 3es20.10)') i, prjx, t(i)
@@ -165,9 +235,9 @@ contains
         if (array(i)>0) array(i) = ind(array(i))
       end do
     end if
-    
+
     call insertion_sort (this%x,t)
-    
+
     call this%update_plane_normal ()
 
   end subroutine order
@@ -215,7 +285,7 @@ contains
         basis(:,2) = xl
       end if
     end do
-    
+
     ! align basis(:,2) such that the two vectors are orthogonal
     ! it should be almost orthogonal as is
     basis(:,2) = basis(:,2) - projectOnto(basis(:,2),basis(:,1))
@@ -244,35 +314,5 @@ contains
     print '(a,3es15.5)', 'norm ',this%norm
 
   end subroutine print_data
-
-  ! calculate the area of a convex polygon
-  ! assumes polygon vertices are ordered
-  real(r8) function area (this)
-
-    class(polygon), intent(in) :: this
-
-    real(r8) :: xc(ndim), a, b, c, s
-    integer :: v, w
-
-    xc = this%centroid()
-    
-    ! polygon area is the sum of the areas associated
-    ! with triangles connecting edges and the centroid
-    area = 0
-    do v = 1,this%nVerts
-      ! next vertex
-      w = modulo(v,this%nVerts) + 1
-
-      ! triangle lengths
-      a = norm2(xc - this%x(:,v))
-      b = norm2(xc - this%x(:,w))
-      c = norm2(this%x(:,w) - this%x(:,v))
-
-      ! calculate the area using Heron's formula
-      s = (a + b + c) / 2
-      area = area + sqrt(s*(s-a)*(s-b)*(s-c))
-    end do
-
-  end function area
 
 end module polygon_type
