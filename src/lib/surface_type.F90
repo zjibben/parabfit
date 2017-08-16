@@ -22,7 +22,7 @@ module surface_type
   type, public :: surface
     private
     type(polygon), public, allocatable :: element(:)
-    integer, allocatable :: cell_id(:)
+    integer, public, allocatable :: cell_id(:)
   contains
     procedure, private :: append_polyhedron
     procedure, private :: append_polygon

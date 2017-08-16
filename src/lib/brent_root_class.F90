@@ -10,7 +10,7 @@
 !!
 
 #include "f90_assert.fpp"
-  
+
 module brent_root_class
 
   use kinds, only: r8
@@ -39,7 +39,7 @@ contains
 
   subroutine find_root (this, xmin, xmax, root, stat)
 
-    class(brent_root), intent(in) :: this
+    class(brent_root), intent(inout) :: this
     real(r8), intent(in) :: xmin, xmax
     real(r8), intent(out) :: root
     integer, intent(out) :: stat
@@ -58,7 +58,7 @@ contains
 
     root=huge(1.0_r8)
     do i = 1,this%maxitr
-      if ((fb > 0.0_r8 .and. fc > 0.0_r8) .or. (fb < 0.0_r8 .and. fc < 0.0_r8)) then
+      if ((fb > 0 .and. fc > 0) .or. (fb < 0 .and. fc < 0)) then
         c = a
         fc = fa
         e = b-a
@@ -74,28 +74,29 @@ contains
         fc=fa
       end if
 
-      tol1 = 2.0_r8*alittle*abs(b) + 0.5_r8*this%eps
-      xm = 0.5_r8*(c-b)
+      tol1 = 2*alittle*abs(b) + this%eps / 2
+      xm = (c-b) / 2
 
-      if (abs(xm) <= tol1 .or. fb==0.0_r8) then
+      if (abs(xm) <= tol1 .or. fb==0) then
         root=b
+        this%numitr = i
         return
       end if
 
       if (abs(e) >= tol1 .and. abs(fa) > abs(fb)) then
         s = fb/fa
         if (a==c) then
-          p = 2.0_r8 * xm * s
+          p = 2 * xm * s
           q = 1.0 - s
         else
           q = fa / fc
           r = fb / fc
-          p = s*(2.0*xm*q*(q-r)-(b-a)*(r-1.0_r8))
-          q = (q-1.0_r8)*(r-1.0_r8)*(s-1.0_r8)
+          p = s*(2.0*xm*q*(q-r)-(b-a)*(r-1))
+          q = (q-1)*(r-1)*(s-1)
         end if
-        if (p > 0.0_r8) q = -q
+        if (p > 0) q = -q
         p = abs(p)
-        if (2.0_r8*p < min(3.0_r8*xm*q-abs(tol1*q), abs(e*q))) then
+        if (2*p < min(3*xm*q-abs(tol1*q), abs(e*q))) then
           e=d
           d=p/q
         else
@@ -117,7 +118,7 @@ contains
     end do
 
     stat = 1
-    
+
   end subroutine find_root
 
 end module brent_root_class

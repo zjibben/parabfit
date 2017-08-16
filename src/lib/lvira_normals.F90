@@ -7,7 +7,7 @@ module lvira_normals
   implicit none
   private
 
-  public :: interface_normal_lvira
+  public :: interface_normals_lvira, interface_normal_lvira
 
   type, extends(bfgs_min) :: lvira_error
     private
@@ -21,7 +21,7 @@ module lvira_normals
 
 contains
 
-  subroutine interface_normal_lvira(int_norm, vof, mesh, gmesh)
+  subroutine interface_normals_lvira(int_norm, vof, mesh, gmesh)
 
     use int_norm_module
     use timer_tree_type
@@ -182,6 +182,44 @@ contains
       call LS_Fatal ("could not minimize lvira error")
 
     end subroutine lvira_error_fatal
+
+  end subroutine interface_normals_lvira
+
+  subroutine interface_normal_lvira(int_norm, i, vof, mesh, gmesh)
+
+    use unstr_mesh_type
+    use mesh_geom_type
+    use consts, only: cutvof
+
+    real(r8), intent(inout) :: int_norm(:)
+    integer, intent(in) :: i
+    real(r8), intent(in) :: vof(:)
+    type(unstr_mesh), intent(in) :: mesh
+    type(mesh_geom), intent(in) :: gmesh
+
+    integer :: ierr
+    real(r8) :: sphn(2)
+    type(lvira_error) :: norm_error
+
+    if (vof(i) > 1-cutvof .or. vof(i) < cutvof) then
+      int_norm = 0
+      return
+    end if
+
+    ! convert normal to spherical coordinates
+    sphn(1) = acos(int_norm(3))
+    sphn(2) = atan2(int_norm(2), int_norm(1))
+
+    ! find the normal that minimizes the lvira error function
+    call norm_error%init(i, vof, mesh, gmesh)
+
+    call norm_error%find_minimum(sphn, ierr)
+    !if (ierr /= 0) call lvira_error_fatal(norm_error)
+
+    ! convert spherical coordinates of normal back to physical coordinates
+    int_norm(1) = sin(sphn(1))*cos(sphn(2))
+    int_norm(2) = sin(sphn(1))*sin(sphn(2))
+    int_norm(3) = cos(sphn(1))
 
   end subroutine interface_normal_lvira
 

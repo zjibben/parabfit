@@ -248,7 +248,7 @@ contains
     real(r8) :: err
     real(r8), allocatable :: int_norm_lvira(:,:,:)
 
-    call interface_normal_lvira(int_norm_lvira, vof, mesh, gmesh)
+    call interface_normals_lvira(int_norm_lvira, vof, mesh, gmesh)
 
     lnorm = 0; nvofcell = 0
     do i = 1,mesh%ncell

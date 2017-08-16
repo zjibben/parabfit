@@ -21,10 +21,12 @@ contains
 
     integer :: i
 
+    !$omp parallel do
     do i = 1,mesh%ncell
       vof(2,i) = cell_vof(mesh%x(:,mesh%cnode(:,i)), R)
       vof(1,i) = 1 - vof(2,i)
     end do
+    !$omp end parallel do
 
   end subroutine vof_init_circle
 
