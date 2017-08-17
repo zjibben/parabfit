@@ -56,8 +56,8 @@ contains
     write (fh1, '(a)') '# dx l1 l2 l3'
     write (fh2, '(a)') '# dx l1 l2 l3'
 
-    !do i = 1,4
-    do i = 4,4
+    do i = 1,4
+    !do i = 4,4
       ncell = 10 * 2**i
     ! do i = 1,25
     !   ncell = floor(10 * 1.15_r8**i)
@@ -611,7 +611,7 @@ contains
     real(r8), allocatable :: weight_scales(:), int_norm_hf(:,:), throwaway(:), int_norm_hf2(:,:,:), &
         int_norm_lvira(:,:,:)
 
-    ! call heightFunction (throwaway, int_norm_hf, vof(1,:), int_norm(:,1,:), mesh, gmesh)
+    !call heightFunction (throwaway, int_norm_hf, vof(1,:), int_norm(:,1,:), mesh, gmesh)
 
     call interface_normals_lvira(int_norm_lvira, vof, mesh, gmesh)
     !call interface_normals_fit(int_norm_lvira, vof, mesh, gmesh)
@@ -672,7 +672,7 @@ contains
         err = 0
         if (vof(1,i) > 1e-2_r8 .and. vof(1,i) < 1-1e-2_r8) then
           curvature(i) = abs(curvature_from_patch (intrec%local_patch(i,gmesh, vof(1,:)), &
-              wgt_scale, int_norm_hf2(:,1,i)))
+              wgt_scale, int_norm_hf2(:,1,i), vof(1,:), mesh, gmesh, i))
           if (isZero(curvature(i))) cycle
 
           ! append to norms
@@ -686,24 +686,26 @@ contains
           !if (err > 6.5e-2_r8) then
           !if (i==47291 .or. i==47131) then
           !if (i==47131) then
-          if (i==72891) then
+          !if (i==72891) then
+          !if (i==64185) then
+          ! if (i==68512) then
 
-            call print_details(i)
+          !   call print_details(i)
 
-            print *
-            curvature(i) = abs(curvature_from_patch (intrec%local_patch(i,gmesh, vof(1,:)), &
-                wgt_scale, int_norm_hf2(:,1,i), .true.))
-            print *
-            print '(i6, 3es14.4)', i, curvature(i), curvature_ex, err !, c_new_line
-            print '(2es15.5)', vof(1,i), 1 - vof(1,i)
-            print '(2es15.5)', gmesh%xc(1:2,i)
-            print '(2es15.5)', minval(mesh%x(1,mesh%cnode(:,i))), minval(mesh%x(2,mesh%cnode(:,i)))
-            print *, 'nvofs: ', vof(1,gmesh%cneighbor(:,i))
-            ! print '(a, 3es14.4)', 'yn: ', int_norm(:,1,i)
-            ! print '(a, 3es14.4)', 'hn: ', int_norm_hf2(:,1,i)
-            print *
-            !call LS_fatal ("large curvature error")
-          end if
+          !   print *
+          !   curvature(i) = abs(curvature_from_patch (intrec%local_patch(i,gmesh, vof(1,:)), &
+          !       wgt_scale, int_norm_hf2(:,1,i), vof(1,:), mesh, gmesh, i, .true.))
+          !   print *
+          !   print '(i6, 3es14.4)', i, curvature(i), curvature_ex, err !, c_new_line
+          !   print '(2es15.5)', vof(1,i), 1 - vof(1,i)
+          !   print '(2es15.5)', gmesh%xc(1:2,i)
+          !   print '(2es15.5)', minval(mesh%x(1,mesh%cnode(:,i))), minval(mesh%x(2,mesh%cnode(:,i)))
+          !   print *, 'nvofs: ', vof(1,gmesh%cneighbor(:,i))
+          !   ! print '(a, 3es14.4)', 'yn: ', int_norm(:,1,i)
+          !   ! print '(a, 3es14.4)', 'hn: ', int_norm_hf2(:,1,i)
+          !   print *
+          !   !call LS_fatal ("large curvature error")
+          ! end if
         end if
         !write (fh, '(2(es15.5,a),es15.5)') gmesh%xc(1,i),',', gmesh%xc(2,i),',', err
         write (fh, '(2(es15.5,a),es15.5)') &
@@ -715,6 +717,8 @@ contains
 
       !print '(es10.2, a,3es10.2)', wgt_scale, '  FT L1,L2,Linf = ',lnorm
     end do
+
+    !print *, 'maxloc: ', imax
     ! print '(i5, a,4es15.4)', 0.5_r8 - abs(vof(1,imax) - 0.5_r8)
 
   contains
@@ -740,7 +744,7 @@ contains
       do j = 1,sint
         x = interface_reconstruction(j)%centroid2()
 
-        if (isZero(x(3), 1e-9_r8)) then
+        if (isZero(x(3), 1e-6_r8)) then
           nc = nc + 1
           centroid(:,nc) = x
           normal(:,nc) = interface_reconstruction(j)%norm

@@ -35,6 +35,7 @@ module polygon_type
     procedure :: order
     procedure :: basis
     procedure :: update_plane_normal
+    procedure :: rotate_offset
     procedure :: print_data
   end type polygon
 
@@ -62,6 +63,36 @@ contains
     this%rot(1,:) = crossProduct(this%rot(2,:), this%norm)
 
   end subroutine init_polygon
+
+  subroutine rotate_offset (this, normal, xcen)
+
+    use array_utils, only: normalize, crossProduct
+
+    class(polygon), intent(inout) :: this
+    real(r8), intent(in) :: normal(:), xcen(:)
+
+    real(r8) :: R(3,3)
+    integer :: i
+
+    ! set up rotation matrix
+    R(3,:) = normal
+    R(2,:) = normalize(crossProduct([0.0_r8,0.0_r8,1.0_r8], normal))
+    R(1,:) = crossProduct(R(2,:), normal)
+
+    ! rotate and offset vertices
+    do i = 1,this%nVerts
+      this%x(:,i) = matmul(R, this%x(:,i) - xcen)
+    end do
+
+    ! rotate normal vector
+    this%norm = matmul(R, this%norm)
+
+    ! update in-plane rotation matrix
+    this%rot(3,:) = this%norm
+    this%rot(2,:) = normalize(crossProduct([0.0_r8,0.0_r8,1.0_r8], this%norm))
+    this%rot(1,:) = crossProduct(this%rot(2,:), this%norm)
+
+  end subroutine rotate_offset
 
   ! calculate the normal via cross product from vectors defined by 3 vertices
   subroutine update_plane_normal (this,norm)

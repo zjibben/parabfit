@@ -27,6 +27,7 @@ module paraboloid_type
   contains
     procedure :: init
     procedure :: bestFit
+    procedure :: volumetricFit
     !procedure :: canonicalForm
     procedure, private :: taubinCoeffs
     procedure, private :: coeffsinOriginalSpace
@@ -138,6 +139,70 @@ contains
     this%offset = xcen
 
   end subroutine bestFit
+
+  subroutine volumetricFit (this, interface_reconstruction)
+
+    use polygon_type
+    use array_utils, only: outer_product, normalize, crossProduct
+    use logging_services
+    external dgesv ! lapack
+
+    class(paraboloid), intent(out) :: this
+    type(polygon), intent(in) :: interface_reconstruction(:)
+
+    type(polygon) :: int_rec
+    real(r8), allocatable :: c(:), cr(:)
+    real(r8) :: xcen(3), normal(3), A(3,3), b(3), d(2), x_rec(2,2), ipiv(3), R(3,3), t1(3), t2(3,3)
+    integer :: i, n_rec, ierr
+
+    xcen = interface_reconstruction(1)%centroid2()
+    normal = interface_reconstruction(1)%norm
+
+    ! get the set of points in the rotated and translated coordinate space
+    A = 0; b = 0
+    do i = 1,size(interface_reconstruction)
+      int_rec = interface_reconstruction(i)
+      call int_rec%rotate_offset(normal, xcen)
+
+      ! WARN: currently doing 2D version
+
+      ! get polygon bounds
+      x_rec(1,:) = [minval(int_rec%x(2,:)), maxval(int_rec%x(2,:))] ! bounds in x/y
+      x_rec(2,:) = [minval(int_rec%x(3,:)), maxval(int_rec%x(3,:))] ! bounds in z
+
+      ! get linear equation representation of polygon
+      d(1) = (x_rec(2,1)*x_rec(1,2) - x_rec(2,2)*x_rec(1,1)) / (x_rec(1,2) - x_rec(1,1))
+      d(2) = (x_rec(2,2) - x_rec(2,1)) / (x_rec(1,2) - x_rec(1,1))
+
+      t1(1) = x_rec(1,2) - x_rec(1,1)
+      t1(2) = (x_rec(1,2)**2 - x_rec(1,1)**2)/2
+      t1(3) = (x_rec(1,2)**3 - x_rec(1,1)**3)/3
+
+      t2 = outer_product(-t1 * [1.0_r8, 2.0_r8, 3.0_r8], t1)
+
+      A = A + t2
+      b = b + matmul(t2(:,:2), d)
+    end do
+
+    ! solve system
+    call dgesv (3, 1, A, 3, ipiv, b, 3, ierr)
+    if (ierr /= 0) call LS_fatal ('volumetricFit: failed general linear solve')
+
+    ! convert to full 3d form
+    cr = [b(1), 0.0_r8, b(2), -1.0_r8, 0.0_r8, 0.0_r8, b(3)]
+
+    ! get coeffs in original space
+    R(3,:) = normal
+    R(2,:) = normalize(crossProduct([0.0_r8,0.0_r8,1.0_r8], normal))
+    R(1,:) = crossProduct(R(2,:), normal)
+    c = this%coeffsInOriginalSpace(cr, R, xcen)
+
+    ! generate paraboloid object
+    call this%init (c, cr)
+    this%rot = R
+    this%offset = xcen
+
+  end subroutine volumetricFit
 
   ! take a set of points in a rotated coordinate space
   ! and return the best fitting paraboloid
@@ -252,6 +317,7 @@ contains
 
     use array_utils, only: outer_product, isZero
     use, intrinsic :: iso_c_binding, only: c_new_line
+    external dggev
 
     class(paraboloid), intent(in) :: this
     real(r8), allocatable, intent(out) :: evl(:), evc(:,:)

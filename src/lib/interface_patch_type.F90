@@ -26,15 +26,24 @@ module interface_patch_type
 
 contains
 
-  real(r8) function curvature_from_patch (interface_reconstructions, weight_scale, normal, verbose)
+  real(r8) function curvature_from_patch(interface_reconstructions, weight_scale, normal, vof, &
+      mesh, gmesh, cid, verbose)
 
     use analytic_surface_type
     use paraboloid_type
     use timer_tree_type
+    use locate_plane_nd_module
+    use polyhedron_type
+    use unstr_mesh_type
+    use mesh_geom_type
+    use hex_types, only: hex_f, hex_e
 
     type(polygon), intent(in) :: interface_reconstructions(:)
     real(r8), intent(in) :: weight_scale
-    real(r8), intent(in) :: normal(:)
+    real(r8), intent(in) :: normal(:), vof(:)
+    type(unstr_mesh), intent(in) :: mesh
+    type(mesh_geom), intent(in) :: gmesh
+    integer, intent(in) :: cid
     logical, intent(in), optional :: verbose
 
     integer :: i
@@ -42,6 +51,10 @@ contains
     !type(analytic_surface) :: surf
     type(paraboloid) :: surf
     logical :: verboseh
+
+    integer :: in, npts, ierr, j
+    type(polygon) :: interface_polygon
+    type(polyhedron) :: cell
 
     if (present(verbose)) then
       verboseh = verbose
@@ -51,13 +64,33 @@ contains
 
     call start_timer ("fit curvature")
 
-    do i = 1,size(interface_reconstructions)
-      pts(:,i) = interface_reconstructions(i)%centroid2()
-      wgt(i) = interface_reconstructions(i)%area() ** weight_scale
-      !wgt(i) = 1 / (1 + norm2(pts(:,i) - pts(:,1))) ** weight_scale
-    end do
-    call surf%bestFit (pts(:,1:size(interface_reconstructions)), &
-        wgt(1:size(interface_reconstructions)), normal)
+    ! npts = 1
+    ! pts(:,1) = interface_reconstructions(1)%centroid2()
+    ! do in = 1,gmesh%caneighbor(cid)%n_elements
+    !   i = gmesh%caneighbor(cid)%elements(in)
+
+    !   if (vof(i) < 1-1e-3_r8 .and. vof(i) > 1e-3_r8) then
+    !     npts = npts + 1
+
+    !     call cell%init (ierr, mesh%x(:,mesh%cnode(:,i)), hex_f, hex_e, mesh%volume(i), &
+    !         gmesh%outnorm(:,:,i))
+    !     if (ierr /= 0) call LS_fatal ('could not initialize cell')
+
+    !     interface_polygon = cell%intersection_verts(&
+    !         locate_plane_nd (cell, normal, vof(i)*mesh%volume(i), mesh%volume(i)))
+    !     pts(:,npts) = interface_polygon%centroid2()
+    !   end if
+    ! end do
+    ! wgt = 1
+
+    ! npts = size(interface_reconstructions)
+    ! do i = 1,npts
+    !   pts(:,i) = interface_reconstructions(i)%centroid2()
+    !   wgt(i) = interface_reconstructions(i)%area() ** weight_scale
+    !   !wgt(i) = 1 / (1 + norm2(pts(:,i) - pts(:,1))) ** weight_scale
+    ! end do
+
+    ! call surf%bestFit(pts(:,1:npts), wgt(1:npts), normal)
 
     ! ! get points representing each polygon
     ! do i = 1,size(interface_reconstructions)
@@ -71,18 +104,18 @@ contains
     ! !call surf%bestParaboloidFit (pts)
     ! call surf%bestFit (pts, wgt, normal)
 
-
+    call surf%volumetricFit(interface_reconstructions)
     curvature_from_patch = surf%curvature(interface_reconstructions(1)%centroid())
 
     if (verboseh) then
-      do i = 1,size(interface_reconstructions)
-        !print '(a,3es20.10)', 'x: ', pts(:,i)
-        print '(3(a,es20.10),a)', '[',pts(1,i),',',pts(2,i),',',pts(3,i),'],'
-      end do
-      print *
-      do i = 1,size(interface_reconstructions)
-        print '(a,es20.10)', 'd: ', abs(norm2(pts(:2,i)) - 0.35_r8)
-      end do
+      ! do i = 1,size(interface_reconstructions)
+      !   !print '(a,3es20.10)', 'x: ', pts(:,i)
+      !   print '(3(a,es20.10),a)', '[',pts(1,i),',',pts(2,i),',',pts(3,i),'],'
+      ! end do
+      ! print *
+      ! do i = 1,size(interface_reconstructions)
+      !   print '(a,es20.10)', 'd: ', abs(norm2(pts(:2,i)) - 0.35_r8)
+      ! end do
 
       print *
       do i = 1,size(interface_reconstructions)
@@ -102,6 +135,12 @@ contains
       print '(dt)', surf
 
       call interface_reconstructions(1)%print_data()
+
+      print *
+      call surf%volumetricFit(interface_reconstructions)
+      print '(a,f10.4, es20.10)', 'curvature2 ', &
+          surf%curvature(interface_reconstructions(1)%centroid()), &
+          abs(surf%curvature(interface_reconstructions(1)%centroid()) + 1/0.35_r8) * 0.35_r8
     end if
 
     call stop_timer ("fit curvature")
