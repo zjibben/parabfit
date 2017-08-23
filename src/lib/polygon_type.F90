@@ -43,7 +43,7 @@ contains
 
   subroutine init_polygon (this, x, norm)
 
-    use array_utils, only: normalize, crossProduct
+    use array_utils, only: rotationMatrix
 
     class(polygon),     intent(out)   :: this
     real(r8),           intent(in)    :: x(:,:)
@@ -58,15 +58,13 @@ contains
       call this%update_plane_normal ()
     end if
 
-    this%rot(3,:) = this%norm
-    this%rot(2,:) = normalize(crossProduct([0.0_r8,0.0_r8,1.0_r8], this%norm))
-    this%rot(1,:) = crossProduct(this%rot(2,:), this%norm)
+    this%rot = rotationMatrix(this%norm)
 
   end subroutine init_polygon
 
   subroutine rotate_offset (this, normal, xcen)
 
-    use array_utils, only: normalize, crossProduct
+    use array_utils, only: rotationMatrix
 
     class(polygon), intent(inout) :: this
     real(r8), intent(in) :: normal(:), xcen(:)
@@ -75,9 +73,7 @@ contains
     integer :: i
 
     ! set up rotation matrix
-    R(3,:) = normal
-    R(2,:) = normalize(crossProduct([0.0_r8,0.0_r8,1.0_r8], normal))
-    R(1,:) = crossProduct(R(2,:), normal)
+    R = rotationMatrix(normal)
 
     ! rotate and offset vertices
     do i = 1,this%nVerts
@@ -88,9 +84,7 @@ contains
     this%norm = matmul(R, this%norm)
 
     ! update in-plane rotation matrix
-    this%rot(3,:) = this%norm
-    this%rot(2,:) = normalize(crossProduct([0.0_r8,0.0_r8,1.0_r8], this%norm))
-    this%rot(1,:) = crossProduct(this%rot(2,:), this%norm)
+    this%rot = rotationMatrix(this%norm)
 
   end subroutine rotate_offset
 
@@ -160,7 +154,7 @@ contains
     c = 0; a = 0
     do i = 1,this%nVerts
       j = modulo(i,this%nVerts) + 1
-      tmp = (xr(1,i)*xr(2,j) - xr(1,j)*xr(2,i))
+      tmp = xr(1,i)*xr(2,j) - xr(1,j)*xr(2,i)
       c = c + (xr(:2,i) + xr(:2,j)) * tmp
       a = a + tmp
     end do

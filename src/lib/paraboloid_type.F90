@@ -73,7 +73,7 @@ contains
 
   subroutine bestFit (this, x, weight, normal)
 
-    use array_utils, only: normalize, crossProduct, isZero
+    use array_utils, only: rotationMatrix, normalize, crossProduct
     use logging_services
 
     class(paraboloid), intent(out) :: this
@@ -99,9 +99,7 @@ contains
     end if
 
     ! set up the rotation matrix
-    R(3,:) = normalh
-    R(2,:) = normalize(crossProduct([0.0_r8,0.0_r8,1.0_r8], normalh))
-    R(1,:) = crossProduct(R(2,:), normalh)
+    R = rotationMatrix(normalh)
 
     ! get the set of points in the rotated and translated coordinate space
     do i = 1,size(x, dim=2)
@@ -143,7 +141,7 @@ contains
   subroutine volumetricFit (this, interface_reconstruction)
 
     use polygon_type
-    use array_utils, only: outer_product, normalize, crossProduct
+    use array_utils, only: outer_product, rotationMatrix
     use logging_services
     external dgesv ! lapack
 

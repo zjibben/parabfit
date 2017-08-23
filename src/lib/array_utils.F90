@@ -24,7 +24,7 @@ module array_utils
       meanArithmetic, meanHarmonic, &
       outer_product, &
       magnitude, magnitude2, normalize, normalizeIfNonzero, projectOnto, crossProduct, &
-      orthonormalBasis, &
+      orthonormalBasis, rotationMatrix, &
       eliminateNoise, interpolate, &
       det, diag, &
       polynomial_roots
@@ -116,7 +116,7 @@ contains
     end do
 
   end function xrange
-  
+
   pure logical function containsPair (pair,list)
 
     integer, intent(in) :: pair(:), list(:,:)
@@ -288,7 +288,7 @@ contains
 
     tolh = 1e4_r8*alittle
     if (present(tol)) tolh = tol
-    
+
     isZero_r8 = abs(x) < tolh
   end function isZero_r8
 
@@ -397,7 +397,7 @@ contains
       if (array(index_of)==n) return
     end do
     index_of = -1 ! value not found
-    ! call LS_fatal ('value not found in array')    
+    ! call LS_fatal ('value not found in array')
 
   end function index_of
 
@@ -451,7 +451,7 @@ contains
     where (abs(a) < limith) a = 0.0_r8
   end subroutine eliminateNoise
 
-  ! project vector x1 into the direction of vector x2 
+  ! project vector x1 into the direction of vector x2
   pure function projectOnto (x1, x2)
     real(r8), intent(in) :: x1(:), x2(:)
     real(r8)             :: projectOnto(size(x1))
@@ -474,13 +474,13 @@ contains
 
     real(r8), intent(in) :: x(:,:)
     real(r8), allocatable :: orthonormalBasis(:,:)
-    
+
     integer :: i,j,n
     real(r8) :: tmp, v(size(x,dim=1)), vs(size(x,dim=1),size(x,dim=2))
 
     n = 1
     vs(:,1) = normalize(x(:,1))
-    
+
     do i = 2,size(x,dim=2)
       v = x(:,i)
       do j = 1,n
@@ -493,9 +493,9 @@ contains
         vs(:,n) = v / tmp
       end if
     end do
-    
+
     orthonormalBasis = vs(:,1:n)
-    
+
   end function orthonormalBasis
 
   pure function interpolate_r8 (f, xc, xf)
@@ -600,7 +600,7 @@ contains
     allocate(lr(N), li(N), work(5*N), vl(1,N), vr(1,N))
     call dgeev ('N','N', N, comp_mat, N, lr, li, vl, 1, vr, 1, work, 5*N, ierr)
     if (ierr/=0) call LS_fatal ('failed finding polynomial roots')
-    
+
     polynomial_roots = pack(lr, mask=isZero(li))
 
   end function polynomial_roots
@@ -621,5 +621,28 @@ contains
     end do
 
   end function signs
+
+  ! generate matrix which rotates such that normal is in the z direction
+  function rotationMatrix (normal)
+
+    real(r8), intent(in) :: normal(3)
+    real(r8) :: rotationMatrix(3,3)
+
+    real(r8) :: zdir(3)
+
+    zdir = [0.0_r8, 0.0_r8, 1.0_r8]
+
+    if (isZero(norm2(zdir - normal))) then
+      rotationMatrix = 0
+      rotationMatrix(1,1) = 1
+      rotationMatrix(2,2) = 1
+      rotationMatrix(3,3) = 1
+    else
+      rotationMatrix(3,:) = normal
+      rotationMatrix(2,:) = normalize(crossProduct(zdir, normal))
+      rotationMatrix(1,:) = crossProduct(rotationMatrix(2,:), normal)
+    end if
+
+  end function rotationMatrix
 
 end module array_utils
