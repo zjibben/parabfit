@@ -144,7 +144,7 @@ contains
     use polygon_type
     use array_utils, only: outer_product, rotationMatrix
     use logging_services
-    external dgesv ! lapack
+    external dsysv ! lapack
 
     class(paraboloid), intent(out) :: this
     type(polygon), intent(in) :: interface_reconstruction(:)
@@ -152,11 +152,9 @@ contains
     type(polygon) :: int_rec
     real(r8), allocatable :: c(:), cr(:)
     real(r8) :: xcen(3), normal(3), R(3,3)
-    ! real(r8) :: A(3,3), b(3), d(2), t1(3), t2(3,3), integrals(3), &
-    !     reconstruction_plane_coeffs(2), xv, yv, xvn, yvn
-    real(r8) :: x_rec(2,2)
     real(r8) :: integrals(6), reconstruction_plane_coeffs(3), xv, yv, xvn, yvn, A(6,6), b(6)
-    integer :: i, n_rec, ierr, v, vn, ipiv(6)
+    integer :: i, n_rec, ierr, v, vn, ipiv(6), lwork
+    real(r8), allocatable :: work(:)
 
     xcen = interface_reconstruction(1)%centroid2()
     normal = interface_reconstruction(1)%norm
@@ -167,42 +165,6 @@ contains
       int_rec = interface_reconstruction(i)
       call int_rec%rotate_offset(normal, xcen)
 
-      ! WARN: currently doing 2D version
-
-      ! ! get polygon bounds
-      ! x_rec(1,:) = [minval(int_rec%x(2,:)), maxval(int_rec%x(2,:))] ! bounds in x/y
-      ! x_rec(2,:) = [minval(int_rec%x(3,:)), maxval(int_rec%x(3,:))] ! bounds in z
-
-      ! ! get linear equation representation of polygon
-      ! d(1) = (x_rec(2,1)*x_rec(1,2) - x_rec(2,2)*x_rec(1,1)) / (x_rec(1,2) - x_rec(1,1))
-      ! d(2) = (x_rec(2,2) - x_rec(2,1)) / (x_rec(1,2) - x_rec(1,1))
-
-      ! t1(1) = x_rec(1,2) - x_rec(1,1)
-      ! t1(2) = (x_rec(1,2)**2 - x_rec(1,1)**2)/2
-      ! t1(3) = (x_rec(1,2)**3 - x_rec(1,1)**3)/3
-
-      ! t2 = outer_product(-t1 * [1.0_r8, 2.0_r8, 3.0_r8], t1)
-
-      ! A = A + t2
-      ! b = b + matmul(t2(:,:2), d)
-
-      ! ! 2d v2
-      ! x_rec(1,:) = [minval(int_rec%x(2,:)), maxval(int_rec%x(2,:))] ! bounds in x/y
-      ! x_rec(2,:) = [minval(int_rec%x(3,:)), maxval(int_rec%x(3,:))] ! bounds in z
-
-      ! integrals(1) = x_rec(1,2) - x_rec(1,1)
-      ! integrals(2) = (x_rec(1,2)**2 - x_rec(1,1)**2)/2
-      ! integrals(3) = (x_rec(1,2)**3 - x_rec(1,1)**3)/3
-      ! print *, int_rec%nVerts, (maxval(int_rec%x(1,:)) - minval(int_rec%x(1,:)))
-      ! print '(3es15.5)', integrals(:3) * (maxval(int_rec%x(1,:)) - minval(int_rec%x(1,:)))
-      ! t1 = int_rec%centroid2()
-      ! reconstruction_plane_coeffs = [-dot_product(t1(2:3), int_rec%norm(2:3)), &
-      !     int_rec%norm(2)] / (-int_rec%norm(3))
-
-      ! A = A + outer_product(integrals, integrals)
-      ! b = b + integrals * dot_product(integrals(:2), reconstruction_plane_coeffs)
-
-      ! 3d
       reconstruction_plane_coeffs = [-dot_product(int_rec%centroid2(), int_rec%norm), &
           int_rec%norm(1), int_rec%norm(2)] / (-int_rec%norm(3))
 
@@ -222,21 +184,20 @@ contains
             (yvn - yv)*(3*xv**2*yv + xv**2*yvn + 2*xv*xvn*yv + 2*xv*xvn*yvn + xvn**2*yv + 3*xvn**2*yvn)/24, &
             (xv - xvn)*(yv + yvn)*(yv**2 + yvn**2) / 12]
       end do
-      ! print '(6es15.5)', integrals
-      ! stop
 
       A = A + outer_product(integrals, integrals)
       b = b + integrals * dot_product(integrals(:3), reconstruction_plane_coeffs)
     end do
-    !print *
 
-    ! solve system
-    !call dgesv (3, 1, A, 3, ipiv, b, 3, ierr)
-    call dgesv (6, 1, A, 6, ipiv, b, 6, ierr)
-    if (ierr /= 0) call LS_fatal ('volumetricFit: failed general linear solve')
+    ! get optimal work size
+    lwork = this%optimalWorkSize(6)
+    allocate(work(lwork))
+
+    ! solve the symmetric linear system (note lapack puts the solution in b)
+    call dsysv ('U', 6, 1, A, 6, ipiv, b, 6, work, lwork, ierr)
+    if (ierr /= 0) call LS_fatal ('volumetricFit: failed symmetric linear solve')
 
     ! convert to full 3d form
-    !cr = [b(1), 0.0_r8, b(2), -1.0_r8, 0.0_r8, 0.0_r8, b(3)]
     cr = [b(1), b(2), b(3), -1.0_r8, b(4), b(5), b(6)]
 
     ! get coeffs in original space
@@ -247,9 +208,6 @@ contains
     call this%init (c, cr)
     this%rot = R
     this%offset = xcen
-
-    ! print '(7es15.5)', cr
-    ! stop
 
   end subroutine volumetricFit
 
