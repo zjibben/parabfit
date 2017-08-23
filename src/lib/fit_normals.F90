@@ -20,15 +20,17 @@ contains
     type(unstr_mesh), intent(in) :: mesh
     type(mesh_geom), intent(in) :: gmesh
 
+    integer, parameter :: iter_max = 5
+    integer :: iter
+
     ! calculate the initial guess via Youngs' method
     !int_norm = interface_normal(vof, mesh, gmesh, .false.)
     call interface_normals_lvira(int_norm, vof, mesh, gmesh)
 
     ! iterate
-    call interface_normals_fit_iteration(int_norm, vof, mesh, gmesh)
-    call interface_normals_fit_iteration(int_norm, vof, mesh, gmesh)
-    call interface_normals_fit_iteration(int_norm, vof, mesh, gmesh)
-    call interface_normals_fit_iteration(int_norm, vof, mesh, gmesh)
+    do iter = 1,iter_max
+      call interface_normals_fit_iteration(int_norm, vof, mesh, gmesh)
+    end do
 
   end subroutine interface_normals_fit
 

@@ -89,7 +89,6 @@ contains
     !   wgt(i) = interface_reconstructions(i)%area() ** weight_scale
     !   !wgt(i) = 1 / (1 + norm2(pts(:,i) - pts(:,1))) ** weight_scale
     ! end do
-
     ! call surf%bestFit(pts(:,1:npts), wgt(1:npts), normal)
 
     ! ! get points representing each polygon
@@ -173,14 +172,17 @@ contains
 
     call start_timer ("fit normals")
 
-    do i = 1,size(interface_reconstructions)
-      pts(:,i) = interface_reconstructions(i)%centroid2()
-      wgt(i) = interface_reconstructions(i)%area() ** weight_scale
-    end do
-    call surf%bestFit (pts(:,1:size(interface_reconstructions)), &
-        wgt(1:size(interface_reconstructions)), normal)
+    ! do i = 1,size(interface_reconstructions)
+    !   pts(:,i) = interface_reconstructions(i)%centroid2()
+    !   wgt(i) = interface_reconstructions(i)%area() ** weight_scale
+    ! end do
+    ! call surf%bestFit (pts(:,1:size(interface_reconstructions)), &
+    !     wgt(1:size(interface_reconstructions)), normal)
 
-    normal_from_patch = surf%normal(interface_reconstructions(1)%centroid())
+    call surf%volumetricFit(interface_reconstructions)
+
+    !normal_from_patch = surf%normal(interface_reconstructions(1)%centroid())
+    normal_from_patch = surf%normal_average(interface_reconstructions(1))
 
     call stop_timer ("fit normals")
 

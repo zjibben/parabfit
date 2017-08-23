@@ -40,6 +40,7 @@ module paraboloid_type
     procedure, private :: localCoords
     procedure :: curvature
     procedure :: normal
+    procedure :: normal_average
     procedure :: curvatureQdrtc
     procedure :: Fstr
     procedure :: fstr_rot
@@ -518,13 +519,41 @@ contains
 
     xr = this%localCoords(x)
 
-    normal(1) = this%cr(2) + 2*this%cr(5)*xr(1) + this%cr(6)*xr(2)
-    normal(2) = this%cr(3) + this%cr(6)*xr(1) + 2*this%cr(7)*xr(2)
-    normal(3) = -1.0_r8
+    normal(1) = -(this%cr(2) + 2*this%cr(5)*xr(1) + this%cr(6)*xr(2))
+    normal(2) = -(this%cr(3) + this%cr(6)*xr(1) + 2*this%cr(7)*xr(2))
+    normal(3) = 1.0_r8
 
-    normal = matmul(transpose(this%rot), normalize(-normal))
+    normal = matmul(transpose(this%rot), normalize(normal))
 
   end function normal
+
+  function normal_average (this, interface_reconstruction) result(normal)
+
+    use array_utils, only: normalize
+    use polygon_type
+
+    class(paraboloid), intent(in) :: this
+    type(polygon), intent(in) :: interface_reconstruction
+    real(r8) :: normal(3)
+
+    type(polygon) :: int_rec
+    real(r8) :: xb(2)
+
+    ! average normal
+    ! get bounds
+    int_rec = interface_reconstruction
+    call int_rec%rotate_offset(int_rec%norm, int_rec%centroid2())
+    xb = [minval(int_rec%x(2,:)), maxval(int_rec%x(2,:))] ! WARN: 2D only
+
+    normal(1) = 0
+    normal(2) = sqrt((this%cr(3) + 2*this%cr(7)*xb(1))**2 + 1)/(2*this%cr(7)) &
+        -       sqrt((this%cr(3) + 2*this%cr(7)*xb(2))**2 + 1)/(2*this%cr(7))
+    normal(3) = -asinh(2*(this%cr(3)/(2*this%cr(7)) + xb(1))*abs(this%cr(7)))/(2*abs(this%cr(7))) &
+        +        asinh(2*(this%cr(3)/(2*this%cr(7)) + xb(2))*abs(this%cr(7)))/(2*abs(this%cr(7)))
+
+    normal = matmul(transpose(this%rot), normalize(normal))
+
+  end function normal_average
 
   function localCoords(this, x) result(xr)
 
