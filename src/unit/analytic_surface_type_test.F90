@@ -56,13 +56,14 @@ contains
     write (fh1, '(a)') '# dx l1 l2 l3'
     write (fh2, '(a)') '# dx l1 l2 l3'
 
-    do i = 1,4
-    !do i = 4,4
+    do i = 1,1
+    !do i = 1,1
       ncell = 10 * 2**i
     ! do i = 1,25
     !   ncell = floor(10 * 1.15_r8**i)
-      call mesh_2d_test (ncell, 'cylinder.json', lnormFT, lnormHF)
+      !call mesh_2d_test (ncell, 'cylinder.json', lnormFT, lnormHF)
       !call mesh_3d_test (ncell, 'sphere.json', lnormFT, lnormHF)
+      call mesh_unstr_test (ncell, 'sphere.json', lnormFT, lnormHF)
       write (fh1, '(4es15.5)') 1.0_r8 / ncell, lnormFT
       write (fh2, '(4es15.5)') 1.0_r8 / ncell, lnormHF
     end do
@@ -566,7 +567,7 @@ contains
     if (file_exists(filename)) then
       call read_vof_field(filename, vof)
     else
-      call vof_initialize (mesh, plist, vof, [1,2], 2)
+      call vof_initialize (mesh, gmesh, plist, vof, [1,2], 2)
       call store_vof_field(filename, vof)
     end if
     deallocate(plist)
@@ -575,8 +576,7 @@ contains
     int_norm = interface_normal (vof, mesh, gmesh, .false.)
 
     ! calculate errors for FT and HF curvature methods
-    curvature_ex = 2 / 0.25_r8 ! sphere
-    !curvature_ex = 1 / 0.25_r8 ! sphere
+    curvature_ex = 2 / 0.35_r8 ! sphere
     lnormFT = ft_mesh_test (vof, int_norm, mesh, gmesh, curvature_ex)
     lnormHF = hf_mesh_test (vof, int_norm, mesh, gmesh, curvature_ex)
 
@@ -584,6 +584,73 @@ contains
         ',  HF L1,L2,Linf = ',lnormHF
 
   end subroutine mesh_3d_test
+
+  subroutine mesh_unstr_test (mesh_size, shape_filename, lnormFT, lnormHF)
+
+    use,intrinsic :: iso_c_binding, only: C_NEW_LINE
+    use consts, only: cutvof
+    use unstr_mesh_factory
+    use surface_type
+    use parameter_list_type
+    use parameter_list_json
+    use int_norm_module
+    use interface_patch_type
+    use vof_init
+    use multimat_cell_type
+    use hex_types, only: hex_f, hex_e
+    use array_utils, only: normalize, isZero
+    use curvature_hf
+    use vof_io
+
+    integer, intent(in) :: mesh_size
+    character(*), intent(in) :: shape_filename
+    real(r8), intent(out) :: lnormFT(:), lnormHF(:)
+
+    character(:), allocatable :: errmsg, filename, mesh_filename
+    character(30) :: tmp
+    type(unstr_mesh) :: mesh
+    type(mesh_geom) :: gmesh
+    type(parameter_list), pointer :: plist
+    real(r8) :: curvature_ex, vof(2,mesh_size**3), curvature(mesh_size**3)
+    integer :: infile
+
+    ! create a regular 2D mesh
+    write (tmp, '(a,i0,a)') "cube_", mesh_size, "_rnd.exo"
+    mesh_filename = trim(adjustl(tmp))
+    mesh = new_unstr_mesh (mesh_filename)
+    call gmesh%init (mesh)
+    print '(a)', "mesh initialized"
+
+    ! fill the mesh with volume fractions for a circle
+    ! right now this relies on an input file to describe the cylinder. In the future I'd like to
+    ! initialize material_geometry_types without a parameter_list_type, or initialize a
+    ! parameter_list_type without a JSON file
+    open(newunit=infile,file=shape_filename,action='read',access='stream')
+    call parameter_list_from_json_stream (infile, plist, errmsg)
+    if (.not.associated(plist)) call LS_fatal ("error reading input file:" // C_NEW_LINE // errmsg)
+    close(infile)
+
+    plist => plist%sublist('initial-vof')
+    print '(a)', "parameter list read"
+
+    write (tmp, '(a,i0,a)') "vof_unstr_", mesh_size, ".dat"
+    filename = trim(adjustl(tmp))
+    if (file_exists(filename)) then
+      call read_vof_field(filename, vof)
+    else
+      call vof_initialize (mesh, gmesh, plist, vof, [1,2], 2)
+      call store_vof_field(filename, vof)
+    end if
+    deallocate(plist)
+
+    ! calculate errors for FT and HF curvature methods
+    curvature_ex = 2 / 0.35_r8 ! sphere
+    lnormFT = ft_unstr_mesh_test(vof, mesh, gmesh, curvature_ex)
+    lnormHF = 0
+
+    print '(i5, a,3es10.2)', mesh_size, '  FT L1,L2,Linf = ',lnormFT
+
+  end subroutine mesh_unstr_test
 
   function ft_mesh_test (vof, int_norm, mesh, gmesh, curvature_ex) result(lnorm)
 
@@ -636,9 +703,10 @@ contains
     int_norm_hf2(:,2,:) = -int_norm_hf
 
     ! get the interface reconstructions
+    lnorm = 0; nvofcell = 0
     do i = 1,mesh%ncell
-      call cell%init (ierr, mesh%x(:,mesh%cnode(:,i)), hex_f, hex_e, mesh%volume(i), &
-          gmesh%outnorm(:,:,i))
+      call cell%init (ierr, mesh%x(:,mesh%cnode(:,i)), hex_f, hex_e, gmesh%outnorm(:,:,i), &
+          mesh%volume(i))
       if (ierr /= 0) call LS_fatal ('cell_outward_volflux failed: could not initialize cell')
 
       ! int_norm_local = 0
@@ -650,7 +718,16 @@ contains
       !call cell%partition (vof(:,i), int_norm(:,:,i))
 
       call intrec%append (cell%interface_polygon(1), i)
+
+      err = abs(vof(1,i) - cell%mat_poly(1)%volume() / mesh%volume(i))
+      nvofcell = nvofcell + 1
+      lnorm(1) = lnorm(1) + err
+      lnorm(2) = lnorm(2) + err**2
+      lnorm(3) = max(lnorm(3),err)
     end do
+    lnorm(1) = lnorm(1) / nvofcell
+    lnorm(2) = sqrt(lnorm(2) / nvofcell)
+    !print '(a,3es10.2)', 'VOF L1,L2,Linf = ',lnorm
 
     call intrec%write_ply("ft_test.ply")
 
@@ -665,7 +742,7 @@ contains
       !i = 18178
       do i = 1,mesh%ncell
         if (any(gmesh%cneighbor(:,i)<1)) cycle ! WARN: skipping boundaries. BCs might be automatic?
-        if (.not.isZero(gmesh%xc(3,i))) cycle
+        !if (.not.isZero(gmesh%xc(3,i))) cycle ! WARN: 2d
 
         ! TODO: this really should be in any cell neighboring a cell containing the interface
         !if (vof(1,i) > cutvof .and. vof(1,i) < 1-cutvof) then !.and. .not.isZero(curvature(i))) then
@@ -778,6 +855,82 @@ contains
     end subroutine print_details
 
   end function ft_mesh_test
+
+  function ft_unstr_mesh_test (vof, mesh, gmesh, curvature_ex) result(lnorm)
+
+    use consts, only: cutvof
+    use surface_type
+    use int_norm_module
+    use interface_patch_type
+    use multimat_cell_type
+    use hex_types, only: hex_f, hex_e
+    use array_utils, only: normalize, isZero
+    use curvature_hf, only: heightFunction
+    use lvira_normals
+    use fit_normals
+
+    real(r8), intent(in) :: vof(:,:)
+    type(unstr_mesh), intent(in) :: mesh
+    type(mesh_geom), intent(in) :: gmesh
+    real(r8), intent(in) :: curvature_ex
+    real(r8) :: lnorm(3)
+
+    integer :: i, ierr, imax
+    type(surface) :: intrec
+    type(multimat_cell) :: cell
+    real(r8) :: err, curvature(mesh%ncell), totvolume
+    real(r8), allocatable :: int_norm_lvira(:,:,:)
+
+    call interface_normals_lvira(int_norm_lvira, vof, mesh, gmesh)
+    !call interface_normals_fit(int_norm_lvira, vof, mesh, gmesh)
+
+    ! get the interface reconstructions
+    lnorm = 0; totvolume = 0
+    do i = 1,mesh%ncell
+      call cell%init (ierr, mesh%x(:,mesh%cnode(:,i)), hex_f, hex_e, gmesh%outnorm(:,:,i), &
+          mesh%volume(i))
+      if (ierr /= 0) call LS_fatal ('cell_outward_volflux failed: could not initialize cell')
+
+      call cell%partition (vof(:,i), int_norm_lvira(:,:,i))
+
+      call intrec%append (cell%interface_polygon(1), i)
+
+      err = abs(vof(1,i) - cell%mat_poly(1)%volume() / mesh%volume(i))
+      totvolume = totvolume + mesh%volume(i)
+      lnorm(1) = lnorm(1) + err * mesh%volume(i)
+      lnorm(2) = lnorm(2) + err**2 * mesh%volume(i)
+      lnorm(3) = max(lnorm(3),err)
+    end do
+    lnorm(1) = lnorm(1) / totvolume
+    lnorm(2) = sqrt(lnorm(2) / totvolume)
+    !print '(a,3es10.2)', 'VOF L1,L2,Linf = ',lnorm
+
+    call intrec%write_ply("ft_test.ply")
+
+    ! get the curvature
+    curvature = 0; lnorm = 0; totvolume = 0
+    do i = 1,mesh%ncell
+      if (any(gmesh%cneighbor(:,i)<1)) cycle ! WARN: skipping boundaries. BCs might be automatic?
+
+      err = 0
+      if (vof(1,i) > 1e-2_r8 .and. vof(1,i) < 1-1e-2_r8) then
+        curvature(i) = abs(curvature_from_patch (intrec%local_patch(i,gmesh, vof(1,:)), &
+            0.0_r8, int_norm_lvira(:,1,i), vof(1,:), mesh, gmesh, i))
+        if (isZero(curvature(i))) cycle
+
+        ! append to norms
+        err = abs((curvature(i) - curvature_ex) / curvature_ex)
+        if (err > lnorm(3)) imax = i
+        totvolume = totvolume + mesh%volume(i)
+        lnorm(1) = lnorm(1) + err * mesh%volume(i)
+        lnorm(2) = lnorm(2) + err**2 * mesh%volume(i)
+        lnorm(3) = max(lnorm(3),err)
+      end if
+    end do
+    lnorm(1) = lnorm(1) / totvolume
+    lnorm(2) = sqrt(lnorm(2) / totvolume)
+
+  end function ft_unstr_mesh_test
 
   function hf_mesh_test (vof, int_norm, mesh, gmesh, curvature_ex) result(lnorm)
 
