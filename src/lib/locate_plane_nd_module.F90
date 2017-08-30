@@ -62,14 +62,10 @@ contains
     ! get bounds for Brent's method
     call rho_bracket (rho_min, rho_mid, rho_max, norm, poly, vof_error)
 
-    ! start Brent's method
+    ! start Brent's method (note ~30 iterations seem to be necessary to pass current unit tests)
     locate_plane_nd%normal = norm
-    vof_error%eps = cutvof / 1e3_r8; vof_error%maxitr = 50
+    vof_error%eps = cutvof / 1e10_r8; vof_error%maxitr = 50
     call vof_error%find_root (rho_min, rho_max, locate_plane_nd%rho, ierr)
-    !print *, 'niter: ', vof_error%numitr
-    !call vof_error%find_minimum (rho_min, rho_mid, rho_max, locate_plane_nd%rho, ierr)
-    !locate_plane_nd%rho = brent (vof_error, rho_min, rho_mid, rho_max, cutvof/2.0_r8, 30)
-    ! note ~30 iterations seem to be necessary to pass current unit tests
 
   end function locate_plane_nd
 
@@ -121,10 +117,11 @@ contains
     ! make sure the bounds were set
     if (rho_min==-huge(1.0_r8) .or. rho_max==huge(1.0_r8)) then
       P%normal = norm
+      print '(a,3f10.3)', 'normal: ', norm
       call poly%print_data (normalized=.true.)
       !write(*,*) 'volume ',poly%volume ()
       do i = 1,poly%nVerts
-        rho = sum(poly%x(:,i)*norm)
+        rho = dot_product(poly%x(:,i),norm)
         err = volume_error%signed_eval(rho)
         P%rho = rho
         write(*,'(a,i3,3es14.4)') 'vertex, rho, error, vol: ', i, rho, err, &

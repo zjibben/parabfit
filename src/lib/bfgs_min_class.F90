@@ -15,8 +15,8 @@ module bfgs_min_class
   private
 
   type, abstract, public :: bfgs_min
-    real(r8) :: tol = 1e-6_r8
-    integer :: maxitr = 20
+    real(r8) :: tol = 1e-7_r8
+    integer :: maxitr = 40
     integer :: line_search_max = 20
     integer :: numitr = 0
   contains
@@ -98,7 +98,7 @@ contains
       ! print '(a,2es13.3)', 'ys: ', dot_product(y,s)
       ! print *
 
-      if (norm2(gradf) < this%tol .or. norm2(x-xold) < 1e-10_r8) exit
+      if (norm2(gradf) < this%tol .or. norm2(x-xold) < 1e-11_r8) exit
     end do
 
     this%numitr = i
