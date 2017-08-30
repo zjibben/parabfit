@@ -39,6 +39,9 @@ module polyhedron_type
     procedure          :: split
     procedure          :: volume_behind_plane
     procedure          :: print_data
+    procedure, private :: tesselate_nonplanar_faces
+    procedure, private :: tesselate_face
+    procedure, private :: face_is_nonplanar
     !procedure, private :: edge_containing_vertices
     procedure, private :: compute_scaled_polyhedron
     procedure, private :: polyhedron_on_side_of_plane
@@ -58,15 +61,23 @@ contains
   !   if (allocated(this%edge_vid)) deallocate(this%edge_vid)
   ! end subroutine polyhedron_delete
 
-  subroutine init_polyhedron (this, ierr, x, face_v, edge_v, face_normal, vol)
+  subroutine init_polyhedron (this, ierr, x, face_v, edge_v, face_normal, vol, tesselate)
 
     class(polyhedron),  intent(out) :: this
     integer,            intent(out) :: ierr
     real(r8),           intent(in)  :: x(:,:)
     integer,            intent(in)  :: face_v(:,:), edge_v(:,:)
     real(r8), optional, intent(in)  :: face_normal(:,:), vol
+    logical, optional, intent(in) :: tesselate
 
     integer :: f,nV
+    logical :: tesselateh
+
+    if (present(tesselate)) then
+      tesselateh = tesselate
+    else
+      tesselateh = .true.
+    end if
 
     this%nVerts = size(x,     dim=2)
     this%nEdges = size(edge_v,dim=2)
@@ -95,7 +106,6 @@ contains
       call this%update_face_normals()
     end if
 
-
     !call this%remove_dangling_vertices ()
     ierr = this%is_valid()
     if (ierr/=0) then
@@ -109,6 +119,8 @@ contains
     !   nV = count(face_v(:,f) /= 0) ! number of vertices on this face
     !   call this%face(f)%init (x(:,face_v(1:nV,f)))
     ! end do
+
+    if (tesselateh) call this%tesselate_nonplanar_faces()
 
     ! note that by taking the cross product between edges described in a
     ! counter-clockwise manner, we guarantee the normal to be outward facing
@@ -460,14 +472,10 @@ contains
       call intersection_verts%init (x(:,1:Nintersections))
 
       ! this probably doesn't need to be called every time this function is used
-      if (present(v_assoc_pe)) then
-        call intersection_verts%order (v_assoc_pe)
-      else
-        call intersection_verts%order ()
-      end if
+      call intersection_verts%order (v_assoc_pe)
 
       ! make sure the vertices are ordered counter-clockwise
-      if (sum(intersection_verts%norm*P%normal)<0.0_r8) then
+      if (dot_product(intersection_verts%norm,P%normal) < 0) then
         ! reverse both x and v_assoc_pe
         intersection_verts%x = reverse (intersection_verts%x)
 
@@ -757,7 +765,7 @@ contains
           call LS_fatal ("not enough vertices for a polygon!")
         end if
         call polyhedron_on_side_of_plane%init (ierr, x(:,1:nVerts), face_vid(1:tmp,1:nFaces), &
-            edge_vid(:,1:nEdges), face_normal(:,1:nFaces))
+            edge_vid(:,1:nEdges), face_normal(:,1:nFaces), tesselate=.false.)
 
         !write(*,*) 'poly', nVerts, tmp, nFaces, nEdges
         if (ierr /= 0) call fatal()
@@ -1086,6 +1094,113 @@ contains
     end subroutine modified_parent_face
 
   end function polyhedron_on_side_of_plane
+
+  subroutine tesselate_nonplanar_faces(this)
+
+    class(polyhedron), intent(inout) :: this
+
+    integer :: f
+
+    do f = 1,this%nFaces
+      print *, 'here0', f
+      if (this%face_is_nonplanar(f)) call this%tesselate_face(f)
+    end do
+
+    print *, 'done'
+    print *
+
+  end subroutine tesselate_nonplanar_faces
+
+  logical function face_is_nonplanar(this, f)
+
+    use consts, only: alpha
+    use plane_type
+
+    class(polyhedron), intent(in) :: this
+    integer, intent(in) :: f
+
+    integer :: v, nV
+    type(plane) :: p
+
+    face_is_nonplanar = .false.
+
+    nV = count(this%face_vid(:,f) /= 0)
+    if (nV==3) return
+
+    ! generate plane from first three points
+    p%normal = this%face_normal(:,f)
+    p%rho = - dot_product(p%normal, this%x(:,this%face_vid(1,f)))
+
+    ! check if remaining points are more than a distance alpha from the plane
+    do v = 4,nV
+      if (abs(p%signed_distance(this%x(:,this%face_vid(v,f)))) > alpha) then
+        face_is_nonplanar = .true.
+        exit
+      end if
+    end do
+
+  end function face_is_nonplanar
+
+  subroutine tesselate_face(this, f)
+
+    use array_utils, only: normalize
+    use cell_geometry, only: cross_product
+
+    class(polyhedron), intent(inout) :: this
+    integer, intent(in) :: f
+
+    integer :: nV, n_new, ff, i, j
+    integer, allocatable :: tmpi(:,:)
+    real(r8), allocatable :: tmpr(:,:)
+
+    nV = count(this%face_vid(:,f) /= 0)
+    if (nV == 3) return
+
+    ! new vertex is at face center
+    this%nVerts = this%nVerts + 1
+    allocate(tmpr(3,this%nVerts))
+    tmpr(:,:this%nVerts-1) = this%x
+    tmpr(:,this%nVerts) = sum(this%x(:,this%face_vid(:nV,f)), dim=2) / nV
+    call move_alloc(tmpr, this%x)
+
+    ! all vertices on this face have a new edge to the new vertex
+    n_new = this%nEdges + nV
+    allocate(tmpi(2,n_new))
+    tmpi(:,:this%nEdges) = this%edge_vid
+    tmpi(1,this%nEdges+1:) = this%face_vid(:nV,f)
+    tmpi(2,this%nEdges+1:) = this%nVerts
+    call move_alloc(tmpi, this%edge_vid)
+    this%nEdges = n_new
+
+    ! add new faces
+    n_new = this%nFaces + nV - 1
+    allocate(tmpi(size(this%face_vid, dim=1), n_new))
+    tmpi(:,:this%nFaces) = this%face_vid
+    tmpi(:3,f) = [this%face_vid(1,f), this%face_vid(2,f), this%nVerts] ! first new face replaces old
+    tmpi(4:,f) = 0
+    do ff = this%nFaces + 1, n_new
+      i = ff - this%nFaces + 1
+      j = modulo(i, nV) + 1
+      tmpi(:3,ff) = [this%face_vid(i,f), this%face_vid(j,f), this%nVerts]
+      tmpi(4:,ff) = 0
+    end do
+    call move_alloc(tmpi, this%face_vid)
+
+    ! calculate new face normal vectors
+    allocate(tmpr(3,n_new))
+    tmpr(:,:this%nFaces) = this%face_normal
+    tmpr(:,f) = normalize(cross_product (&
+          this%x(:,this%face_vid(2,f)) - this%x(:,this%face_vid(1,f)), &
+          this%x(:,this%face_vid(3,f)) - this%x(:,this%face_vid(1,f))))
+    do ff = this%nFaces+1, n_new
+      tmpr(:,ff) = normalize(cross_product (&
+          this%x(:,this%face_vid(2,ff)) - this%x(:,this%face_vid(1,ff)), &
+          this%x(:,this%face_vid(3,ff)) - this%x(:,this%face_vid(1,ff))))
+    end do
+    call move_alloc(tmpr, this%face_normal)
+    this%nFaces = n_new
+
+  end subroutine tesselate_face
 
   subroutine print_data (this,normalized)
 

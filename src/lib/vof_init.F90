@@ -79,7 +79,7 @@ contains
     do i = 1,mesh%ncell
       ! initialize dnc_hex
       call hex%init (ierr, mesh%x(:,mesh%cnode(:,i)), hex_f, hex_e, gmesh%outnorm(:,:,i), &
-          mesh%volume(i))
+          mesh%volume(i), tesselate=.false.)
       do v = 1,8
         hex%matl_at_node(v) = matl_init_geometry%index_at(hex%x(:,v))
       end do
@@ -374,7 +374,7 @@ contains
       matl_at_node(8) = this%matl_at_node(8)
     end select
 
-    call subcell%init (ierr, xtmp, hex_f, hex_e)
+    call subcell%init (ierr, xtmp, hex_f, hex_e, tesselate=.false.)
     subcell%matl_at_node = matl_at_node
 
     ! for nonorthogonal meshes, sub-cell volumes are
