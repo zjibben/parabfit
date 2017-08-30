@@ -14,7 +14,6 @@
 module brent_root_class
 
   use kinds, only: r8
-  use consts, only: alittle
   implicit none
   private
 
@@ -56,7 +55,6 @@ contains
 
     stat = 0
 
-    root=huge(1.0_r8)
     do i = 1,this%maxitr
       if ((fb > 0 .and. fc > 0) .or. (fb < 0 .and. fc < 0)) then
         c = a
@@ -74,9 +72,8 @@ contains
         fc=fa
       end if
 
-      tol1 = 2*alittle*abs(b) + this%eps / 2
+      tol1 = 2*spacing(b) + this%eps / 2
       xm = (c-b) / 2
-
       if (abs(xm) <= tol1 .or. fb==0) then
         root=b
         this%numitr = i
@@ -117,6 +114,7 @@ contains
       fb = this%f(b)
     end do
 
+    root=huge(1.0_r8)
     stat = 1
 
   end subroutine find_root
