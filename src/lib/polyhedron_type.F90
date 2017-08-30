@@ -27,7 +27,7 @@ module polyhedron_type
     integer               :: nVerts, nEdges, nFaces       ! number of vertices, edges, and faces
     real(r8), allocatable :: x(:,:),face_normal(:,:)      ! vertex positions and face outward normals
     integer,  allocatable :: face_vid(:,:), edge_vid(:,:) ! face and edge IDs
-    real(r8)              :: vol,x0(ndim),xl(ndim)        ! should be private, but need inheritance
+    real(r8)              :: vol        ! should be private, but need inheritance
     ! ideally vol should be private, but Fortran then also hides it from child types
   contains
     procedure, private :: init_polyhedron
@@ -40,12 +40,11 @@ module polyhedron_type
     procedure          :: volume_behind_plane
     procedure          :: print_data
     !procedure, private :: edge_containing_vertices
+    procedure, private :: compute_scaled_polyhedron
     procedure, private :: polyhedron_on_side_of_plane
     procedure, private :: update_face_normals
     procedure, private :: is_valid
     procedure, private :: remove_dangling_vertices
-    procedure, private :: scale
-    procedure, private :: descale
     !final :: polyhedron_delete
   end type polyhedron
 
@@ -59,13 +58,13 @@ contains
   !   if (allocated(this%edge_vid)) deallocate(this%edge_vid)
   ! end subroutine polyhedron_delete
 
-  subroutine init_polyhedron (this, ierr, x, face_v, edge_v, vol, face_normal)
+  subroutine init_polyhedron (this, ierr, x, face_v, edge_v, face_normal, vol)
 
     class(polyhedron),  intent(out) :: this
     integer,            intent(out) :: ierr
     real(r8),           intent(in)  :: x(:,:)
     integer,            intent(in)  :: face_v(:,:), edge_v(:,:)
-    real(r8), optional, intent(in)  :: vol, face_normal(:,:)
+    real(r8), optional, intent(in)  :: face_normal(:,:), vol
 
     integer :: f,nV
 
@@ -93,9 +92,9 @@ contains
     if (present(face_normal)) then
       this%face_normal = face_normal
     else
-      this%face_normal = 0.0_r8
-      call this%update_face_normals ()
+      call this%update_face_normals()
     end if
+
 
     !call this%remove_dangling_vertices ()
     ierr = this%is_valid()
@@ -293,34 +292,30 @@ contains
 
   end subroutine init_polyhedron_copy
 
-  subroutine scale (this)
+  subroutine compute_scaled_polyhedron (this, scaled, volume_factor)
 
-    class(polyhedron), intent(inout) :: this
+    use cell_geometry, only: cross_product
 
-    integer :: v
-
-    this%x0 = minval(this%x,dim=2)
-    this%xl = maxval(this%x,dim=2) - this%x0
-    do v = 1,this%nVerts
-      this%x(:,v) = (this%x(:,v)-this%x0)/this%xl
-    end do
-    call this%update_face_normals (force=.true.)
-
-  end subroutine scale
-
-  subroutine descale (this)
-
-    class(polyhedron), intent(inout) :: this
+    class(polyhedron), intent(in) :: this
+    type(polyhedron), intent(out) :: scaled
+    real(r8), intent(out) :: volume_factor
 
     integer :: v
+    real(r8) :: x0(3), xl(3)
 
-    do v = 1,this%nVerts
-      this%x(:,v) = this%x(:,v)*this%xl + this%x0
+    scaled = this
+
+    x0 = minval(scaled%x,dim=2)
+    !x0 = [0.0_r8, 0.0_r8, 0.0_r8] ! WARN: no offsetting
+    xl = maxval(scaled%x,dim=2) - x0
+    xl = [1.0_r8, 1.0_r8, 1.0_r8] ! WARN: no scaling
+    volume_factor = product(xl)
+    do v = 1,scaled%nVerts
+      scaled%x(:,v) = (scaled%x(:,v) - x0) / xl
     end do
-    call this%update_face_normals (force=.true.)
-    this%vol = this%vol * product(this%xl)
+    call scaled%update_face_normals()
 
-  end subroutine descale
+  end subroutine compute_scaled_polyhedron
 
   ! This function calculates the volume of a polehedron following the
   ! algorithm presented by [1]. It calculates the sum of the surface
@@ -346,46 +341,42 @@ contains
     class(polyhedron), intent(inout) :: this
     !integer, intent(out) :: ierr
 
-    integer :: f,nV,v
-    real(r8) :: tmp(ndim), n(ndim), t(ndim)
-    type(polygon) :: face
+    integer :: f,nV,v,i,n
+    real(r8) :: tmp(ndim), volume_factor, xn(3), xi(3), xc(3), vt, area, t
+    type(polyhedron) :: scaled
 
     !ierr = 0
-    volume = merge(this%vol, 0.0_r8, .not.ieee_is_nan(this%vol))
+    volume = this%vol
     if (.not.allocated(this%x) .or. volume > 0.0_r8) return
 
     ! scale the polyhedron (see note 1)
-    call this%scale ()
+    ! scaled = this
+    ! volume_factor = 1
+    call this%compute_scaled_polyhedron(scaled, volume_factor)
 
     ! sum up the integral of n_x*x over all faces (could just as easily be any other direction)
-    volume = 0.0_r8
-    do f = 1,this%nFaces
-      nV = count(this%face_vid(:,f) /= 0) ! number of vertices on this face
-      tmp = 0.0_r8
+    volume = 0
+    do f = 1,scaled%nFaces
+      nV = count(scaled%face_vid(:,f) /= 0) ! number of vertices on this face
+      xc = sum(scaled%x(:,scaled%face_vid(:nV,f)), dim=2) / nV
+      area = 0
+      vt = 0
       do v = 1,nV
-        tmp = tmp + &
-            cross_product (this%x(:,this%face_vid(v,f)), this%x(:,this%face_vid(modulo(v,nV)+1,f)))
+        i = scaled%face_vid(v,f)
+        n = scaled%face_vid(modulo(v,nV)+1,f)
+        xi = scaled%x(:,i) - xc
+        xn = scaled%x(:,n) - xc
+        t = dot_product(cross_product(xi, xn), scaled%face_normal(:,f))
+        vt = vt + dot_product(xi + xn, scaled%face_normal(:,f)) * t
+        area = area + t
       end do
-      volume = volume + &
-          dot_product(this%face_normal(:,f),this%x(:,this%face_vid(1,f))) * &
-          dot_product(this%face_normal(:,f),tmp)
-      ! print '(a,4es14.4)', 'volume: ',volume
-      ! print *, this%face_vid(:,f)
-      ! print *, tmp
-      ! print *, this%face_normal(:,f)
-      ! print *, this%x(:,this%face_vid(1,f))
-      ! do v = 1,nV
-      !   print *, 'x: ',this%x(:,this%face_vid(1,v))
-      ! end do
+      area = area / 2
+      volume = volume + vt / 18 + dot_product(xc, scaled%face_normal(:,f)) * area / 3
     end do
-    volume = volume / 6
+    volume = volume * volume_factor
     this%vol = volume
 
-    ! rescale the polyhedron
-    call this%descale ()
-    volume = this%vol
-
-    if (this%vol < 0.0_r8) then
+    if (this%vol < 0) then
       if (isZero(this%vol, 1e5_r8*alittle)) then
         ! if this polyhedron has a volume of almost zero, make it zero
         ! this seems to be necessary for very tiny polyhedrons,
@@ -395,13 +386,35 @@ contains
         deallocate(this%x)
         this%nVerts = 0
       else
-        write(*,*) "calculated negative polyhedron volume!"
+        print *, 'vf: ',volume_factor
         call this%print_data ()
-        write(*,*)
+        print *
+
         !ierr = 1
-        !call LS_fatal ("calculated negative polyhedron volume!")
+        call LS_fatal ("calculated negative polyhedron volume!")
       end if
     end if
+
+    ! if (this%vol == 0) then
+    !   print *, 'vf: ',volume_factor
+
+    !   do f = 1,scaled%nFaces
+    !     nV = count(scaled%face_vid(:,f) /= 0) ! number of vertices on this face
+    !     tmp = 0
+    !     do v = 1,nV
+    !       tmp = tmp + cross_product(&
+    !           scaled%x(:,scaled%face_vid(v,f)), &
+    !           scaled%x(:,scaled%face_vid(modulo(v,nV)+1,f)))
+    !     end do
+    !     print *, dot_product(scaled%face_normal(:,f),scaled%x(:,scaled%face_vid(1,f))) &
+    !         * dot_product(scaled%face_normal(:,f),tmp)
+    !     print *, 'n: ', scaled%face_normal(:,f)
+    !     print *, 'x: ', scaled%x(:,scaled%face_vid(1,f))
+    !     print *, dot_product(scaled%face_normal(:,f),scaled%x(:,scaled%face_vid(1,f)))
+    !     print *, dot_product(scaled%face_normal(:,f),tmp)
+    !     print *
+    !   end do
+    ! end if
 
   end function volume
 
