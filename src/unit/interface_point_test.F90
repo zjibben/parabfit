@@ -94,7 +94,7 @@ contains
     close(infile)
 
     plist => plist%sublist('initial-vof')
-    call vof_initialize (mesh, plist, vof, [1,2], 2)
+    call vof_initialize (mesh, gmesh, plist, vof, [1,2], 2)
     deallocate(plist)
 
     ! get the interface reconstructions

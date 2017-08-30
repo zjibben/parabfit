@@ -8,7 +8,7 @@
 !! TODO: * make the fluxing velocity point to the array in NS_solver_type
 !!       * make some sort of exact solution type and do away with the vof0
 !!         array (currently only used for the deforming sphere test)
-!!       
+!!
 !! Zechariah J. Jibben <zjibben@lanl.gov>
 !! June 2015
 !!
@@ -76,7 +76,7 @@ module vof_solver_type
   integer, parameter, public :: NESTED_DISSECTION = 2
 
 contains
-  
+
   subroutine init (this, mesh, gmesh, nmat, fluxing_velocity, fluidRho, params, velocity_bc)
 
     use consts, only: nfc
@@ -117,7 +117,7 @@ contains
     ! when we prescribe the velocity field (and hence don't need to specify material properties),
     ! the nmat passed in will not have been initialized
     this%nmat = size(this%matl_id) !nmat
-    
+
     allocate(this%vof(this%nmat,this%mesh%ncell), this%vof0(this%nmat,this%mesh%ncell), &
         this%volume_flux_tot(this%nmat,nfc,this%mesh%ncell), &
         this%intrec(this%nmat))
@@ -133,7 +133,7 @@ contains
 
     ! when we prescribe the velocity field, velocity_bc will be unallocated
     if (allocated(velocity_bc)) call assign_vel_bc_flags (BC_flag, velocity_bc)
-    
+
   contains
 
     subroutine assign_vel_bc_flags (BC_flag, velocity_bc)
@@ -165,9 +165,9 @@ contains
     type(parameter_list), intent(in)    :: plist
 
     !! Initialize the Vof
-    call vof_initialize (this%mesh, plist, this%vof, this%matl_id, this%nmat)
+    call vof_initialize (this%mesh, this%gmesh, plist, this%vof, this%matl_id, this%nmat)
     this%vof0 = this%vof
-    
+
     ! DEBUGGING ############
     call this%print_vofs ()
     ! ######################
@@ -202,7 +202,7 @@ contains
     call this%advect_volume (Vof_n, dt, matl_is_void, dump_intrec)
 
     ! ! Update the mass & concentration distributions.
-    ! if (volume_track_interfaces) then 
+    ! if (volume_track_interfaces) then
     !    call update_mass (this%fluxing_velocity, this%vof, Vof_n, VT_Interface_Mask)
     ! else
     !    call update_mass (this%fluxing_velocity, this%vof, Vof_n)
@@ -261,7 +261,7 @@ contains
 
     this%volume_flux_tot = 0.0_r8                    ! Zero the total flux array
     adv_dt = dt/real(this%volume_track_subcycles,r8) ! Set the advection timestep
-    
+
 !!$omp parallel if(using_mic) default(private) shared(adv_dt, this, vof_n, volume_flux_sub, volume_track_subcycles)
     do p = 1,this%volume_track_subcycles
       ! Get the donor fluxes.
@@ -351,9 +351,9 @@ contains
   ! renorm_cell: ensure no materials are over-exhausted in a given cell
   !
   ! note 1:   We stay in this loop until the sum of material fluxes from each face of
-  !           the cell equals the total face volume flux.  Where the cumulative sum of 
-  !           individual material fluxes (from this and previous volume_track_subcycles) 
-  !           exceeds the volume of a particular material originally within a 
+  !           the cell equals the total face volume flux.  Where the cumulative sum of
+  !           individual material fluxes (from this and previous volume_track_subcycles)
+  !           exceeds the volume of a particular material originally within a
   !           cell, we decrease those fluxes to equal the volume of material still available
   !           to be fluxed, and increase other fluxes appropriately.  If this increase
   !           leads to the over-exhaustion of other materials, we work our way through
@@ -382,12 +382,12 @@ contains
 
       ! see note 1
 
-      ! The first step is to determine if any material is being over-exhausted from 
-      ! a cell.  If so mark it as MAXED and lower the Volume_Flux_Sub's so that the 
+      ! The first step is to determine if any material is being over-exhausted from
+      ! a cell.  If so mark it as MAXED and lower the Volume_Flux_Sub's so that the
       ! material is just exhausted.
       do m = 1,size(vof_n)
         ! volume of material m attempting to leave the cell in this volume_track_subcycle
-        total_material_flux = sum(Volume_Flux_Sub(m,:)) 
+        total_material_flux = sum(Volume_Flux_Sub(m,:))
         if (isZero(total_material_flux)) cycle
 
         ! If the cumulative_outward_material_flux exceeds the amount of material
@@ -418,20 +418,20 @@ contains
       if (.not.flux_reduced) exit
 
       ! This cell had one/more fluxes reduced.  For each of the faces, if the sum
-      ! of material fluxes is less than Total_Face_Flux, multiply all non-maxed 
-      ! fluxes by another 'Ratio' (this time > 1) that restores the flux balance.  
+      ! of material fluxes is less than Total_Face_Flux, multiply all non-maxed
+      ! fluxes by another 'Ratio' (this time > 1) that restores the flux balance.
       ! This may in turn over-exhaust one or more of these materials, and so from
       ! the bottom of this loop, we head back to the top.
       do f = 1,nfc
         ! Calculate the total flux volume through the cell face (is this already
-        ! available elsewhere?), and if the flux volume is greater than zero, 
+        ! available elsewhere?), and if the flux volume is greater than zero,
         ! then concern ourselves with adjusting individual material fluxes.
         if (Total_Face_Flux(f) > cutvof*cell_volume) then
           ! calculate the sum of material fluxes at a face, and the sum of un-maxed material fluxes.
           total_flux_through_face           = sum(Volume_Flux_Sub(:,f))
           total_flux_through_face_not_maxed = sum(volume_flux_sub(:,f), mask=.not.maxed)
-          
-          ! Ratio as defined below, when used to multiply the non-maxed fluxes at 
+
+          ! Ratio as defined below, when used to multiply the non-maxed fluxes at
           ! a face, will restore the flux balance.
           if (total_flux_through_face_not_maxed > 0.0_r8) then
             Ratio = (Total_Face_Flux(f) + total_flux_through_face_not_maxed - total_flux_through_face) &
@@ -585,7 +585,7 @@ contains
         ! if volume fraction is close to 1, round to 1
         if (matl_is_void(m)) then
           vof(m) = 1.0_r8
-        else 
+        else
           call adjust_flux_matl (volume_flux_tot(m,:), vof(m), 1.0_r8, volume, BC_flag)
           vof(m) = 1.0_r8
         end if
@@ -660,7 +660,7 @@ contains
     real(r8)       :: Total_Flow, Change_Fraction
     character(128) :: message
 
-    ! Calculate the fractional change needed to adjust the current volume 
+    ! Calculate the fractional change needed to adjust the current volume
     ! to the target value.  The same fractional increase/decrease is applied
     ! to incoming and outgoing flows.
     Total_Flow      = inflow  (volume_flux_tot, local_BC) + outflow (volume_flux_tot, local_BC)
@@ -695,7 +695,7 @@ contains
     else ! there is some flow for this material
       if (Change_Fraction < 0.0_r8) then
         ! jms Note:   If the material is to be removed from the cell
-        ! look for a face that doesn't have incoming material, and 
+        ! look for a face that doesn't have incoming material, and
         ! flux it out through that face
         do f = 1,nfc
           if (local_BC(f)/=2 .and. Volume_Flux_Tot(f) >= 0.0_r8) then
@@ -705,7 +705,7 @@ contains
         end do
       else
         ! This needs to be fixed for OpenMP
-        ! if (abs(change_fraction) > WMaxMatU) then 
+        ! if (abs(change_fraction) > WMaxMatU) then
         !   WCountMatU = 0
         !   WMaxMatU = abs(change_fraction)
         !   write(message,'(2(a,i0),a,es11.3)') 'unable to adjust material volume' !: cell=', n, &
@@ -749,7 +749,7 @@ contains
       end if
     end do
 
-    ! Calculate the fractional change needed to adjust the current volume 
+    ! Calculate the fractional change needed to adjust the current volume
     ! to the target value.  The same fractional increase/decrease is applied
     ! to incoming and outgoing flows.
     Total_Flow = Inflow_Volume + Outflow_Volume
@@ -784,7 +784,7 @@ contains
       end do ! material loop
     else ! there is no total flow through this cell
       ! This needs to be fixed for OpenMP
-      ! if (abs(Volume_Change) > WMaxTotU) then 
+      ! if (abs(Volume_Change) > WMaxTotU) then
       !   WCountTotU = 0
       !   WMaxTotU   = abs(Volume_Change)
       ! else if (WCountTotU < Wlimit) then
@@ -830,7 +830,7 @@ contains
     end do
 
     ! compute interface normal vectors for all the materials.
-    int_norm = interface_normal (this%vof, this%mesh, this%gmesh, this%advect_method==ONION_SKIN) 
+    int_norm = interface_normal (this%vof, this%mesh, this%gmesh, this%advect_method==ONION_SKIN)
 
     do i = 1,this%mesh%ncell
       select case (this%advect_method)
@@ -849,12 +849,12 @@ contains
       case (NESTED_DISSECTION)
         ! send cell data to the multimat_cell type
         call ndcell%init (ierr, this%mesh%x(:,this%mesh%cnode(:,i)), hex_f, hex_e, &
-            this%mesh%volume(i), this%gmesh%outnorm(:,:,i))
+            this%gmesh%outnorm(:,:,i), this%mesh%volume(i))
         if (ierr /= 0) call LS_fatal ('plane reconstruction dump failed')
-        
+
         ! partition the cell based on vofs and norms
         call ndcell%partition (this%vof(:,i), int_norm(:,:,i))
-        
+
         ! dump the interface reconstruction, if requested
         do ni = 1,size(this%intrec)
           call this%intrec(ni)%append (ndcell%interface_polygon (ni), i)
@@ -869,7 +869,7 @@ contains
   subroutine print_vofs (this)
 
     class(vof_solver), intent(in) :: this
-    
+
     integer :: n
 
     do n = 1,size(this%vof, dim=1)

@@ -57,14 +57,14 @@ contains
     call matl_geom%init (matl_index)
 
     ! set up cell
-    hex%node(:,1) = xc + 0.5_r8 * dx * [-1.0_r8, -1.0_r8, -1.0_r8]
-    hex%node(:,2) = xc + 0.5_r8 * dx * [ 1.0_r8, -1.0_r8, -1.0_r8]
-    hex%node(:,3) = xc + 0.5_r8 * dx * [ 1.0_r8,  1.0_r8, -1.0_r8]
-    hex%node(:,4) = xc + 0.5_r8 * dx * [-1.0_r8,  1.0_r8, -1.0_r8]
-    hex%node(:,5) = xc + 0.5_r8 * dx * [-1.0_r8, -1.0_r8,  1.0_r8]
-    hex%node(:,6) = xc + 0.5_r8 * dx * [ 1.0_r8, -1.0_r8,  1.0_r8]
-    hex%node(:,7) = xc + 0.5_r8 * dx * [ 1.0_r8,  1.0_r8,  1.0_r8]
-    hex%node(:,8) = xc + 0.5_r8 * dx * [-1.0_r8,  1.0_r8,  1.0_r8]
+    hex%x(:,1) = xc + 0.5_r8 * dx * [-1.0_r8, -1.0_r8, -1.0_r8]
+    hex%x(:,2) = xc + 0.5_r8 * dx * [ 1.0_r8, -1.0_r8, -1.0_r8]
+    hex%x(:,3) = xc + 0.5_r8 * dx * [ 1.0_r8,  1.0_r8, -1.0_r8]
+    hex%x(:,4) = xc + 0.5_r8 * dx * [-1.0_r8,  1.0_r8, -1.0_r8]
+    hex%x(:,5) = xc + 0.5_r8 * dx * [-1.0_r8, -1.0_r8,  1.0_r8]
+    hex%x(:,6) = xc + 0.5_r8 * dx * [ 1.0_r8, -1.0_r8,  1.0_r8]
+    hex%x(:,7) = xc + 0.5_r8 * dx * [ 1.0_r8,  1.0_r8,  1.0_r8]
+    hex%x(:,8) = xc + 0.5_r8 * dx * [-1.0_r8,  1.0_r8,  1.0_r8]
 
     ! calculate the vof
     vof = hex%vof (matl_geom, 2, 0)

@@ -126,7 +126,7 @@ contains
     if (file_exists(filename)) then
       call read_vof_field(filename, vof)
     else
-      call vof_initialize (mesh, plist, vof, [1,2], 2)
+      call vof_initialize (mesh, gmesh, plist, vof, [1,2], 2)
       call store_vof_field(filename, vof)
     end if
     deallocate(plist)

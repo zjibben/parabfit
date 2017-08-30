@@ -9,54 +9,61 @@
 !!
 
 module vof_init
+
   use kinds, only: r8
   use material_geometry_type
   use logging_services
-  use hex_types
+  use hex_types, only: hex_f, hex_e
+  use polyhedron_type
   implicit none
   private
 
   ! hex type for the divide and conquer algorithm
   ! public to expose for testing
-  type, extends(base_hex), public :: dnc_hex
+  type, extends(polyhedron), public :: dnc_hex
     private
-    integer :: matl_at_node(8)
+    real(r8) :: cellc(3), facec(3,6), edgec(3,12), weight
+    integer :: mcellc, mfacec(6), medgec(12), matl_at_node(8)
   contains
-    procedure          :: divide
-    procedure          :: cell_center
-    procedure          :: face_centers
-    procedure          :: edge_centers
-    procedure          :: contains_interface
-    procedure          :: vof
+    procedure :: subcell
+    procedure :: set_division_variables
+    procedure :: cell_center
+    procedure :: face_centers
+    procedure :: edge_centers
+    procedure :: contains_interface
+    procedure :: vof
     procedure, private :: vof_from_nodes
   end type dnc_hex
 
   public :: vof_initialize
 
   ! TODO: make these user-specified parameters
-  integer , parameter :: cell_vof_recursion_limit = 12
+  integer , parameter :: cell_vof_recursion_limit = 8
 
 contains
 
   ! this subroutine initializes the vof values in all cells
   ! from a user input function. It calls a divide and conquer algorithm
   ! to calculate the volume fractions given an interface
-  subroutine vof_initialize (mesh, plist, vof, matl_ids, nmat) !cell_matls)
+  subroutine vof_initialize (mesh, gmesh, plist, vof, matl_ids, nmat) !cell_matls)
 
     use unstr_mesh_type
+    use mesh_geom_type
     use parameter_list_type
     use timer_tree_type
 
     type(unstr_mesh),     intent(in)    :: mesh
+    type(mesh_geom), intent(in) :: gmesh
     type(parameter_list), intent(in)    :: plist
     integer,              intent(in)    :: nmat
     integer,              intent(in)    :: matl_ids(:)
     real(r8),             intent(inout) :: vof(:,:)
 
-    integer                 :: i,v
+    integer                 :: i,v, ierr
     type(dnc_hex)           :: hex
     type(material_geometry) :: matl_init_geometry
 
+    print '(a)', "initializing vof ... "
     call start_timer("vof init")
 
     ! first, determine the initial state provided by the user, and assign
@@ -68,12 +75,13 @@ contains
     ! if not, divide the hex cell into 8 subdomains defined by the centroid and centers of faces
     ! repeat the process recursively for each subdomain up to a given threshold
 
-    !$omp parallel do default(private) shared(vof,mesh,matl_init_geometry,nmat)
+    !$omp parallel do default(private) shared(vof,mesh,gmesh,matl_init_geometry,nmat)
     do i = 1,mesh%ncell
       ! initialize dnc_hex
-      hex%node = mesh%x(:,mesh%cnode(:,i))
+      call hex%init (ierr, mesh%x(:,mesh%cnode(:,i)), hex_f, hex_e, gmesh%outnorm(:,:,i), &
+          mesh%volume(i))
       do v = 1,8
-        hex%matl_at_node(v) = matl_init_geometry%index_at(hex%node(:,v))
+        hex%matl_at_node(v) = matl_init_geometry%index_at(hex%x(:,v))
       end do
 
       ! calculate the vof
@@ -82,39 +90,31 @@ contains
     !$omp end parallel do
 
     call stop_timer("vof init")
+    print '(a)', "done"
 
   end subroutine vof_initialize
 
   ! calculates the volume fractions of materials in a cell
   recursive function vof (this, matl_geometry, nmat, depth) result(hex_vof)
 
-    class(dnc_hex),     intent(in) :: this
+    class(dnc_hex),     intent(inout) :: this
     class(base_region), intent(in) :: matl_geometry
     integer,            intent(in) :: nmat,depth
     real(r8)                       :: hex_vof(nmat)
 
     integer       :: i
-    type(dnc_hex) :: subhex(8)
-    real(r8)      :: this_volume
-
-    !this_volume = this%calc_volume()
+    type(dnc_hex) :: subcell
 
     ! if the cell contains an interface (and therefore has at least two materials
     ! and we haven't yet hit our recursion limit, divide the hex and repeat
     if (this%contains_interface(matl_geometry) .and. depth < cell_vof_recursion_limit) then
-      ! divide into 8 smaller hexes
-      subhex = this%divide(matl_geometry)
-
-      ! tally the vof from subhexes
-      ! WARN: For nonorthogonal meshes, the subhex volumes are not all equal,
-      !       so we must calculate the ratio of volumes.
+      ! tally the vof from sub-cells
+      call this%set_division_variables(matl_geometry)
       hex_vof = 0
       do i = 1,8
-        hex_vof = hex_vof + subhex(i)%vof(matl_geometry,nmat,depth+1) !* &
-            !subhex(i)%calc_volume() / this_volume
+        subcell = this%subcell(matl_geometry, i)
+        hex_vof = hex_vof + subcell%vof(matl_geometry,nmat,depth+1) * subcell%weight
       end do
-      hex_vof = hex_vof / 8
-
     else
       ! if we are past the recursion limit
       ! or the cell does not contain an interface, calculate
@@ -156,22 +156,19 @@ contains
   pure function cell_center (hex)
     class(dnc_hex), intent(in) :: hex
     real(r8) :: cell_center(3)
-    cell_center = sum(hex%node, dim=2) / 8
+    cell_center = sum(hex%x, dim=2) / 8
   end function cell_center
 
   ! returns an array of face centers
   pure function face_centers(this)
 
-    use consts,    only: nfc
-    use hex_types, only: hex_f
-
     class(dnc_hex), intent(in) :: this
-    real(r8) :: face_centers(3,6)
+    real(r8) :: face_centers(3,this%nFaces)
 
     integer :: f
 
-    do f = 1,nfc
-      face_centers(:,f) = sum(this%node(:,hex_f(:,f)), dim=2) / 4
+    do f = 1,this%nFaces
+      face_centers(:,f) = sum(this%x(:,this%face_vid(:,f)), dim=2) / 4
     end do
 
   end function face_centers
@@ -179,195 +176,216 @@ contains
   ! returns an array of edge centers
   pure function edge_centers(this)
 
-    use hex_types, only: hex_e
-
     class(dnc_hex), intent(in) :: this
-    real(r8) :: edge_centers(3,12)
+    real(r8) :: edge_centers(3,this%nEdges)
 
     integer :: e
 
-    do e = 1,12
-      !edge_centers(:,e) = sum(this%node(:,hex_e(:,e)), dim=2) / 2
-      edge_centers(:,e) = (this%node(:,hex_e(1,e)) + this%node(:,hex_e(2,e))) / 2
+    do e = 1,this%nEdges
+      edge_centers(:,e) = sum(this%x(:,this%edge_vid(:,e)), dim=2) / 2
     end do
 
   end function edge_centers
 
-  ! this function takes a hex and returns an array of 8 hexes obtained from dividing the input
-  function divide(this, matl_geometry) result(subhex)
+  subroutine set_division_variables (this, matl_geometry)
 
-    class(dnc_hex), intent(in) :: this
+    class(dnc_hex), intent(inout) :: this
     class(base_region), intent(in) :: matl_geometry
-    type(dnc_hex) :: subhex(8)
 
-    real(r8) :: cellc(3), facec(3,6), edgec(3,12)
-    integer :: i,j, mcellc, mfacec(6), medgec(12)
-
-    ! do i = 1,8
-    !   do j = 1,8
-    !     subhex(i)%node(:,j) = 0.5_r8 * (this%node(:,i) + this%node(:,j))
-    !   end do
-    ! end do
+    integer :: j
 
     ! find center points
-    cellc = this%cell_center()
-    facec = this%face_centers()
-    edgec = this%edge_centers()
+    this%cellc = this%cell_center()
+    this%facec = this%face_centers()
+    this%edgec = this%edge_centers()
 
     ! get material ids at all points above
-    mcellc = matl_geometry%index_at(cellc)
-    do i = 1,6
-      mfacec(i) = matl_geometry%index_at(facec(:,i))
+    this%mcellc = matl_geometry%index_at(this%cellc)
+    do j = 1,6
+      this%mfacec(j) = matl_geometry%index_at(this%facec(:,j))
     end do
-    do i = 1,12
-      medgec(i) = matl_geometry%index_at(edgec(:,i))
+    do j = 1,12
+      this%medgec(j) = matl_geometry%index_at(this%edgec(:,j))
     end do
+
+  end subroutine set_division_variables
+
+  type(dnc_hex) function subcell (this, matl_geometry, i)
+
+    class(dnc_hex), intent(inout) :: this
+    class(base_region), intent(in) :: matl_geometry
+    integer, intent(in) :: i
+
+    real(r8) :: xtmp(3,8)
+    integer :: matl_at_node(8), ierr
 
     ! set subhex node positions
-    subhex(1)%node(:,1) = this%node(:,1)
-    subhex(1)%node(:,2) = edgec(:,1)
-    subhex(1)%node(:,3) = facec(:,5)
-    subhex(1)%node(:,4) = edgec(:,4)
-    subhex(1)%node(:,5) = edgec(:,5)
-    subhex(1)%node(:,6) = facec(:,2)
-    subhex(1)%node(:,7) = cellc(:)
-    subhex(1)%node(:,8) = facec(:,3)
+    select case(i)
+    case(1)
+      xtmp(:,1) = this%x(:,1)
+      xtmp(:,2) = this%edgec(:,1)
+      xtmp(:,3) = this%facec(:,5)
+      xtmp(:,4) = this%edgec(:,4)
+      xtmp(:,5) = this%edgec(:,5)
+      xtmp(:,6) = this%facec(:,2)
+      xtmp(:,7) = this%cellc(:)
+      xtmp(:,8) = this%facec(:,3)
 
-    subhex(1)%matl_at_node(1) = this%matl_at_node(1)
-    subhex(1)%matl_at_node(2) = medgec(1)
-    subhex(1)%matl_at_node(3) = mfacec(5)
-    subhex(1)%matl_at_node(4) = medgec(4)
-    subhex(1)%matl_at_node(5) = medgec(5)
-    subhex(1)%matl_at_node(6) = mfacec(2)
-    subhex(1)%matl_at_node(7) = mcellc
-    subhex(1)%matl_at_node(8) = mfacec(3)
+      matl_at_node(1) = this%matl_at_node(1)
+      matl_at_node(2) = this%medgec(1)
+      matl_at_node(3) = this%mfacec(5)
+      matl_at_node(4) = this%medgec(4)
+      matl_at_node(5) = this%medgec(5)
+      matl_at_node(6) = this%mfacec(2)
+      matl_at_node(7) = this%mcellc
+      matl_at_node(8) = this%mfacec(3)
 
-    subhex(2)%node(:,1) = edgec(:,1)
-    subhex(2)%node(:,2) = this%node(:,2)
-    subhex(2)%node(:,3) = edgec(:,2)
-    subhex(2)%node(:,4) = facec(:,5)
-    subhex(2)%node(:,5) = facec(:,2)
-    subhex(2)%node(:,6) = edgec(:,6)
-    subhex(2)%node(:,7) = facec(:,4)
-    subhex(2)%node(:,8) = cellc(:)
+    case(2)
+      xtmp(:,1) = this%edgec(:,1)
+      xtmp(:,2) = this%x(:,2)
+      xtmp(:,3) = this%edgec(:,2)
+      xtmp(:,4) = this%facec(:,5)
+      xtmp(:,5) = this%facec(:,2)
+      xtmp(:,6) = this%edgec(:,6)
+      xtmp(:,7) = this%facec(:,4)
+      xtmp(:,8) = this%cellc(:)
 
-    subhex(2)%matl_at_node(1) = medgec(1)
-    subhex(2)%matl_at_node(2) = this%matl_at_node(2)
-    subhex(2)%matl_at_node(3) = medgec(2)
-    subhex(2)%matl_at_node(4) = mfacec(5)
-    subhex(2)%matl_at_node(5) = mfacec(2)
-    subhex(2)%matl_at_node(6) = medgec(6)
-    subhex(2)%matl_at_node(7) = mfacec(4)
-    subhex(2)%matl_at_node(8) = mcellc
+      matl_at_node(1) = this%medgec(1)
+      matl_at_node(2) = this%matl_at_node(2)
+      matl_at_node(3) = this%medgec(2)
+      matl_at_node(4) = this%mfacec(5)
+      matl_at_node(5) = this%mfacec(2)
+      matl_at_node(6) = this%medgec(6)
+      matl_at_node(7) = this%mfacec(4)
+      matl_at_node(8) = this%mcellc
 
-    subhex(3)%node(:,1) = facec(:,5)
-    subhex(3)%node(:,2) = edgec(:,2)
-    subhex(3)%node(:,3) = this%node(:,3)
-    subhex(3)%node(:,4) = edgec(:,3)
-    subhex(3)%node(:,5) = cellc(:)
-    subhex(3)%node(:,6) = facec(:,4)
-    subhex(3)%node(:,7) = edgec(:,7)
-    subhex(3)%node(:,8) = facec(:,1)
+    case(3)
+      xtmp(:,1) = this%facec(:,5)
+      xtmp(:,2) = this%edgec(:,2)
+      xtmp(:,3) = this%x(:,3)
+      xtmp(:,4) = this%edgec(:,3)
+      xtmp(:,5) = this%cellc(:)
+      xtmp(:,6) = this%facec(:,4)
+      xtmp(:,7) = this%edgec(:,7)
+      xtmp(:,8) = this%facec(:,1)
 
-    subhex(3)%matl_at_node(1) = mfacec(5)
-    subhex(3)%matl_at_node(2) = medgec(2)
-    subhex(3)%matl_at_node(3) = this%matl_at_node(3)
-    subhex(3)%matl_at_node(4) = medgec(3)
-    subhex(3)%matl_at_node(5) = mcellc
-    subhex(3)%matl_at_node(6) = mfacec(4)
-    subhex(3)%matl_at_node(7) = medgec(7)
-    subhex(3)%matl_at_node(8) = mfacec(1)
+      matl_at_node(1) = this%mfacec(5)
+      matl_at_node(2) = this%medgec(2)
+      matl_at_node(3) = this%matl_at_node(3)
+      matl_at_node(4) = this%medgec(3)
+      matl_at_node(5) = this%mcellc
+      matl_at_node(6) = this%mfacec(4)
+      matl_at_node(7) = this%medgec(7)
+      matl_at_node(8) = this%mfacec(1)
 
-    subhex(4)%node(:,1) = edgec(:,4)
-    subhex(4)%node(:,2) = facec(:,5)
-    subhex(4)%node(:,3) = edgec(:,3)
-    subhex(4)%node(:,4) = this%node(:,4)
-    subhex(4)%node(:,5) = facec(:,3)
-    subhex(4)%node(:,6) = cellc(:)
-    subhex(4)%node(:,7) = facec(:,1)
-    subhex(4)%node(:,8) = edgec(:,8)
+    case(4)
+      xtmp(:,1) = this%edgec(:,4)
+      xtmp(:,2) = this%facec(:,5)
+      xtmp(:,3) = this%edgec(:,3)
+      xtmp(:,4) = this%x(:,4)
+      xtmp(:,5) = this%facec(:,3)
+      xtmp(:,6) = this%cellc(:)
+      xtmp(:,7) = this%facec(:,1)
+      xtmp(:,8) = this%edgec(:,8)
 
-    subhex(4)%matl_at_node(1) = medgec(4)
-    subhex(4)%matl_at_node(2) = mfacec(5)
-    subhex(4)%matl_at_node(3) = medgec(3)
-    subhex(4)%matl_at_node(4) = this%matl_at_node(4)
-    subhex(4)%matl_at_node(5) = mfacec(3)
-    subhex(4)%matl_at_node(6) = mcellc
-    subhex(4)%matl_at_node(7) = mfacec(1)
-    subhex(4)%matl_at_node(8) = medgec(8)
+      matl_at_node(1) = this%medgec(4)
+      matl_at_node(2) = this%mfacec(5)
+      matl_at_node(3) = this%medgec(3)
+      matl_at_node(4) = this%matl_at_node(4)
+      matl_at_node(5) = this%mfacec(3)
+      matl_at_node(6) = this%mcellc
+      matl_at_node(7) = this%mfacec(1)
+      matl_at_node(8) = this%medgec(8)
 
-    subhex(5)%node(:,1) = edgec(:,5)
-    subhex(5)%node(:,2) = facec(:,2)
-    subhex(5)%node(:,3) = cellc(:)
-    subhex(5)%node(:,4) = facec(:,3)
-    subhex(5)%node(:,5) = this%node(:,5)
-    subhex(5)%node(:,6) = edgec(:,9)
-    subhex(5)%node(:,7) = facec(:,6)
-    subhex(5)%node(:,8) = edgec(:,12)
+    case(5)
+      xtmp(:,1) = this%edgec(:,5)
+      xtmp(:,2) = this%facec(:,2)
+      xtmp(:,3) = this%cellc(:)
+      xtmp(:,4) = this%facec(:,3)
+      xtmp(:,5) = this%x(:,5)
+      xtmp(:,6) = this%edgec(:,9)
+      xtmp(:,7) = this%facec(:,6)
+      xtmp(:,8) = this%edgec(:,12)
 
-    subhex(5)%matl_at_node(1) = medgec(5)
-    subhex(5)%matl_at_node(2) = mfacec(2)
-    subhex(5)%matl_at_node(3) = mcellc
-    subhex(5)%matl_at_node(4) = mfacec(3)
-    subhex(5)%matl_at_node(5) = this%matl_at_node(5)
-    subhex(5)%matl_at_node(6) = medgec(9)
-    subhex(5)%matl_at_node(7) = mfacec(6)
-    subhex(5)%matl_at_node(8) = medgec(12)
+      matl_at_node(1) = this%medgec(5)
+      matl_at_node(2) = this%mfacec(2)
+      matl_at_node(3) = this%mcellc
+      matl_at_node(4) = this%mfacec(3)
+      matl_at_node(5) = this%matl_at_node(5)
+      matl_at_node(6) = this%medgec(9)
+      matl_at_node(7) = this%mfacec(6)
+      matl_at_node(8) = this%medgec(12)
 
-    subhex(6)%node(:,1) = facec(:,2)
-    subhex(6)%node(:,2) = edgec(:,6)
-    subhex(6)%node(:,3) = facec(:,4)
-    subhex(6)%node(:,4) = cellc(:)
-    subhex(6)%node(:,5) = edgec(:,9)
-    subhex(6)%node(:,6) = this%node(:,6)
-    subhex(6)%node(:,7) = edgec(:,10)
-    subhex(6)%node(:,8) = facec(:,6)
+    case(6)
+      xtmp(:,1) = this%facec(:,2)
+      xtmp(:,2) = this%edgec(:,6)
+      xtmp(:,3) = this%facec(:,4)
+      xtmp(:,4) = this%cellc(:)
+      xtmp(:,5) = this%edgec(:,9)
+      xtmp(:,6) = this%x(:,6)
+      xtmp(:,7) = this%edgec(:,10)
+      xtmp(:,8) = this%facec(:,6)
 
-    subhex(6)%matl_at_node(1) = mfacec(2)
-    subhex(6)%matl_at_node(2) = medgec(6)
-    subhex(6)%matl_at_node(3) = mfacec(4)
-    subhex(6)%matl_at_node(4) = mcellc
-    subhex(6)%matl_at_node(5) = medgec(9)
-    subhex(6)%matl_at_node(6) = this%matl_at_node(6)
-    subhex(6)%matl_at_node(7) = medgec(10)
-    subhex(6)%matl_at_node(8) = mfacec(6)
+      matl_at_node(1) = this%mfacec(2)
+      matl_at_node(2) = this%medgec(6)
+      matl_at_node(3) = this%mfacec(4)
+      matl_at_node(4) = this%mcellc
+      matl_at_node(5) = this%medgec(9)
+      matl_at_node(6) = this%matl_at_node(6)
+      matl_at_node(7) = this%medgec(10)
+      matl_at_node(8) = this%mfacec(6)
 
-    subhex(7)%node(:,1) = cellc(:)
-    subhex(7)%node(:,2) = facec(:,4)
-    subhex(7)%node(:,3) = edgec(:,7)
-    subhex(7)%node(:,4) = facec(:,1)
-    subhex(7)%node(:,5) = facec(:,6)
-    subhex(7)%node(:,6) = edgec(:,10)
-    subhex(7)%node(:,7) = this%node(:,7)
-    subhex(7)%node(:,8) = edgec(:,11)
+    case(7)
+      xtmp(:,1) = this%cellc(:)
+      xtmp(:,2) = this%facec(:,4)
+      xtmp(:,3) = this%edgec(:,7)
+      xtmp(:,4) = this%facec(:,1)
+      xtmp(:,5) = this%facec(:,6)
+      xtmp(:,6) = this%edgec(:,10)
+      xtmp(:,7) = this%x(:,7)
+      xtmp(:,8) = this%edgec(:,11)
 
-    subhex(7)%matl_at_node(1) = mcellc
-    subhex(7)%matl_at_node(2) = mfacec(4)
-    subhex(7)%matl_at_node(3) = medgec(7)
-    subhex(7)%matl_at_node(4) = mfacec(1)
-    subhex(7)%matl_at_node(5) = mfacec(6)
-    subhex(7)%matl_at_node(6) = medgec(10)
-    subhex(7)%matl_at_node(7) = this%matl_at_node(7)
-    subhex(7)%matl_at_node(8) = medgec(11)
+      matl_at_node(1) = this%mcellc
+      matl_at_node(2) = this%mfacec(4)
+      matl_at_node(3) = this%medgec(7)
+      matl_at_node(4) = this%mfacec(1)
+      matl_at_node(5) = this%mfacec(6)
+      matl_at_node(6) = this%medgec(10)
+      matl_at_node(7) = this%matl_at_node(7)
+      matl_at_node(8) = this%medgec(11)
 
-    subhex(8)%node(:,1) = facec(:,3)
-    subhex(8)%node(:,2) = cellc(:)
-    subhex(8)%node(:,3) = facec(:,1)
-    subhex(8)%node(:,4) = edgec(:,8)
-    subhex(8)%node(:,5) = edgec(:,12)
-    subhex(8)%node(:,6) = facec(:,6)
-    subhex(8)%node(:,7) = edgec(:,11)
-    subhex(8)%node(:,8) = this%node(:,8)
+    case(8)
+      xtmp(:,1) = this%facec(:,3)
+      xtmp(:,2) = this%cellc(:)
+      xtmp(:,3) = this%facec(:,1)
+      xtmp(:,4) = this%edgec(:,8)
+      xtmp(:,5) = this%edgec(:,12)
+      xtmp(:,6) = this%facec(:,6)
+      xtmp(:,7) = this%edgec(:,11)
+      xtmp(:,8) = this%x(:,8)
 
-    subhex(8)%matl_at_node(1) = mfacec(3)
-    subhex(8)%matl_at_node(2) = mcellc
-    subhex(8)%matl_at_node(3) = mfacec(1)
-    subhex(8)%matl_at_node(4) = medgec(8)
-    subhex(8)%matl_at_node(5) = medgec(12)
-    subhex(8)%matl_at_node(6) = mfacec(6)
-    subhex(8)%matl_at_node(7) = medgec(11)
-    subhex(8)%matl_at_node(8) = this%matl_at_node(8)
+      matl_at_node(1) = this%mfacec(3)
+      matl_at_node(2) = this%mcellc
+      matl_at_node(3) = this%mfacec(1)
+      matl_at_node(4) = this%medgec(8)
+      matl_at_node(5) = this%medgec(12)
+      matl_at_node(6) = this%mfacec(6)
+      matl_at_node(7) = this%medgec(11)
+      matl_at_node(8) = this%matl_at_node(8)
+    end select
 
-  end function divide
+    call subcell%init (ierr, xtmp, hex_f, hex_e)
+    subcell%matl_at_node = matl_at_node
 
-end module vof_init
+    ! for nonorthogonal meshes, sub-cell volumes are
+    ! not equal, so the weight is the ratio of volumes
+    subcell%weight = subcell%volume() / this%volume()
+    !subcell%weight = 1.0_r8 / 8.0_r8
+
+    if (subcell%weight==0) then
+      call LS_fatal("zero weight")
+    end if
+
+  end function subcell
+
+  end module vof_init
