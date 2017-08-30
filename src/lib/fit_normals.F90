@@ -56,8 +56,8 @@ contains
 
     ! get the interface reconstructions
     do i = 1,mesh%ncell
-      call cell%init (ierr, mesh%x(:,mesh%cnode(:,i)), hex_f, hex_e, mesh%volume(i), &
-          gmesh%outnorm(:,:,i))
+      call cell%init (ierr, mesh%x(:,mesh%cnode(:,i)), hex_f, hex_e, gmesh%outnorm(:,:,i), &
+          mesh%volume(i))
       if (ierr /= 0) call LS_fatal ('cell_outward_volflux failed: could not initialize cell')
 
       call cell%partition (vof(:,i), int_norm(:,:,i))

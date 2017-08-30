@@ -134,8 +134,8 @@ contains
       ! TODO: this really should be in any cell neighboring a cell containing the interface
       if (vof(1,i) < 1e-2_r8 .or. vof(1,i) > 1-1e-2_r8) cycle
 
-      call cell%init (ierr, mesh%x(:,mesh%cnode(:,i)), hex_f, hex_e, mesh%volume(i), &
-          gmesh%outnorm(:,:,i))
+      call cell%init (ierr, mesh%x(:,mesh%cnode(:,i)), hex_f, hex_e, gmesh%outnorm(:,:,i), &
+          mesh%volume(i))
       if (ierr /= 0) call LS_fatal ('young_mesh_test: could not initialize cell')
       call cell%partition (vof(:,i), int_norm(:,:,i))
       interface_polygon = cell%interface_polygon(1)
@@ -192,8 +192,8 @@ contains
       ! TODO: this really should be in any cell neighboring a cell containing the interface
       if (vof(1,i) < 1e-2_r8 .or. vof(1,i) > 1-1e-2_r8) cycle
 
-      call cell%init (ierr, mesh%x(:,mesh%cnode(:,i)), hex_f, hex_e, mesh%volume(i), &
-          gmesh%outnorm(:,:,i))
+      call cell%init (ierr, mesh%x(:,mesh%cnode(:,i)), hex_f, hex_e, gmesh%outnorm(:,:,i), &
+          mesh%volume(i))
       if (ierr /= 0) call LS_fatal ('young_mesh_test: could not initialize cell')
       call cell%partition (vof(:,i), int_norm_hf2(:,:,i))
       interface_polygon = cell%interface_polygon(1)

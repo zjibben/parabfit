@@ -41,7 +41,7 @@ contains
 
     real(r8) :: int_norm(3,size(vof,dim=1),mesh%ncell),k,lnorm(3),kex
     integer  :: i,m,j
-    
+
     if (dump_intrec) then
       do m = 1,size(intrec)
         call intrec(m)%purge ()
@@ -78,31 +78,31 @@ contains
     !     ' linf:', lnorm(3), &
     !     ' ex:',kex
     !stop
-    
+
     call stop_timer ("reconstruct/advect")
-    
+
   end subroutine volume_track_nd
 
   function cell_outward_volflux (x, vol, farea, outnorm, vof, int_norm, dump_intrec, intrec, adv_dt,&
        fluxing_velocity, fluidRho, cell_id)
-    
+
     use consts,    only: nfc
     use hex_types, only: hex_f,hex_e
     use multimat_cell_type
     use surface_type
-    
+
     real(r8),      intent(in)    :: x(:,:), vol, farea(:), outnorm(:,:), vof(:), int_norm(:,:), &
         adv_dt, fluxing_velocity(:), fluidRho
     type(surface), intent(inout) :: intrec(:)
     logical,       intent(in)    :: dump_intrec
     integer,       intent(in)    :: cell_id
     real(r8)                     :: cell_outward_volflux(size(vof),nfc)
-    
+
     type(multimat_cell) :: cell
     integer :: m, ierr
-    
+
     ! send cell data to the multimat_cell type
-    call cell%init (ierr, x, hex_f, hex_e, vol, outnorm)
+    call cell%init (ierr, x, hex_f, hex_e, outnorm, vol)
     if (ierr /= 0) call LS_fatal ('cell_outward_volflux failed: could not initialize cell')
 
     ! partition the cell based on vofs and norms
@@ -133,5 +133,5 @@ contains
     end if
 
   end function cell_outward_volflux
-  
+
 end module volume_track_nd_module

@@ -140,35 +140,19 @@ contains
 
   end function is_valid
 
-  subroutine update_face_normals (this, force)
+  subroutine update_face_normals (this)
 
     use array_utils,   only: normalize, isZero
     use cell_geometry, only: cross_product
 
     class(polyhedron), intent(inout) :: this
-    logical, intent(in), optional :: force
 
-    integer :: f,v,nV
-    logical :: forceh
-
-    forceh = merge(force, .false., present(force))
-    if (forceh) this%face_normal = 0.0_r8 ! force the normals to be recalculated
+    integer :: f,nV
 
     do f = 1,this%nFaces
-      if (all(isZero(this%face_normal(:,f)))) then
-        nV = count(this%face_vid(:,f)/=0)
-        v = 3
-        do while (all(isZero (this%face_normal(:,f))) .and. v<=nV)
-          this%face_normal(:,f) = normalize(cross_product (&
-              this%x(:,this%face_vid(2,f)) - this%x(:,this%face_vid(1,f)), &
-              this%x(:,this%face_vid(v,f)) - this%x(:,this%face_vid(1,f))))
-          v = v + 1
-        end do
-        if (v>nV .and. all(isZero(this%face_normal(:,f)))) then
-          call this%print_data ()
-          call LS_fatal ("could not calculate polyhedron face normal")
-        end if
-      end if
+      this%face_normal(:,f) = normalize(cross_product (&
+          this%x(:,this%face_vid(2,f)) - this%x(:,this%face_vid(1,f)), &
+          this%x(:,this%face_vid(3,f)) - this%x(:,this%face_vid(1,f))))
     end do
 
   end subroutine update_face_normals
@@ -724,7 +708,7 @@ contains
     ! note: an updated planar face can only include 1 more node than the original,
     !       but I'm not sure if there is a limit to how many nodes the entirely new face can have.
     !       For cubes the number is 2.
-    real(r8)      :: x(3,this%nVerts+intpoly%nVerts)
+    real(r8)      :: x(3,this%nVerts+intpoly%nVerts), face_normal(3, this%nFaces+1)
 
     call polyhedron_on_side_of_plane%init ()
 
@@ -747,8 +731,8 @@ contains
 
         ! construct a set of faces from the edge information
         ! note these will not be in a particular order, like pececillo would expect for hexes
-        call find_faces (face_vid,nFaces,ierr, &
-            this,side,valid_side,p2c_vid,nParVerts,nVerts,intpoly%nVerts,v_assoc_pe)
+        call find_faces (face_vid,face_normal,nFaces,ierr, &
+            this,side,valid_side,p2c_vid,nParVerts,nVerts,intpoly%nVerts,v_assoc_pe, P%normal)
         if (ierr /= 0) call fatal()
 
         ! initialize final polyhedron
@@ -760,7 +744,7 @@ contains
           call LS_fatal ("not enough vertices for a polygon!")
         end if
         call polyhedron_on_side_of_plane%init (ierr, x(:,1:nVerts), face_vid(1:tmp,1:nFaces), &
-            edge_vid(:,1:nEdges))
+            edge_vid(:,1:nEdges), face_normal(:,1:nFaces))
 
         !write(*,*) 'poly', nVerts, tmp, nFaces, nEdges
         if (ierr /= 0) call fatal()
@@ -905,15 +889,17 @@ contains
     !         This particularly happens when there are multiple vertices on this face which
     !         also lie on the plane. In that case, we loop through those points, adding them
     !         until we find an edge between one and the next vertex.
-    subroutine find_faces (face_vid,nFaces,ierr, this,side,valid_side,p2c_vid,nParVerts,nVerts,&
-        nPolyVerts,v_assoc_pe)
+    subroutine find_faces (face_vid,face_normal,nFaces,ierr, &
+        this,side,valid_side,p2c_vid,nParVerts,nVerts,nPolyVerts,v_assoc_pe, plane_normal)
 
       use array_utils, only: containsPair,xrange
 
       integer,          intent(out) :: face_vid(:,:),nFaces,ierr
+      real(r8), intent(out) :: face_normal(:,:)
       type(polyhedron), intent(in)  :: this
       integer,          intent(in)  :: side(:), valid_side, p2c_vid(:), nParVerts, nVerts, &
           nPolyVerts, v_assoc_pe(:)
+      real(r8), intent(in) :: plane_normal(:)
 
       integer :: v,nV,f, e, edge_cont_verts(this%nVerts,this%nVerts)
 
@@ -934,6 +920,7 @@ contains
         nV = count(this%face_vid(:,f) /= 0) ! number of vertices on this face
         if (any(side(this%face_vid(1:nV,f))==valid_side)) then
           nFaces = nFaces + 1
+          face_normal(:,nFaces) = this%face_normal(:,f)
           if (all(side(this%face_vid(1:nV,f))/=-valid_side)) then
             ! if all vertices are on the valid side of the face, this face is preserved exactly
             face_vid(1:nV,nFaces) = p2c_vid(this%face_vid(1:nV,f))
@@ -951,9 +938,10 @@ contains
             ! check that the face is valid by making sure each pair of points corresponds to an edge
             nV = count(face_vid(:,nFaces)/=0)
             do v = 1,nV
-              if (.not.containsPair(face_vid([v,mod(v,nV)+1],nFaces),edge_vid(:,1:nEdges))) then
+              if (.not.containsPair(face_vid([v,modulo(v,nV)+1],nFaces),edge_vid(:,1:nEdges))) then
                 write(*,*) "find_faces: face contains edge that doesn't exist"
-                write(*,*) 'vertices: ',face_vid([v,mod(v,nV)+1],nFaces)
+                write(*,*) "This often happens when the parent polyhedron has a non-planar face."
+                write(*,*) 'vertices: ',face_vid([v,modulo(v,nV)+1],nFaces)
                 ierr = 1
                 exit
               end if
@@ -997,6 +985,8 @@ contains
       else
         face_vid(1:nVerts-nParVerts,nFaces) = xrange (nParVerts+1,nVerts)
       end if
+
+      face_normal(:,nFaces) = plane_normal
 
     end subroutine find_faces
 

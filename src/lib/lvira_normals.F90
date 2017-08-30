@@ -244,8 +244,8 @@ contains
     allocate(this%cell(this%ncell), this%vof(this%ncell), this%cell_vol(this%ncell))
 
     ! initialize target cell
-    call this%cell(1)%init (ierr, mesh%x(:,mesh%cnode(:,i)), hex_f, hex_e, mesh%volume(i), &
-        gmesh%outnorm(:,:,i))
+    call this%cell(1)%init (ierr, mesh%x(:,mesh%cnode(:,i)), hex_f, hex_e, gmesh%outnorm(:,:,i), &
+        mesh%volume(i))
     this%vof(1) = vof(i)
     this%cell_vol(1) = mesh%volume(i)
 
@@ -253,8 +253,8 @@ contains
     do c = 2,this%ncell
       cid = gmesh%caneighbor(i)%elements(c-1)
 
-      call this%cell(c)%init (ierr, mesh%x(:,mesh%cnode(:,cid)), hex_f, hex_e, mesh%volume(cid), &
-          gmesh%outnorm(:,:,cid))
+      call this%cell(c)%init (ierr, mesh%x(:,mesh%cnode(:,cid)), hex_f, hex_e, gmesh%outnorm(:,:,cid), &
+          mesh%volume(cid))
       this%vof(c) = vof(cid)
       this%cell_vol(c) = mesh%volume(cid)
     end do
