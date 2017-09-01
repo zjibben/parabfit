@@ -472,29 +472,55 @@ contains
   ! given a set of vectors x, return an orthonormal basis q for the same space using Gram-Schmidt
   function orthonormalBasis (x)
 
+    use logging_services
+
     real(r8), intent(in) :: x(:,:)
     real(r8), allocatable :: orthonormalBasis(:,:)
 
-    integer :: i,j,n
-    real(r8) :: tmp, v(size(x,dim=1)), vs(size(x,dim=1),size(x,dim=2))
+    integer :: m, n, k, lwork, ierr
+    real(r8), allocatable :: Q(:,:), tau(:), work(:)
 
-    n = 1
-    vs(:,1) = normalize(x(:,1))
+    ! copy the input variables to a matrix to be modified in-place
+    m = size(x, dim=1)
+    n = size(x, dim=2)
+    k = min(m,n)
+    lwork = 8*n
+    allocate(work(lwork), tau(k))
+    Q = x
 
-    do i = 2,size(x,dim=2)
-      v = x(:,i)
-      do j = 1,n
-        v = v - projectOnto(v,vs(:,j))
-      end do
+    ! compute the QR factorization
+    call dgeqrf (m, n, Q, m, tau, work, lwork, ierr)
+    if (ierr/=0) call ls_fatal ("failed dgeqrf in orthonormalBasis")
 
-      tmp = magnitude(v)
-      if (.not.isZero(tmp)) then
-        n = n+1
-        vs(:,n) = v / tmp
-      end if
-    end do
+    call dorgqr (m, m, k, Q, m, tau, work, lwork, ierr)
+    if (ierr/=0) call ls_fatal ("failed dorgqr in orthonormalBasis")
 
-    orthonormalBasis = vs(:,1:n)
+    ! return the first m columns of Q as the orthonormal basis with the same span as x
+    orthonormalBasis = Q(:,1:m)
+
+    ! real(r8), intent(in) :: x(:,:)
+    ! real(r8), allocatable :: orthonormalBasis(:,:)
+
+    ! integer :: i,j,n
+    ! real(r8) :: tmp, v(size(x,dim=1)), vs(size(x,dim=1),size(x,dim=2))
+
+    ! n = 1
+    ! vs(:,1) = normalize(x(:,1))
+
+    ! do i = 2,size(x,dim=2)
+    !   v = x(:,i)
+    !   do j = 1,n
+    !     v = v - projectOnto(v,vs(:,j))
+    !   end do
+
+    !   tmp = magnitude(v)
+    !   if (.not.isZero(tmp)) then
+    !     n = n+1
+    !     vs(:,n) = v / tmp
+    !   end if
+    ! end do
+
+    ! orthonormalBasis = vs(:,1:n)
 
   end function orthonormalBasis
 

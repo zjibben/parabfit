@@ -717,7 +717,7 @@ contains
       call cell%partition (vof(:,i), int_norm_hf2(:,:,i))
       !call cell%partition (vof(:,i), int_norm(:,:,i))
 
-      call intrec%append (cell%interface_polygon(1), i)
+      call intrec%append (cell%interface_polygons(1), i)
 
       err = abs(vof(1,i) - cell%mat_poly(1)%volume() / mesh%volume(i))
       nvofcell = nvofcell + 1
@@ -812,7 +812,7 @@ contains
       real(r8), allocatable :: centroid(:,:), normal(:,:)
       real(r8) :: x(3), R(3,3)
 
-      interface_reconstruction = intrec%local_patch(i,gmesh, vof(1,:))
+      !interface_reconstruction = intrec%local_patch(i,gmesh, vof(1,:))
       sint = size(interface_reconstruction)
 
       allocate(centroid(3,sint), normal(3,sint))
@@ -893,7 +893,7 @@ contains
 
       call cell%partition (vof(:,i), int_norm_lvira(:,:,i))
 
-      call intrec%append (cell%interface_polygon(1), i)
+      call intrec%append (cell%interface_polygons(1), i)
 
       err = abs(vof(1,i) - cell%mat_poly(1)%volume() / mesh%volume(i))
       totvolume = totvolume + mesh%volume(i)

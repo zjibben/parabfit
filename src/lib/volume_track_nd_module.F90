@@ -111,7 +111,7 @@ contains
     ! dump the interface reconstruction, if requested
     if (dump_intrec) then
       do m = 1,size(intrec)
-        call intrec(m)%append (cell%interface_polygon (m), cell_id)
+        call intrec(m)%append (cell%interface_polygons(m), cell_id)
       end do
     end if
 

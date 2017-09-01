@@ -61,7 +61,7 @@ contains
       if (ierr /= 0) call LS_fatal ('cell_outward_volflux failed: could not initialize cell')
 
       call cell%partition (vof(:,i), int_norm(:,:,i))
-      call intrec%append (cell%interface_polygon(1), i)
+      call intrec%append (cell%interface_polygons(1), i)
     end do
 
     do i = 1,mesh%ncell
@@ -70,9 +70,9 @@ contains
         cycle
       end if
 
-      ! WARN: right now assuming 2 materials
-      int_norm(:,1,i) = normal_from_patch(intrec%local_patch(i, gmesh, vof(1,:)), &
-          0.0_r8, int_norm(:,1,i))
+      ! ! WARN: right now assuming 2 materials
+      ! int_norm(:,1,i) = normal_from_patch(intrec%local_patch(i, gmesh, vof(1,:)), &
+      !     0.0_r8, int_norm(:,1,i))
     end do
     int_norm(:,2,:) = -int_norm(:,1,:) ! WARN: right now assuming 2 materials
 

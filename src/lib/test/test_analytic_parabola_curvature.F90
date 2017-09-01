@@ -225,7 +225,7 @@ contains
       if (ierr /= 0) call LS_fatal ('could not initialize cell')
 
       call cell%partition (vof(:,i), int_norm(:,:,i))
-      call intrec%append (cell%interface_polygon(1), i)
+      call intrec%append (cell%interface_polygons(1), i)
 
       ! if (i == j) then
       !   print *, vof(1,i)
@@ -256,14 +256,14 @@ contains
 
       !print '(a,3es15.5)', 'rho:       ', rho
 
-      do c = -1, 1
-        do i = 1,size(intrec%element)
-          if (intrec%cell_id(i) == cells(c)) then
-            print '(a,3es15.5)', 'x:         ', intrec%element(i)%centroid()
-            exit
-          end if
-        end do
-      end do
+      ! do c = -1, 1
+      !   do i = 1,size(intrec%element)
+      !     if (intrec%cell_id(i) == cells(c)) then
+      !       print '(a,3es15.5)', 'x:         ', intrec%element(i)%centroid()
+      !       exit
+      !     end if
+      !   end do
+      ! end do
 
       curvature = abs(curvature_from_patch (intrec%local_patch(j,gmesh, vof(1,:)), &
         0.0_r8, int_norm(:,1,j), vof(1,:), mesh, gmesh, j, verboseh))

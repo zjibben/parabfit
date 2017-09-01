@@ -59,23 +59,24 @@ contains
 
     ASSERT(size(x, dim=1)==size(this%normal))
     ASSERT(size(x, dim=2)==2)
-    
+
     d1 = this%signed_distance(x(:,1))
     d2 = this%signed_distance(x(:,2))
-    
+
     ! if the signed distances have opposite signs, the two points are on opposite sides of the plane
     intersects = sign(1.0_r8,d1)/=sign(1.0_r8,d2) .or. isZero (d1,alpha) .or. isZero (d2,alpha)
   end function intersects
 
   ! return the point where the line between x1 & x2 intersects with the given plane
-  function intersection_point (this,x)
+  subroutine intersection_point (this, intx, on_point, x)
 
     use consts, only: alpha
     use array_utils, only: isZero
 
     class(plane), intent(in) :: this
-    real(r8),     intent(in) :: x(:,:)
-    real(r8)                 :: intersection_point(ndim)
+    real(r8), intent(out) :: intx(:)
+    integer, intent(out) :: on_point
+    real(r8), intent(in) :: x(:,:)
 
     real(r8)                 :: dx(ndim),d1,d2
 
@@ -85,17 +86,20 @@ contains
 
     d1 = this%signed_distance(x(:,1))
     d2 = this%signed_distance(x(:,2))
-    
+
     if (isZero (d1,alpha)) then
-      intersection_point = x(:,1)
+      intx = x(:,1)
+      on_point = 1
     else if (isZero (d2,alpha)) then
-      intersection_point = x(:,2)
+      intx = x(:,2)
+      on_point = 2
     else
       dx = x(:,2)-x(:,1)
-      intersection_point = x(:,1) - (d1/sum(dx*this%normal)) * dx
+      intx = x(:,1) - (d1/sum(dx*this%normal)) * dx
+      on_point = 0
     end if
 
-  end function intersection_point
+  end subroutine intersection_point
 
   subroutine print_data (this)
     class(plane), intent(in) :: this

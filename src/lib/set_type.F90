@@ -7,7 +7,7 @@
 !!
 !! Zechariah J Jibben <zjibben@lanl.gov>
 !! January 2017
-!! 
+!!
 
 module set_type
 
@@ -22,6 +22,7 @@ module set_type
     procedure :: add_integer_single
     procedure :: add_integer_array
     generic :: add => add_integer_single, add_integer_array
+    procedure :: intersects
   end type set_integer
 
 contains
@@ -52,7 +53,7 @@ contains
       allocate(this%elements(this%n_elements))
       this%elements(this%n_elements) = i
     end if
-    
+
   end subroutine add_integer_single
 
   ! add integers from an array to the set
@@ -65,11 +66,27 @@ contains
     integer, intent(in) :: iv(:)
 
     integer :: i
-    
+
     do i = 1,size(iv)
       call this%add (iv(i))
     end do
 
   end subroutine add_integer_array
+
+  logical function intersects(this, other)
+
+    class(set_integer), intent(in) :: this, other
+
+    integer :: i
+
+    intersects = .false.
+    do i = 1,this%n_elements
+      if (any(other%elements == this%elements(i))) then
+        intersects = .true.
+        exit
+      end if
+    end do
+
+  end function intersects
 
 end module set_type

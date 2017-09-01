@@ -30,7 +30,7 @@ contains
       nV = count(cube%face_vid(:,f) /= 0) ! number of vertices on this face
       call element%init (cube%x(:,cube%face_vid(1:nV,f)))
 
-      call surf%append (element, f)
+      !call surf%append (element, f)
     end do
 
     call surf%write_ply ('surf.ply')
@@ -39,7 +39,7 @@ contains
     P%normal = [4.0_r8, 1.0_r8, 1.0_r8]
     P%normal = normalize(P%normal)
     P%rho    = 0.5_r8 / sqrt(3.0_r8)
-    call surf%append (cube%intersection_verts (P), 1)
+    !call surf%append (cube%intersection_verts (P), 1)
     call surf%write_ply ('surf.ply')
 
   end subroutine surface_unit_test

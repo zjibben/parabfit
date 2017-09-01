@@ -48,7 +48,7 @@ contains
     use int_norm_module, only: interface_normal, interface_normal_cell
     use surface_type
     !use devices,   only: using_mic
-    
+
     real(r8),         intent(in)  :: adv_dt, vof(:,:), fluxing_velocity(:,:), fluidrho(:)
     type(unstr_mesh), intent(in)  :: mesh
     type(mesh_geom),  intent(in)  :: gmesh
@@ -74,7 +74,7 @@ contains
         call intrec(ni)%purge ()
       end do
     end if
-    
+
     ! get the volume flux in every cell
     if (using_mic) then
       !$omp do
@@ -147,7 +147,7 @@ contains
     !nint = count(vof > 0.0_r8)
     ! Here, I am not certain the conversion from pri_ptr to direct material indices worked properly.
     ! This will be clear when trying 3 or more materials. -zjibben
-    
+
     ! Loop over the interfaces in priority order
     do ni = 1,ninterfaces
       ! check if this is a mixed material cell
@@ -163,10 +163,10 @@ contains
         if (dump_intrec) then
           call poly%init (ierr, plane_cell%node, hex_f, hex_e)
           if (ierr /= 0) call LS_fatal ('failed plane reconstruction dump')
-          call intrec(ni)%append (poly%intersection_verts (plane_cell%P), cell_id)
+          !call intrec(ni)%append(poly%intersection_verts (plane_cell%P), cell_id) ! WARN: disabled
         end if
       end if
-      
+
       ! calculate delta advection volumes for this material at each donor face and accumulate the sum
       cell_volume_flux(ni,:) =  material_volume_flux (flux_vol_sum, plane_cell, cell, &
            is_mixed_donor_cell, face_fluxing_velocity, adv_dt, vof(ni))
@@ -185,7 +185,7 @@ contains
         call LS_fatal('advection timestep too large')
       end if
       if (Flux_Vol%Vol <= cutvof*cell%volume) cycle
-      
+
       ! For donor cells containing only one material, assign the total flux.
       if (nmat_in_cell==1) then
         cell_volume_flux(nlast,f) = Flux_Vol%Vol
@@ -218,7 +218,7 @@ contains
     type(cell_data),        intent(in)    :: cell
     logical,                intent(in)    :: is_mixed_donor_cell
     real(r8)                              :: material_volume_flux(nfc)
-    
+
     integer                 :: f,ff, idbg
     real(r8)                :: vp, dvol
     type(truncvol_data)     :: trunc_vol(nfc)
@@ -233,16 +233,16 @@ contains
       Flux_Vol%Fc  = f
       Flux_Vol%Vol = adv_dt*face_fluxing_velocity(f)*cell%face_area(f)
       if (Flux_Vol%Vol <= cutvof*cell%volume) cycle
-      
+
       ! calculate the vertices describing the volume being truncated through the face
       call flux_vol_vertices (f, cell, is_mixed_donor_cell, face_fluxing_velocity(f)*adv_dt, Flux_Vol)
-      
+
       if (is_mixed_donor_cell) then
         ! Now compute the volume truncated by interface planes in each flux volumes.
         do ff = 1,nfc
           trunc_vol(ff) = face_param (plane_cell, 'flux_cell', ff, flux_vol%xv)
         end do
-        
+
         ! For mixed donor cells, the face flux is in Int_Flux%Advection_Volume.
         Vp = truncate_volume(plane_cell, trunc_vol)
       else
@@ -253,7 +253,7 @@ contains
           Vp = 0.0_r8
         end if
       end if
-      
+
       ! If Vp is close to 0 set it to 0.  If it is close
       ! to 1 set it to 1. This will avoid numerical round-off.
       if (Vp > (1.0_r8-cutvof)*abs(Flux_Vol%Vol)) Vp = abs(Flux_Vol%Vol)
@@ -265,7 +265,7 @@ contains
       ! limit Volume_Flux_Sub to take no more than the material
       ! occupied volume in the donor cell.
       dvol = min(max(Vp - Flux_Vol_Sum(f), 0.0_r8), Vof*cell%volume)
-      
+
       ! Now gather advected volume information into Volume_Flux_Sub
       material_volume_flux(f) = dvol
       Flux_Vol_Sum(f) = Flux_Vol_Sum(f) + dvol
@@ -274,5 +274,5 @@ contains
     !call stop_timer ("material_flux_vol")
 
   end function material_volume_flux
-  
+
 end module volume_track_module

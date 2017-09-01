@@ -21,14 +21,14 @@ module surface_type
   ! a surface is defined as a collection of polygons
   type, public :: surface
     private
-    type(polygon), public, allocatable :: element(:)
+    type(polygon_box), public, allocatable :: element(:)
     integer, public, allocatable :: cell_id(:)
   contains
     procedure, private :: append_polyhedron
     procedure, private :: append_polygon
     procedure, private :: append_surf
     generic   :: append => append_polygon, append_surf, append_polyhedron
-    procedure :: write_gmv
+    !procedure :: write_gmv
     procedure :: write_ply
     procedure :: purge
     procedure :: local_patch
@@ -39,14 +39,14 @@ contains
   ! append element to the end of array (increasing array size by 1)
   subroutine append_polygon (this, new_element, cell_id)
     class(surface), intent(inout) :: this
-    class(polygon), intent(in)    :: new_element
+    class(polygon_box), intent(in)    :: new_element
     integer,        intent(in)    :: cell_id
 
-    type(polygon), allocatable :: tmp(:)
+    type(polygon_box), allocatable :: tmp(:)
     integer,       allocatable :: tmp2(:)
     integer                    :: N
 
-    if (new_element%nVerts < 3) return ! TODO: throw error here?
+    !if (new_element%nVerts < 3) return ! TODO: throw error here?
 
     if (allocated(this%element)) then
       N = size(this%element)
@@ -76,24 +76,27 @@ contains
     class(polyhedron), intent(inout) :: poly
 
     integer       :: nV,N,f
-    type(polygon) :: face,tmp(size(this%element))
+    type(polygon) :: face
+    type(polygon_box) :: tmp(size(this%element))
 
     if (allocated(this%element)) then
       N = size(this%element)
       tmp = this%element
       deallocate(this%element)
-      allocate(this%element(N+poly%nFaces))
+      allocate(this%element(N+1))
       this%element(1:N) = tmp
     else
       N = 0
-      allocate(this%element(poly%nFaces))
+      allocate(this%element(1))
     end if
 
-    do f = N+1,N+poly%nFaces
+    this%element(N+1)%n_elements = poly%nFaces
+    allocate(this%element(N+1)%elements(poly%nFaces))
+    do f = 1,poly%nFaces
       nV = count(poly%face_vid(:,f) /= 0) ! number of vertices on this face
       call face%init (poly%x(:,poly%face_vid(1:nV,f)), poly%face_normal(:,f))
 
-      this%element(f) = face
+      this%element(N+1)%elements(f) = face
     end do
 
   end subroutine append_polyhedron
@@ -103,7 +106,7 @@ contains
     class(surface), intent(inout) :: this
     class(surface), intent(in)    :: surf
 
-    type(polygon)                 :: tmp(size(this%element))
+    type(polygon_box)                 :: tmp(size(this%element))
     integer                       :: N,Nsurf
 
     Nsurf = size(surf%element)
@@ -129,110 +132,117 @@ contains
     if (allocated(this%cell_id)) deallocate(this%cell_id)
   end subroutine purge
 
-  subroutine write_gmv (this)
-    use gmvwrite_fortran_binding
-    use array_utils, only: xrange
+  ! subroutine write_gmv (this)
+  !   use gmvwrite_fortran_binding
+  !   use array_utils, only: xrange
 
-    class(surface), intent(in) :: this
+  !   class(surface), intent(in) :: this
 
-    character(16)              :: filename
-    integer                    :: e,j,Nelements,Nverts
-    integer,  allocatable      :: element_vid(:,:)
-    real(r8), allocatable      :: x(:,:),fakedata(:)
+  !   character(16)              :: filename
+  !   integer                    :: e,j,Nelements,Nverts
+  !   integer,  allocatable      :: element_vid(:,:)
+  !   real(r8), allocatable      :: x(:,:),fakedata(:)
 
-    ! generate contiguous array of nodes, and array of vertex ids
-    Nelements = size(this%element)
-    Nverts    = sum(this%element(:)%nVerts)
+  !   ! generate contiguous array of nodes, and array of vertex ids
+  !   Nelements = size(this%element)
+  !   Nverts    = sum(this%element(:)%nVerts)
 
-    allocate(x(3,Nverts), element_vid(maxval(this%element(:)%nVerts),size(this%element)), &
-         fakedata(Nelements))
+  !   allocate(x(3,Nverts), element_vid(maxval(this%element(:)%nVerts),size(this%element)), &
+  !        fakedata(Nelements))
 
-    ! To plot the surface elements, gmv needs data there.
-    ! Or, at least, paraview won't open the file without it. Paraview won't display
-    ! surfaces anyways, though, so it could be paraview that is wrong.
-    fakedata = 0.0_r8
+  !   ! To plot the surface elements, gmv needs data there.
+  !   ! Or, at least, paraview won't open the file without it. Paraview won't display
+  !   ! surfaces anyways, though, so it could be paraview that is wrong.
+  !   fakedata = 0.0_r8
 
-    j = 1
-    do e = 1,Nelements
-      x(:,j:j+this%element(e)%nVerts-1) = this%element(e)%x
-      element_vid(1:this%element(e)%nVerts,e) = xrange (j,j+this%element(e)%nVerts-1)
-      j = j + this%element(e)%nVerts
-    end do
+  !   j = 1
+  !   do e = 1,Nelements
+  !     x(:,j:j+this%element(e)%nVerts-1) = this%element(e)%x
+  !     element_vid(1:this%element(e)%nVerts,e) = xrange (j,j+this%element(e)%nVerts-1)
+  !     j = j + this%element(e)%nVerts
+  !   end do
 
-    ! dump the gmv file
-    write(filename,'(a,i4.4)') 'planes.gmv'
+  !   ! dump the gmv file
+  !   write(filename,'(a,i4.4)') 'planes.gmv'
 
-    call gmvwrite_openfile_ir_ascii (trim(filename)//C_NULL_CHAR, 4, 8)
+  !   call gmvwrite_openfile_ir_ascii (trim(filename)//C_NULL_CHAR, 4, 8)
 
-    ! write plane nodes
-    !call gmv_write_unstr_mesh (this%mesh)
-    call gmvwrite_node_data (Nverts, x(1,:), x(2,:), x(3,:))
-    call gmvwrite_cell_header (0) ! GMV requires the cell header, even if there are no cells
-    call gmvwrite_nodeids (xrange (1,Nverts))
+  !   ! write plane nodes
+  !   !call gmv_write_unstr_mesh (this%mesh)
+  !   call gmvwrite_node_data (Nverts, x(1,:), x(2,:), x(3,:))
+  !   call gmvwrite_cell_header (0) ! GMV requires the cell header, even if there are no cells
+  !   call gmvwrite_nodeids (xrange (1,Nverts))
 
-    ! write the plane descriptions
-    call gmvwrite_surface_header (size(this%element))
-    do e = 1,Nelements
-      call gmvwrite_surface_data (this%element(e)%nVerts, element_vid(1:this%element(e)%nVerts,e))
-    end do
+  !   ! write the plane descriptions
+  !   call gmvwrite_surface_header (size(this%element))
+  !   do e = 1,Nelements
+  !     call gmvwrite_surface_data (this%element(e)%nVerts, element_vid(1:this%element(e)%nVerts,e))
+  !   end do
 
-    call gmvwrite_surfvars_header ()
-    call gmvwrite_surfvars_name_data ('surf'//C_NULL_CHAR, fakedata)
-    call gmvwrite_surfvars_endsvar ()
+  !   call gmvwrite_surfvars_header ()
+  !   call gmvwrite_surfvars_name_data ('surf'//C_NULL_CHAR, fakedata)
+  !   call gmvwrite_surfvars_endsvar ()
 
-    call gmvwrite_closefile ()
+  !   call gmvwrite_closefile ()
 
-    deallocate (x, element_vid, fakedata)
+  !   deallocate (x, element_vid, fakedata)
 
-  end subroutine write_gmv
+  ! end subroutine write_gmv
 
   ! write the polygons using the Stanford PLY format
   subroutine write_ply (this, fname)
     class(surface), intent(inout) :: this
     character(*),   intent(in)    :: fname
 
-    integer                       :: e,j,i,Nelements,Nverts
+    integer                       :: e,j,i,Nelements,Nverts, k, fh
 
     if (.not.allocated(this%element)) return
 
-    Nelements = size(this%element)
-    Nverts    = sum(this%element(:)%nVerts)
+    Nelements = sum(this%element(:)%n_elements)
+    Nverts = 0
+    do i = 1,size(this%element)
+      Nverts = Nverts + sum(this%element(i)%elements(:)%nVerts)
+    end do
 
     ! open file
-    open(99, file=trim(fname))
+    open(newunit=fh, file=trim(fname))
 
     ! write PLY header
-    write(99,'(a)')    'ply'
-    write(99,'(a)')    'format ascii 1.0'
-    write(99,'(a,i9)') 'element vertex ',Nverts
-    write(99,'(a)')    'property float32 x'
-    write(99,'(a)')    'property float32 y'
-    write(99,'(a)')    'property float32 z'
-    write(99,'(a,i9)') 'element face ',Nelements
-    write(99,'(a)')    'property list uint8 int32 vertex_index'
-    write(99,'(a)')    'end_header'
+    write(fh,'(a)')    'ply'
+    write(fh,'(a)')    'format ascii 1.0'
+    write(fh,'(a,i9)') 'element vertex ',Nverts
+    write(fh,'(a)')    'property float32 x'
+    write(fh,'(a)')    'property float32 y'
+    write(fh,'(a)')    'property float32 z'
+    write(fh,'(a,i9)') 'element face ',Nelements
+    write(fh,'(a)')    'property list uint8 int32 vertex_index'
+    write(fh,'(a)')    'end_header'
 
     ! write polygon data
     ! vertices
-    do e = 1,Nelements
-      do j = 1,this%element(e)%nVerts
-        write(99,'(3f20.10)') this%element(e)%x(:,j)
+    do e = 1,size(this%element)
+      do k = 1,this%element(e)%n_elements
+        do j = 1,this%element(e)%elements(k)%nVerts
+          write(fh,'(3f20.10)') this%element(e)%elements(k)%x(:,j)
+        end do
       end do
     end do
 
     ! faces
     j = 0
-    do e = 1,Nelements
-      write(99,'(i9)',advance='no') this%element(e)%nVerts
-      do i = j,j+this%element(e)%nVerts-1
-        write(99,'(i9)',advance='no') i
+    do e = 1,size(this%element)
+      do k = 1,this%element(e)%n_elements
+        write(fh,'(i9)',advance='no') this%element(e)%elements(k)%nVerts
+        do i = j,j+this%element(e)%elements(k)%nVerts-1
+          write(fh,'(i9)',advance='no') i
+        end do
+        write(fh,*)
+        j = j+this%element(e)%elements(k)%nVerts
       end do
-      write(99,*)
-      j = j+this%element(e)%nVerts
     end do
 
     ! clean up
-    close (99)
+    close (fh)
 
   end subroutine write_ply
 
@@ -256,7 +266,7 @@ contains
     integer, intent(in) :: cell_id
     type(mesh_geom), intent(in) :: gmesh
     real(r8), intent(in) :: vof(:)
-    type(polygon), allocatable :: local_patch(:)
+    type(polygon_box), allocatable :: local_patch(:)
 
     integer :: e, npolygons
     integer, allocatable :: neighbor(:), polygon_id(:)

@@ -27,39 +27,52 @@ module polyhedron_type
     integer               :: nVerts, nEdges, nFaces       ! number of vertices, edges, and faces
     real(r8), allocatable :: x(:,:),face_normal(:,:)      ! vertex positions and face outward normals
     integer,  allocatable :: face_vid(:,:), edge_vid(:,:) ! face and edge IDs
+    integer, allocatable :: vertex_faces(:,:), edge_faces(:,:), face_eid(:,:)
     real(r8)              :: vol        ! should be private, but need inheritance
+    type(polyhedron), pointer :: tet(:)
+    logical :: tesselated
     ! ideally vol should be private, but Fortran then also hides it from child types
   contains
     procedure, private :: init_polyhedron
     procedure, private :: init_polyhedron_copy
     procedure, private :: init_polyhedron_null
+    procedure, private :: init_tet
+    procedure, private :: init_tesselated
     generic            :: init => init_polyhedron, init_polyhedron_copy, init_polyhedron_null
     procedure          :: volume
     procedure          :: intersection_verts
     procedure          :: split
     procedure          :: volume_behind_plane
     procedure          :: print_data
-    procedure, private :: tesselate_nonplanar_faces
-    procedure, private :: tesselate_face
     procedure, private :: face_is_nonplanar
+    procedure, private :: calculate_edge_faces
+    procedure, private :: calculate_vertex_faces
+    procedure, private :: calculate_face_eid
     !procedure, private :: edge_containing_vertices
     procedure, private :: compute_scaled_polyhedron
     procedure, private :: polyhedron_on_side_of_plane
     procedure, private :: update_face_normals
     procedure, private :: is_valid
     procedure, private :: remove_dangling_vertices
-    !final :: polyhedron_delete
+    procedure, private :: tesselated_volume_behind_plane
+    procedure, private :: tesselate_nonplanar_faces
+    procedure, private :: tesselate_face
+    procedure, private :: tesselate
+    procedure, private :: tesselated_volume
+    procedure, private :: tesselated_split
+    final :: polyhedron_delete
   end type polyhedron
 
 contains
 
-  ! subroutine polyhedron_delete (this)
-  !   type(polyhedron) :: this
-  !   if (allocated(this%x)) deallocate(this%x)
-  !   if (allocated(this%face_normal)) deallocate(this%face_normal)
-  !   if (allocated(this%face_vid)) deallocate(this%face_vid)
-  !   if (allocated(this%edge_vid)) deallocate(this%edge_vid)
-  ! end subroutine polyhedron_delete
+  subroutine polyhedron_delete (this)
+    type(polyhedron) :: this
+    ! if (allocated(this%x)) deallocate(this%x)
+    ! if (allocated(this%face_normal)) deallocate(this%face_normal)
+    ! if (allocated(this%face_vid)) deallocate(this%face_vid)
+    ! if (allocated(this%edge_vid)) deallocate(this%edge_vid)
+    if (allocated(this%tet)) deallocate(this%tet)
+  end subroutine polyhedron_delete
 
   subroutine init_polyhedron (this, ierr, x, face_v, edge_v, face_normal, vol, tesselate)
 
@@ -71,12 +84,11 @@ contains
     logical, optional, intent(in) :: tesselate
 
     integer :: f,nV
-    logical :: tesselateh
 
     if (present(tesselate)) then
-      tesselateh = tesselate
+      this%tesselated = tesselate
     else
-      tesselateh = .true.
+      this%tesselated = .true.
     end if
 
     this%nVerts = size(x,     dim=2)
@@ -119,13 +131,90 @@ contains
     !   nV = count(face_v(:,f) /= 0) ! number of vertices on this face
     !   call this%face(f)%init (x(:,face_v(1:nV,f)))
     ! end do
-
-    if (tesselateh) call this%tesselate_nonplanar_faces()
-
     ! note that by taking the cross product between edges described in a
     ! counter-clockwise manner, we guarantee the normal to be outward facing
 
+    call this%calculate_edge_faces(ierr)
+    if (ierr /= 0) return
+    call this%calculate_vertex_faces(ierr)
+    if (ierr /= 0) return
+    call this%calculate_face_eid(ierr)
+    if (ierr /= 0) return
+    !if (this%tesselated) call this%tesselate_nonplanar_faces()
+    if (this%tesselated) call this%tesselate()
+
   end subroutine init_polyhedron
+
+  subroutine init_tesselated(this, tets)
+
+    class(polyhedron), intent(out) :: this
+    type(polyhedron), intent(in) :: tets(:)
+
+    this%tet = tets
+    this%tesselated = .true.
+
+  end subroutine init_tesselated
+
+  subroutine init_tet (this, ierr, x, face_normal, vol)
+
+    use cell_geometry, only: tet_volume
+
+    class(polyhedron),  intent(out) :: this
+    integer,            intent(out) :: ierr
+    real(r8),           intent(in)  :: x(:,:)
+    real(r8), optional, intent(in)  :: face_normal(:,:), vol
+
+    integer :: f,nV
+
+    ierr = 0
+    ASSERT(size(x, dim=2) == 4)
+
+    this%nVerts = 4
+    this%nEdges = 6
+    this%nFaces = 4
+    this%tesselated = .false.
+
+    this%x = x
+    this%edge_vid = reshape([&
+        1,2,&
+        1,3,&
+        1,4,&
+        2,3,&
+        2,4,&
+        3,4], [2,this%nEdges])
+    this%face_vid = reshape([&
+        1,3,2,&
+        1,2,4,&
+        1,4,3,&
+        2,3,4], [3,this%nFaces])
+    this%face_eid = reshape([&
+        1,2,4,&
+        1,5,3,&
+        2,3,6,&
+        4,6,5], [3,this%nFaces])
+    this%edge_faces = reshape([&
+        1,2,&
+        1,3,&
+        3,2,&
+        1,4,&
+        2,4,&
+        3,4], [2,this%nEdges])
+    this%vertex_faces = reshape([&
+        1,2,3,&
+        1,2,4,&
+        1,3,4,&
+        2,3,4], [3,this%nVerts])
+
+    if (present(face_normal)) then
+      this%face_normal = face_normal
+    else
+      allocate(this%face_normal(3,this%nFaces))
+      call this%update_face_normals()
+    end if
+
+    this%vol = merge(vol, tet_volume(this%x), present(vol))
+
+  end subroutine init_tet
 
   function is_valid (this) result(ierr)
 
@@ -361,6 +450,11 @@ contains
     volume = this%vol
     if (.not.allocated(this%x) .or. volume > 0.0_r8) return
 
+    if (this%tesselated) then
+      volume = this%tesselated_volume()
+      return
+    end if
+
     ! scale the polyhedron (see note 1)
     ! scaled = this
     ! volume_factor = 1
@@ -430,19 +524,35 @@ contains
 
   end function volume
 
+  real(r8) function tesselated_volume(this)
+
+    class(polyhedron), intent(inout)  :: this
+
+    integer :: t
+
+    tesselated_volume = 0
+    do t = 1,size(this%tet)
+      tesselated_volume = tesselated_volume + this%tet(t)%volume()
+    end do
+
+  end function tesselated_volume
+
   ! Given an equation of a plane and a polyhedron, return a polygon from the
   ! points where the plane intersects the polyhedron edges
   type(polygon) function intersection_verts (this,P,v_assoc_pe)
 
     use plane_type
-    use array_utils, only: reverse, containsPoint, pointIndex
+    use array_utils, only: reverse, containsPoint, pointIndex, invert
+    use set_type
 
     class(polyhedron), intent(in)  :: this
     class(plane),      intent(in)  :: P
     integer, optional, intent(out) :: v_assoc_pe(:)
 
-    integer  :: e,Nintersections
+    integer  :: e,Nintersections, on_point, nf, i
+    integer, allocatable :: index_sort(:)
     real(r8) :: x(ndim,this%nEdges),intx(ndim)
+    type(set_integer) :: vertex_faces(this%nEdges) !vertex_faces(size(this%vertex_faces, dim=1), this%nEdges)
 
     if (present(v_assoc_pe)) v_assoc_pe = -1
 
@@ -452,10 +562,12 @@ contains
       ! check if the P intersects this edge
       if (P%intersects(this%x(:,this%edge_vid(:,e)))) then
         ! if it does, find the point where they intersect
-        intx = P%intersection_point (this%x(:,this%edge_vid(:,e)))
+        call P%intersection_point(intx, on_point, this%x(:,this%edge_vid(:,e)))
+        ! print *, on_point, norm2(intx - this%x(:,this%edge_vid(1,e))), norm2(intx - this%x(:,this%edge_vid(2,e)))
+        ! print *, 'edge: ',this%edge_vid(:,e), norm2(this%x(:,2) - this%x(:,3))
+        ! print *
 
-        if ((all(intx==this%x(:,this%edge_vid(1,e))) .or. all(intx==this%x(:,this%edge_vid(2,e)))) &
-            .and. Nintersections>0 .and. containsPoint(intx, x(:,1:Nintersections))) then
+        if (on_point > 0 .and. Nintersections>0 .and. containsPoint(intx,x(:,1:Nintersections))) then
           ! if the point was already found, note that this edge intersects with that found point
           ! this particularly comes into effect when we intersect a vertex
           if (present(v_assoc_pe)) v_assoc_pe(e) = pointIndex(intx, x(:,1:Nintersections))
@@ -463,16 +575,38 @@ contains
           Nintersections = Nintersections + 1
           x(:,Nintersections) = intx
           if (present(v_assoc_pe)) v_assoc_pe(e) = Nintersections
+
+          if (on_point > 0) then
+            nf = count(this%vertex_faces(:,this%edge_vid(on_point,e)) > 0)
+            call vertex_faces(Nintersections)%add(this%vertex_faces(:nf,this%edge_vid(on_point,e)))
+          else
+            call vertex_faces(Nintersections)%add(this%edge_faces(:,e))
+          end if
+
         end if
       end if
     end do
 
     ! pass the intersection points to the polygon constructor
     if (Nintersections>2) then
+      !print *, norm2(x(:,1) - x(:,2))
       call intersection_verts%init (x(:,1:Nintersections))
 
       ! this probably doesn't need to be called every time this function is used
-      call intersection_verts%order (v_assoc_pe)
+      index_sort = intersection_verts%sort_order()
+
+      call convex_corrections()
+
+      ! update arrays with new sorting
+      !print *, 'sort0'
+      intersection_verts%x = intersection_verts%x(:,index_sort)
+      !print *, 'sort1'
+
+      index_sort = invert (index_sort)
+      do i = 1,size(v_assoc_pe)
+        if (v_assoc_pe(i)>0) v_assoc_pe(i) = index_sort(v_assoc_pe(i))
+      end do
+      !print *, 'sort2', v_assoc_pe
 
       ! make sure the vertices are ordered counter-clockwise
       if (dot_product(intersection_verts%norm,P%normal) < 0) then
@@ -487,6 +621,7 @@ contains
 
         call intersection_verts%update_plane_normal ()
       end if
+      !print *, 'sort3'
     ! else
     !   print *, Nintersections, " intersection points"
     !   call this%print_data()
@@ -494,7 +629,226 @@ contains
     !   call LS_fatal ("not enough intersection points")
     end if
 
+  contains
+
+    subroutine convex_corrections()
+
+      integer :: i, in, v, p, s, n, j
+      logical :: intersects(20)
+
+      ! print *, 'nv: ', intersection_verts%nVerts
+      ! do j = 1,intersection_verts%nVerts
+      !   v = index_sort(j)
+      !   p = index_sort(modulo(j-2,intersection_verts%nVerts)+1)
+      !   intersects(j) = .not.vertex_faces(v).intersects(vertex_faces(p))
+      ! end do
+      ! print *, intersects(:intersection_verts%nVerts)
+
+      ! ! sort the vertices (correct the previous sorting)
+      ! !print '(a,12i6)', 'sort0', index_sort
+      ! do i = 1,intersection_verts%nVerts
+      !   v = index_sort(i)
+      !   p = index_sort(modulo(i-2,intersection_verts%nVerts)+1)
+
+      !   ! if this vertex shares no faces with the
+      !   ! previous vertex, there is an order mismatch
+      !   ! => swap this vertex with one of the next ones
+      !   if (.not.vertex_faces(v).intersects(vertex_faces(p))) then
+      !     print *, i
+      !     do s = 0,intersection_verts%nVerts - i - 1
+      !       n = index_sort(modulo(i+s,intersection_verts%nVerts)+1)
+      !       print *, s, vertex_faces(n).intersects(vertex_faces(p))
+      !       if (vertex_faces(n).intersects(vertex_faces(p))) exit
+      !     end do
+      !     !s = 0
+      !     in = modulo(i+s,intersection_verts%nVerts)+1
+      !     n = index_sort(in)
+      !     index_sort(i) = n
+      !     index_sort(in) = v
+
+      !     do j = 1,intersection_verts%nVerts
+      !       v = index_sort(j)
+      !       p = index_sort(modulo(j-2,intersection_verts%nVerts)+1)
+      !       intersects(j) = .not.vertex_faces(v).intersects(vertex_faces(p))
+      !     end do
+      !     print *, intersects(:intersection_verts%nVerts)
+      !     print *
+      !   end if
+      ! end do
+
+      ! sort the vertices (correct the previous sorting)
+      !print '(a,12i6)', 'sort0', index_sort
+      do i = 1,intersection_verts%nVerts-2
+        v = index_sort(i)
+        p = index_sort(modulo(i-2,intersection_verts%nVerts)+1)
+
+        ! if this vertex shares no faces with the
+        ! previous vertex, there is an order mismatch
+        ! => swap this vertex with one of the next ones
+        if (.not.vertex_faces(v).intersects(vertex_faces(p))) then
+          !print *, i
+          do s = 1,intersection_verts%nVerts - i - 1
+            n = index_sort(i+s)
+            !print *, s, vertex_faces(n).intersects(vertex_faces(p))
+            if (vertex_faces(n).intersects(vertex_faces(p))) exit
+          end do
+          !s = 0
+          in = i+s
+          n = index_sort(in)
+          index_sort(i) = n
+          index_sort(in) = v
+
+          do j = 1,intersection_verts%nVerts
+            v = index_sort(j)
+            p = index_sort(modulo(j-2,intersection_verts%nVerts)+1)
+            intersects(j) = .not.vertex_faces(v).intersects(vertex_faces(p))
+          end do
+          !print *, intersects(:intersection_verts%nVerts)
+          !print *
+        end if
+      end do
+
+
+      ! do j = 1,intersection_verts%nVerts
+      !   v = index_sort(j)
+      !   p = index_sort(modulo(j-2,intersection_verts%nVerts)+1)
+      !   intersects(j) = .not.vertex_faces(v).intersects(vertex_faces(p))
+      ! end do
+      ! print *, intersects(:intersection_verts%nVerts)
+      ! print *
+      ! print *
+      !stop
+
+      ! print '(a,12i6)', 'sort5', index_sort
+      ! print *, 'lens: ', size(intersection_verts%x, dim=1), size(v_assoc_pe)
+
+    end subroutine convex_corrections
+
   end function intersection_verts
+
+  subroutine tesselate(this)
+
+    class(polyhedron), intent(inout) :: this
+
+    real(r8) :: xc(3), ec(3,this%nEdges), fc(3,this%nFaces), xtet(3,4)
+    integer :: f, e, v, nV, t, ierr
+
+    ! calculate cell center
+    xtet(:,1) = sum(this%x, dim=2) / this%nVerts
+
+    ! for each vertex on each edge of each face, we create a tet
+    allocate(this%tet(2*count(this%face_eid>0)))
+    t = 0
+    do f = 1,this%nFaces
+      nV = count(this%face_vid(:,f) > 0)
+      xtet(:,2) = sum(this%x(:,this%face_vid(:nV,f)), dim=2) / nV
+      do v = 1,nV
+        xtet(:,3) = this%x(:,this%face_vid(v,f))
+        xtet(:,4) = sum(this%x(:,this%face_vid([v,modulo(v,nV)+1],f)), dim=2) / 2
+        t = t+1
+        call this%tet(t)%init_tet(ierr, xtet)
+      end do
+    end do
+
+    this%tesselated = .true.
+
+  end subroutine tesselate
+
+  ! calculate a list of faces touching each vertex
+  subroutine calculate_vertex_faces(this, ierr)
+
+    class(polyhedron), intent(inout) :: this
+    integer, intent(out) :: ierr
+
+    integer :: v, f, j(this%nVerts), nV, vid
+    integer, allocatable :: tmp(:,:)
+
+    ierr = 0
+    allocate(tmp(10, this%nVerts))
+
+    j = 0
+    do f = 1,this%nFaces
+      nV = count(this%face_vid(:,f) > 0)
+      do v = 1,nV
+        vid = this%face_vid(v,f)
+        j(vid) = j(vid) + 1
+        tmp(j(vid),vid) = f
+      end do
+    end do
+
+    if (any(j>10)) call LS_Fatal("not large enough initial allocation of vertex_faces")
+    this%vertex_faces = tmp(:maxval(j),:)
+
+  end subroutine calculate_vertex_faces
+
+  subroutine calculate_edge_faces(this, ierr)
+
+    use array_utils, only: containsPair
+
+    class(polyhedron), intent(inout) :: this
+    integer, intent(out) :: ierr
+
+    integer :: e, f, nV, v, j(this%nEdges)
+
+    ierr = 0
+    allocate(this%edge_faces(2, this%nEdges))
+
+    j = 0
+    faces: do f = 1,this%nFaces
+      nV = count(this%face_vid(:,f) > 0)
+      do v = 1,nV
+        e = pair_index(this%face_vid([v, modulo(v,nV)+1],f), this%edge_vid)
+        if (e == -1) exit faces
+        j(e) = j(e) + 1
+        this%edge_faces(j(e), e) = f
+      end do
+    end do faces
+
+    if (e < 1) then
+      ierr = 1
+      ! print *, this%face_vid([v, modulo(v,nV)+1],f)
+      call this%print_data()
+      ! call LS_Fatal("could not find pair in list")
+    end if
+
+  end subroutine calculate_edge_faces
+
+  subroutine calculate_face_eid(this, ierr)
+
+    class(polyhedron), intent(inout) :: this
+    integer, intent(out) :: ierr
+
+    integer :: e, f, nV, v, j(this%nFaces)
+
+    ierr = 0
+    allocate(this%face_eid(maxval(count(this%face_vid > 0, dim=2)), this%nFaces))
+
+    j=0
+    do e = 1,this%nEdges
+      f = this%edge_faces(1,e)
+      j(f) = j(f)+1
+      this%face_eid(j(f),f) = e
+
+      f = this%edge_faces(2,e)
+      j(f) = j(f)+1
+      this%face_eid(j(f),f) = e
+    end do
+
+  end subroutine calculate_face_eid
+
+  pure integer function pair_index(pair, list)
+
+    integer, intent(in) :: pair(:), list(:,:)
+
+    integer :: revpair(2)
+
+    revpair = pair(size(pair):1:-1)
+    do pair_index = 1,size(list, dim=2)
+      if (all(pair==list(:,pair_index)) .or. all(revpair==list(:,pair_index))) return
+    end do
+    pair_index = -1
+
+  end function pair_index
 
   ! return a list of the edge ids for edges intersected by the plane
   function intersected_edges (this,P) result(inte)
@@ -521,7 +875,7 @@ contains
   !         vertices may end up within alpha of each other. In this
   !         case, say both polyhedra are null, since we are within
   !         the cutvof anyways.
-  subroutine split (this,P,split_poly,ierr)
+  subroutine split (this,P,split_poly,interface_polygons,ierr)
 
     use consts, only: alpha
     use plane_type
@@ -529,14 +883,21 @@ contains
     class(polyhedron), intent(in) :: this
     class(plane),      intent(in) :: P
     type(polyhedron), intent(out) :: split_poly(:)
+    type(polygon_box), intent(out) :: interface_polygons ! interface polygon
     integer,          intent(out) :: ierr
 
     integer       :: v, v_assoc_pe(this%nEdges),side(this%nVerts)
     type(polygon) :: intpoly
     real(r8)      :: dist, tmp1, tmp2
 
+    if (this%tesselated) then
+      call this%tesselated_split(P, split_poly, interface_polygons, ierr)
+      return
+    end if
+
     ASSERT(size(split_poly)==2)
     ierr = 0
+    interface_polygons%n_elements = 0
 
     ! check which side of the plane each vertex lies
     ! vertices within distance alpha of the plane are considered to lie on it
@@ -562,6 +923,9 @@ contains
         if (ierr/=0) call LS_fatal ("polyhedron split failed: invalid child")
         split_poly(2) = this%polyhedron_on_side_of_plane (P, -1, side, intpoly, v_assoc_pe, ierr)
         if (ierr/=0) call LS_fatal ("polyhedron split failed: invalid child")
+
+        interface_polygons%n_elements = 1
+        interface_polygons%elements = [intpoly]
       else ! see note 1
         call split_poly(1)%init ()
         call split_poly(2)%init ()
@@ -613,6 +977,62 @@ contains
 
   end subroutine split
 
+  subroutine tesselated_split (this,P,split_poly,interface_polygons,ierr)
+
+    use plane_type
+
+    class(polyhedron), intent(in) :: this
+    class(plane),      intent(in) :: P
+    type(polyhedron), intent(out) :: split_poly(:)
+    type(polygon_box), intent(out) :: interface_polygons
+    integer,          intent(out) :: ierr
+
+    type(polyhedron) :: tmp(size(this%tet),2)
+    integer :: t
+    type(polygon_box) :: intpoly
+    type(polygon), allocatable :: tmp_polygon(:)
+
+    allocate(interface_polygons%elements(size(this%tet)))
+    interface_polygons%n_elements = 0
+
+    do t = 1,size(this%tet)
+      call this%tet(t)%split(P, tmp(t,:), intpoly, ierr)
+      if (intpoly%n_elements == 1) then
+        interface_polygons%n_elements = interface_polygons%n_elements + 1
+        interface_polygons%elements(interface_polygons%n_elements) = intpoly%elements(1)
+      end if
+    end do
+
+    ! resize interface_polygons list
+    tmp_polygon = interface_polygons%elements(:interface_polygons%n_elements)
+    call move_alloc(tmp_polygon, interface_polygons%elements)
+
+    ! give split sub-polyhedra to split_poly
+    call split_poly(1)%init_tesselated(tmp(:,1))
+    call split_poly(2)%init_tesselated(tmp(:,2))
+
+  end subroutine tesselated_split
+
+  real(r8) function tesselated_volume_behind_plane(this,P,ierr)
+
+    use plane_type
+
+    class(polyhedron), intent(in) :: this
+    class(plane), intent(in) :: P
+    integer, intent(out) :: ierr
+
+    integer :: t
+
+    tesselated_volume_behind_plane = 0
+    do t = 1,size(this%tet)
+      tesselated_volume_behind_plane = tesselated_volume_behind_plane + &
+          this%tet(t)%volume_behind_plane(P,ierr)
+      if (ierr /= 0) exit
+      !print *, 'donetv',t,size(this%tet)
+    end do
+
+  end function tesselated_volume_behind_plane
+
   ! return the volume behind (opposite normal) a plane and inside the polyhedron
   real(r8) function volume_behind_plane (this,P,ierr)
 
@@ -628,6 +1048,11 @@ contains
     integer          :: v, side(this%nVerts), v_assoc_pe(this%nEdges)
     type(polyhedron) :: behind, split(2)
     type(polygon)    :: intpoly
+
+    if (this%tesselated) then
+      volume_behind_plane = this%tesselated_volume_behind_plane(P,ierr)
+      return
+    end if
 
     ierr = 0
 
@@ -652,7 +1077,6 @@ contains
           write(*,*) 'volume_behind_plane: polyhedron split failed'
           volume_behind_plane = 0.0_r8
           return
-          call LS_fatal ("polyhedron split failed")
         end if
       else
         volume_behind_plane = 0.0_r8
@@ -724,7 +1148,7 @@ contains
     integer :: pcf, nVerts, nParVerts, nEdges, nFaces, tmp, invalid_side, &
          p2c_vid(this%nVerts), & ! parent to child vertex id conversion table for cases they correspond
          edge_vid(2,this%nEdges+intpoly%nVerts), & ! can have intpoly%nVerts more edges than parent
-         face_vid(size(this%face_vid,dim=1)+2,this%nFaces+1) ! could have 1 more face and faces could be 2 longer than parent
+         face_vid(max(size(this%face_vid,dim=1)+2,intpoly%nVerts),this%nFaces+1) ! could have 1 more face and faces could be intpoly%nverts longer than parent
 
     ! note: an updated planar face can only include 1 more node than the original,
     !       but I'm not sure if there is a limit to how many nodes the entirely new face can have.
@@ -745,16 +1169,20 @@ contains
             polyhedron_on_side_of_plane = this
       else
         ! make a list of vertices for the new polyhedron
+        !print *, 'split0'
         call generate_new_verts (x,p2c_vid,nVerts,nParVerts, this,side,v_assoc_pe,valid_side)
 
         ! find new edges, knowing the original structure and the interface polygon
+        !print *, 'split1'
         call find_edges (edge_vid,nEdges, this,side,valid_side,p2c_vid,nParVerts,nVerts,v_assoc_pe)
 
         ! construct a set of faces from the edge information
         ! note these will not be in a particular order, like pececillo would expect for hexes
+        !print *, 'split2'
         call find_faces (face_vid,face_normal,nFaces,ierr, &
             this,side,valid_side,p2c_vid,nParVerts,nVerts,intpoly%nVerts,v_assoc_pe, P%normal)
         if (ierr /= 0) call fatal()
+        !print *, 'split3'
 
         ! initialize final polyhedron
         tmp = maxval(count(face_vid(:,:) /= 0,dim=1)) ! the maximum number of vertices on a face
@@ -766,6 +1194,7 @@ contains
         end if
         call polyhedron_on_side_of_plane%init (ierr, x(:,1:nVerts), face_vid(1:tmp,1:nFaces), &
             edge_vid(:,1:nEdges), face_normal(:,1:nFaces), tesselate=.false.)
+        !print *, 'split4'
 
         !write(*,*) 'poly', nVerts, tmp, nFaces, nEdges
         if (ierr /= 0) call fatal()
@@ -925,24 +1354,28 @@ contains
       integer :: v,nV,f, e, edge_cont_verts(this%nVerts,this%nVerts)
 
       ! first make a lookup table for finding the edge associated with a pair of vertices
+      !print *, 'findfaces0'
       edge_cont_verts = 0
       do e = 1,this%nEdges
         edge_cont_verts(this%edge_vid(1,e),this%edge_vid(2,e)) = e
         edge_cont_verts(this%edge_vid(2,e),this%edge_vid(1,e)) = e
       end do
-
+      !print *, 'findfaces1'
       nFaces = 0; face_vid = 0; ierr = 0
 
       ! loop over all of the parent's faces, adding, modifying, or ignoring it's faces as needed
       do f = 1,this%nFaces
+        !print *, 'findfaces2',f
         ! if any vertices for this original face are on the valid side of the plane,
         ! then the face structure can be preserved or modified.
         ! Otherwise, it is thrown out since the entire face is behind the plane.
         nV = count(this%face_vid(:,f) /= 0) ! number of vertices on this face
         if (any(side(this%face_vid(1:nV,f))==valid_side)) then
+          !print *, 'findfaces3', this%face_vid(1:nV,f)
           nFaces = nFaces + 1
           face_normal(:,nFaces) = this%face_normal(:,f)
           if (all(side(this%face_vid(1:nV,f))/=-valid_side)) then
+            !print *, 'findfaces4'
             ! if all vertices are on the valid side of the face, this face is preserved exactly
             face_vid(1:nV,nFaces) = p2c_vid(this%face_vid(1:nV,f))
           else
@@ -1037,9 +1470,11 @@ contains
       nV = size(par_face_vid)
       cvid = 1
 
+      !print *, 'modface0'
       ! start with the first valid vertex after the section intersected by the plane
       v = first_true_loc (side(par_face_vid)==valid_side)
       if (v==1) v = modulo(last_true_loc (side(par_face_vid)/=valid_side),nV)+1
+      !print *
       !write(*,*) 'v', v, nV, modulo(v-2,nV)+1, modulo(v-1,nV)+1
 
       ! the edge [v-1,v] *must* intersect with the plane
@@ -1079,6 +1514,7 @@ contains
       !write(*,*) 'edge: ',[face_vid(1),face_vid(cvid-1)]
       v = v+1; pv = 1
       do while (.not.containsPair([face_vid(1),face_vid(cvid-1)],edge_vid) .and. pv<=nV)
+        !print *, 'try', pv
         if (side(par_face_vid(modulo(v-1,nV)+1))==0) then
           face_vid(cvid) = p2c_vid(par_face_vid(modulo(v-1,nV)+1))
           cvid = cvid+1
@@ -1086,7 +1522,7 @@ contains
         end if
         v = v+1; pv = pv+1
       end do
-      if (pv==nV .and. .not.containsPair([face_vid(1),face_vid(cvid-1)],edge_vid)) then
+      if (pv>nV .and. .not.containsPair([face_vid(1),face_vid(cvid-1)],edge_vid)) then
         write(*,*) 'final pair not found: ',[face_vid(1),face_vid(cvid-1)]
         ierr = 1
       end if
@@ -1102,12 +1538,8 @@ contains
     integer :: f
 
     do f = 1,this%nFaces
-      print *, 'here0', f
       if (this%face_is_nonplanar(f)) call this%tesselate_face(f)
     end do
-
-    print *, 'done'
-    print *
 
   end subroutine tesselate_nonplanar_faces
 

@@ -13,6 +13,7 @@ module multimat_cell_type
 
   use kinds, only: r8
   use polyhedron_type
+  use polygon_type
   use logging_services
   implicit none
   private
@@ -25,6 +26,7 @@ module multimat_cell_type
     integer                       :: nmat,m ! number of materials actually present in cell
     !integer,          allocatable :: mat_id(:)
     type(polyhedron), allocatable :: mat_poly(:)
+    type(polygon_box), allocatable :: interface_polygons(:)
   contains
     procedure :: partition
     procedure, private :: volumes_behind_plane
@@ -52,8 +54,10 @@ contains
 
     ierr = 0
     if (allocated(this%mat_poly)) deallocate(this%mat_poly)
-    allocate(this%mat_poly(size(vof)))
+    if (allocated(this%interface_polygons)) deallocate(this%interface_polygons)
+    allocate(this%mat_poly(size(vof)), this%interface_polygons(size(vof)))
     this%mat_poly(:)%nVerts = 0
+    this%interface_polygons(:)%n_elements = 0
     this%m = 0
 
     call remainder%init (this)
@@ -80,7 +84,7 @@ contains
         ! if this is not the final material in the cell, split the cell
         interface_plane = locate_plane_nd (remainder, norm(:,m), vof(m)*this%volume(), this%volume())
         !tmp = remainder%split (interface_plane)
-        call remainder%split (interface_plane,tmp,ierr)
+        call remainder%split (interface_plane,tmp,this%interface_polygons(m),ierr)
 
         ! this check ensures the partitions give their vofs within the requested cutvof
         ! it will fail if the Brent's iterations did not converge within the maximum

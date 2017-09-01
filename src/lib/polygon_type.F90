@@ -33,11 +33,19 @@ module polygon_type
     procedure :: centroid2
     procedure :: area
     procedure :: order
+    procedure :: sort_order
     procedure :: basis
     procedure :: update_plane_normal
     procedure :: rotate_offset
     procedure :: print_data
   end type polygon
+
+  type, public :: polygon_box
+    integer :: n_elements
+    type(polygon), allocatable :: elements(:)
+  end type polygon_box
+
+  public :: flat_polygon_box
 
 contains
 
@@ -201,13 +209,14 @@ contains
   ! this is done by calculating the vector between each vertex and the polygon centroid,
   ! then the angle of that vector with respect to the x-axis in that space.
   ! this angle is used to sort the vertices
-  subroutine order (this,array)
+  subroutine order (this,array,index_sort)
 
     use array_utils, only: insertion_sort,xrange,invert,normalize,projectOnto,magnitude,isZero,&
         orthonormalBasis
 
     class(polygon),    intent(inout) :: this
     integer, optional, intent(inout) :: array(:) ! an array that gets sorted along with the polygon
+    integer, optional, allocatable, intent(out) :: index_sort(:)
 
     real(r8), allocatable :: q(:,:)
     real(r8) :: xc(ndim), t(this%nVerts), t2(this%nVerts), prjx(2), xl(ndim,this%nVerts), tmp
@@ -251,10 +260,11 @@ contains
     end do
 
     ! sort based on angle
-    if (present(array)) then
+    if (present(array) .or. present(index_sort)) then
       t2 = t
       ind = xrange (1,size(this%x,dim=2))
       call insertion_sort (ind,t2)
+      if (present(index_sort)) index_sort = ind
       ind = invert (ind)
       do i = 1,size(array)
         if (array(i)>0) array(i) = ind(array(i))
@@ -266,6 +276,64 @@ contains
     call this%update_plane_normal ()
 
   end subroutine order
+
+  ! order the vertices of a convex polygon
+  !
+  ! this is done by calculating the vector between each vertex and the polygon centroid,
+  ! then the angle of that vector with respect to the x-axis in that space.
+  ! this angle is used to sort the vertices
+  function sort_order(this)
+
+    use array_utils, only: insertion_sort,xrange,normalize,orthonormalBasis
+
+    class(polygon), intent(in) :: this
+    integer, allocatable :: sort_order(:)
+
+    real(r8), allocatable :: q(:,:)
+    real(r8) :: xc(ndim), t(this%nVerts), prjx(2), xl(ndim,this%nVerts)
+    integer  :: i
+
+    ! calculate the location of the centroid, and the vertex coordinates with respect to the centroid
+    ! normalize to avoid floating point cutoffs, since the polygon may be very tiny
+    xc = this%centroid ()
+    do i = 1,this%nVerts
+      xl(:,i) = normalize(this%x(:,i) - xc(:))
+    end do
+
+    ! the projection coordinate directions
+    ! WARNING: problems will occur here if the vertices are slightly non-planar
+    q = orthonormalBasis(xl)
+    if (.not.all(shape(q) >= [3,2])) then
+      write(*,*)
+      write(*,*) shape(q)
+      do i = 1,size(q, dim=2)
+        write(*,'(a,i3,a,3es20.10)') 'q  ',i,': ',q(:,i)
+      end do
+      write(*,*)
+      do i = 1,this%nVerts
+        write(*,'(a,i3,a,3es20.10)') 'xl ',i,': ',xl(:,i)
+      end do
+      write(*,*)
+      call this%print_data ()
+      call LS_fatal ("polygon ordering failed: unable to calculate polygon-plane coordinates")
+    end if
+
+    ! calculate the rotation angle
+    !t(1) = 0.0_r8
+    do i = 1,this%nVerts
+      ! get coordinates for the vertex in the 2D plane defined by the polygon
+      prjx(1) = dot_product(xl(:,i),q(:,1))
+      prjx(2) = dot_product(xl(:,i),q(:,2))
+
+      ! find the angle made by this vertex with respect to the first vertex
+      t(i) = atan2(prjx(2),prjx(1))
+      !write(*,'(i6, 3es20.10)') i, prjx, t(i)
+    end do
+
+    sort_order = xrange (1,size(this%x,dim=2))
+    call insertion_sort (sort_order,t)
+
+  end function sort_order
 
   ! generate an orthogonal basis for the polygon, approximately scaled to the size of the polygon
   ! the first element is the shortest dimension, the second the longest
@@ -339,5 +407,22 @@ contains
     print '(a,3es15.5)', 'norm ',this%norm
 
   end subroutine print_data
+
+  type(polygon_box) function flat_polygon_box(polygon_boxes)
+
+    type(polygon_box), intent(in) :: polygon_boxes(:)
+
+    integer :: i, j
+
+    flat_polygon_box%n_elements = sum(polygon_boxes%n_elements)
+    allocate(flat_polygon_box%elements(flat_polygon_box%n_elements))
+
+    j = 0
+    do i = 1,size(polygon_boxes)
+      flat_polygon_box%elements(j+1:j+polygon_boxes(i)%n_elements) = polygon_boxes(i)%elements
+      j = j + polygon_boxes(i)%n_elements
+    end do
+
+  end function flat_polygon_box
 
 end module polygon_type
