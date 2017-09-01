@@ -60,6 +60,7 @@ module polyhedron_type
     procedure, private :: tesselate
     procedure, private :: tesselated_volume
     procedure, private :: tesselated_split
+    generic :: assignment(=) => init_polyhedron_copy
     final :: polyhedron_delete
   end type polyhedron
 
@@ -67,10 +68,6 @@ contains
 
   subroutine polyhedron_delete (this)
     type(polyhedron) :: this
-    ! if (allocated(this%x)) deallocate(this%x)
-    ! if (allocated(this%face_normal)) deallocate(this%face_normal)
-    ! if (allocated(this%face_vid)) deallocate(this%face_vid)
-    ! if (allocated(this%edge_vid)) deallocate(this%edge_vid)
     if (allocated(this%tet)) deallocate(this%tet)
   end subroutine polyhedron_delete
 
@@ -380,16 +377,19 @@ contains
     this%nEdges = poly%nEdges
     this%nFaces = poly%nFaces
     this%vol    = poly%vol
-
-    if (allocated(this%x))           deallocate(this%x)
-    if (allocated(this%edge_vid))    deallocate(this%edge_vid)
-    if (allocated(this%face_vid))    deallocate(this%face_vid)
-    if (allocated(this%face_normal)) deallocate(this%face_normal)
-
     this%x = poly%x
     this%edge_vid = poly%edge_vid
     this%face_vid = poly%face_vid
     this%face_normal = poly%face_normal
+    this%vertex_faces = poly%vertex_faces
+    this%edge_faces = poly%edge_faces
+    this%face_eid = poly%face_eid
+    this%tesselated = poly%tesselated
+
+    if (allocated(poly%tet)) then
+      allocate(this%tet(size(poly%tet)))
+      this%tet = poly%tet
+    end if
 
   end subroutine init_polyhedron_copy
 
