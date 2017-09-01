@@ -595,7 +595,7 @@ contains
       ! this probably doesn't need to be called every time this function is used
       index_sort = intersection_verts%sort_order()
 
-      call convex_corrections()
+      !call convex_corrections()
 
       ! update arrays with new sorting
       !print *, 'sort0'
@@ -607,6 +607,8 @@ contains
         if (v_assoc_pe(i)>0) v_assoc_pe(i) = index_sort(v_assoc_pe(i))
       end do
       !print *, 'sort2', v_assoc_pe
+
+      call intersection_verts%update_plane_normal()
 
       ! make sure the vertices are ordered counter-clockwise
       if (dot_product(intersection_verts%norm,P%normal) < 0) then
