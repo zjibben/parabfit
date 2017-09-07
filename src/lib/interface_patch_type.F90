@@ -104,8 +104,9 @@ contains
     ! !call surf%bestParaboloidFit (pts)
     ! call surf%bestFit (pts, wgt, normal)
 
-    patch_polygons = flat_polygon_box(interface_reconstructions)
-    call surf%volumetricFit(patch_polygons%elements)
+    ! patch_polygons = flat_polygon_box(interface_reconstructions)
+    ! call surf%volumetricFit(patch_polygons%elements)
+    call surf%volumetricFit(interface_reconstructions)
     curvature_from_patch = surf%curvature(interface_reconstructions(1)%elements(1)%centroid())
 
     ! if (verboseh) then
@@ -173,6 +174,7 @@ contains
     end if
 
     call start_timer ("fit normals")
+    call LS_fatal ("currently turned off normal_from_patch")
 
     ! do i = 1,size(interface_reconstructions)
     !   pts(:,i) = interface_reconstructions(i)%centroid2()
@@ -181,7 +183,7 @@ contains
     ! call surf%bestFit (pts(:,1:size(interface_reconstructions)), &
     !     wgt(1:size(interface_reconstructions)), normal)
 
-    call surf%volumetricFit(interface_reconstructions)
+    !call surf%volumetricFit(interface_reconstructions)
 
     !normal_from_patch = surf%normal(interface_reconstructions(1)%centroid())
     normal_from_patch = surf%normal_average(interface_reconstructions(1))

@@ -47,17 +47,19 @@ contains
     integer                    :: N
 
     !if (new_element%nVerts < 3) return ! TODO: throw error here?
+    if (new_element%n_elements < 1) return
 
     if (allocated(this%element)) then
       N = size(this%element)
-      tmp = this%element
-      tmp2 = this%cell_id
-      deallocate(this%element, this%cell_id)
-      allocate(this%element(N+1), this%cell_id(N+1))
-      this%element(1:N) = tmp
-      this%element(N+1) = new_element
-      this%cell_id(1:N) = tmp2
-      this%cell_id(N+1) = cell_id
+      allocate(tmp(N+1), tmp2(N+1))
+
+      tmp(:N) = this%element
+      tmp(N+1) = new_element
+      call move_alloc(tmp, this%element)
+
+      tmp2(:N) = this%cell_id
+      tmp2(N+1) = cell_id
+      call move_alloc(tmp2, this%cell_id)
     else
       allocate(this%element(1), this%cell_id(1))
       this%element(1) = new_element

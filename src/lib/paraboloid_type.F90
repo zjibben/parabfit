@@ -142,7 +142,79 @@ contains
 
   end subroutine bestFit
 
-  subroutine volumetricFit (this, interface_reconstruction)
+  ! subroutine volumetricFit (this, interface_reconstruction)
+
+  !   use polygon_type
+  !   use array_utils, only: outer_product, rotationMatrix
+  !   use logging_services
+  !   external dsysv ! lapack
+
+  !   class(paraboloid), intent(out) :: this
+  !   type(polygon), intent(in) :: interface_reconstruction(:)
+
+  !   type(polygon) :: int_rec
+  !   real(r8), allocatable :: c(:), cr(:)
+  !   real(r8) :: xcen(3), normal(3), R(3,3)
+  !   real(r8) :: integrals(6), reconstruction_plane_coeffs(3), xv, yv, xvn, yvn, A(6,6), b(6)
+  !   integer :: i, n_rec, ierr, v, vn, ipiv(6), lwork
+  !   real(r8), allocatable :: work(:)
+
+  !   xcen = interface_reconstruction(1)%centroid2()
+  !   normal = interface_reconstruction(1)%norm
+
+  !   ! get the set of points in the rotated and translated coordinate space
+  !   A = 0; b = 0
+  !   do i = 1,size(interface_reconstruction)
+  !     int_rec = interface_reconstruction(i)
+  !     call int_rec%rotate_offset(normal, xcen)
+
+  !     reconstruction_plane_coeffs = [-dot_product(int_rec%centroid2(), int_rec%norm), &
+  !         int_rec%norm(1), int_rec%norm(2)] / (-int_rec%norm(3))
+
+  !     integrals = 0
+  !     do v = 1,int_rec%nVerts
+  !       vn = modulo(v,int_rec%nVerts) + 1
+  !       xv = int_rec%x(1,v)
+  !       yv = int_rec%x(2,v)
+  !       xvn = int_rec%x(1,vn)
+  !       yvn = int_rec%x(2,vn)
+
+  !       integrals = integrals + [&
+  !           (xv*yvn - xvn*yv) / 2, &
+  !           (xv + xvn)*(xv*yvn - xvn*yv) / 6, &
+  !           (yv + yvn)*(xv*yvn - xvn*yv) / 6, &
+  !           (xv + xvn)*(xv**2 + xvn**2)*(yvn - yv) / 12, &
+  !           (yvn - yv)*(3*xv**2*yv + xv**2*yvn + 2*xv*xvn*yv + 2*xv*xvn*yvn + xvn**2*yv + 3*xvn**2*yvn)/24, &
+  !           (xv - xvn)*(yv + yvn)*(yv**2 + yvn**2) / 12]
+  !     end do
+
+  !     A = A + outer_product(integrals, integrals)
+  !     b = b + integrals * dot_product(integrals(:3), reconstruction_plane_coeffs)
+  !   end do
+
+  !   ! get optimal work size
+  !   lwork = this%optimalWorkSize(6)
+  !   allocate(work(lwork))
+
+  !   ! solve the symmetric linear system (note lapack puts the solution in b)
+  !   call dsysv ('U', 6, 1, A, 6, ipiv, b, 6, work, lwork, ierr)
+  !   if (ierr /= 0) call LS_fatal ('volumetricFit: failed symmetric linear solve')
+
+  !   ! convert to full 3d form
+  !   cr = [b(1), b(2), b(3), -1.0_r8, b(4), b(5), b(6)]
+
+  !   ! get coeffs in original space
+  !   R = rotationMatrix(normal)
+  !   c = this%coeffsInOriginalSpace(cr, R, xcen)
+
+  !   ! generate paraboloid object
+  !   call this%init (c, cr)
+  !   this%rot = R
+  !   this%offset = xcen
+
+  ! end subroutine volumetricFit
+
+  subroutine volumetricFit (this, interface_reconstruction_collection)
 
     use polygon_type
     use array_utils, only: outer_product, rotationMatrix
@@ -150,46 +222,59 @@ contains
     external dsysv ! lapack
 
     class(paraboloid), intent(out) :: this
-    type(polygon), intent(in) :: interface_reconstruction(:)
+    type(polygon_box), intent(in) :: interface_reconstruction_collection(:)
 
     type(polygon) :: int_rec
     real(r8), allocatable :: c(:), cr(:)
-    real(r8) :: xcen(3), normal(3), R(3,3)
-    real(r8) :: integrals(6), reconstruction_plane_coeffs(3), xv, yv, xvn, yvn, A(6,6), b(6)
-    integer :: i, n_rec, ierr, v, vn, ipiv(6), lwork
+    real(r8) :: xcen(3), normal(3), rot(3,3)
+    real(r8) :: integrals(6), reconstruction_plane_coeffs(3), xv, yv, xvn, yvn, A(6,6), b(6), &
+        integral_sum(6), b_dot_sum
+    integer :: i, n_rec, ierr, v, vn, ipiv(6), lwork, p, r
     real(r8), allocatable :: work(:)
 
-    xcen = interface_reconstruction(1)%centroid2()
-    normal = interface_reconstruction(1)%norm
+    ! xcen = 0
+    ! do r = 1,interface_reconstruction_collection(1)%n_elements
+    !   xcen = xcen + interface_reconstruction_collection(1)%elements(r)%centroid2()
+    ! end do
+    ! xcen = xcen / interface_reconstruction_collection(1)%n_elements
+    xcen = interface_reconstruction_collection(1)%elements(1)%centroid2()
+    normal = interface_reconstruction_collection(1)%elements(1)%norm
 
     ! get the set of points in the rotated and translated coordinate space
     A = 0; b = 0
-    do i = 1,size(interface_reconstruction)
-      int_rec = interface_reconstruction(i)
-      call int_rec%rotate_offset(normal, xcen)
+    do p = 1,size(interface_reconstruction_collection)
 
-      reconstruction_plane_coeffs = [-dot_product(int_rec%centroid2(), int_rec%norm), &
-          int_rec%norm(1), int_rec%norm(2)] / (-int_rec%norm(3))
+      integral_sum = 0; b_dot_sum = 0
+      do r = 1,interface_reconstruction_collection(p)%n_elements
+        int_rec = interface_reconstruction_collection(p)%elements(r)
+        call int_rec%rotate_offset(normal, xcen)
 
-      integrals = 0
-      do v = 1,int_rec%nVerts
-        vn = modulo(v,int_rec%nVerts) + 1
-        xv = int_rec%x(1,v)
-        yv = int_rec%x(2,v)
-        xvn = int_rec%x(1,vn)
-        yvn = int_rec%x(2,vn)
+        reconstruction_plane_coeffs = [-dot_product(int_rec%centroid2(), int_rec%norm), &
+            int_rec%norm(1), int_rec%norm(2)] / (-int_rec%norm(3))
 
-        integrals = integrals + [&
-            (xv*yvn - xvn*yv) / 2, &
-            (xv + xvn)*(xv*yvn - xvn*yv) / 6, &
-            (yv + yvn)*(xv*yvn - xvn*yv) / 6, &
-            (xv + xvn)*(xv**2 + xvn**2)*(yvn - yv) / 12, &
-            (yvn - yv)*(3*xv**2*yv + xv**2*yvn + 2*xv*xvn*yv + 2*xv*xvn*yvn + xvn**2*yv + 3*xvn**2*yvn)/24, &
-            (xv - xvn)*(yv + yvn)*(yv**2 + yvn**2) / 12]
+        integrals = 0
+        do v = 1,int_rec%nVerts
+          vn = modulo(v,int_rec%nVerts) + 1
+          xv = int_rec%x(1,v)
+          yv = int_rec%x(2,v)
+          xvn = int_rec%x(1,vn)
+          yvn = int_rec%x(2,vn)
+
+          integrals = integrals + [&
+              (xv*yvn - xvn*yv) / 2, &
+              (xv + xvn)*(xv*yvn - xvn*yv) / 6, &
+              (yv + yvn)*(xv*yvn - xvn*yv) / 6, &
+              (xv + xvn)*(xv**2 + xvn**2)*(yvn - yv) / 12, &
+              (yvn - yv)*(3*xv**2*yv + xv**2*yvn + 2*xv*xvn*yv + 2*xv*xvn*yvn + xvn**2*yv + 3*xvn**2*yvn)/24, &
+              (xv - xvn)*(yv + yvn)*(yv**2 + yvn**2) / 12]
+        end do
+
+        integral_sum = integral_sum + integrals
+        b_dot_sum = b_dot_sum + dot_product(integrals(:3), reconstruction_plane_coeffs)
       end do
 
-      A = A + outer_product(integrals, integrals)
-      b = b + integrals * dot_product(integrals(:3), reconstruction_plane_coeffs)
+      A = A + outer_product(integral_sum, integral_sum)
+      b = b + integral_sum * b_dot_sum
     end do
 
     ! get optimal work size
@@ -204,12 +289,12 @@ contains
     cr = [b(1), b(2), b(3), -1.0_r8, b(4), b(5), b(6)]
 
     ! get coeffs in original space
-    R = rotationMatrix(normal)
-    c = this%coeffsInOriginalSpace(cr, R, xcen)
+    rot = rotationMatrix(normal)
+    c = this%coeffsInOriginalSpace(cr, rot, xcen)
 
     ! generate paraboloid object
     call this%init (c, cr)
-    this%rot = R
+    this%rot = rot
     this%offset = xcen
 
   end subroutine volumetricFit

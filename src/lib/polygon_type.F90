@@ -419,8 +419,10 @@ contains
 
     j = 0
     do i = 1,size(polygon_boxes)
-      flat_polygon_box%elements(j+1:j+polygon_boxes(i)%n_elements) = polygon_boxes(i)%elements
-      j = j + polygon_boxes(i)%n_elements
+      if (polygon_boxes(i)%n_elements > 0) then
+        flat_polygon_box%elements(j+1:j+polygon_boxes(i)%n_elements) = polygon_boxes(i)%elements
+        j = j + polygon_boxes(i)%n_elements
+      end if
     end do
 
   end function flat_polygon_box
