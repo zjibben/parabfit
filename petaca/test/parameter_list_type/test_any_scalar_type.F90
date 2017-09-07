@@ -341,6 +341,7 @@ contains
     end type
     type(box) :: b
 
+print *, 'foo'
     allocate(b%n)
     b%n = 1
 

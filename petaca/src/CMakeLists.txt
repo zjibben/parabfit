@@ -4,6 +4,7 @@ set(Petaca_SOURCE_FILES
       map_any_type.F90
       yajl_fort.F90
       yajl_ext.c
+      json.F90
       parameter_entry_class.F90
       parameter_list_type.F90
       parameter_list_json.F90
@@ -13,23 +14,31 @@ set(Petaca_SOURCE_FILES
       secure_hash/md5_hash_type.F90
       secure_hash/sha1_hash_type.F90
       timer_tree_type.F90)
-                            
-                            
-include_directories(${Petaca_INCLUDE_DIR})
-include_directories(${Petaca_MODULE_DIR})
+
+if(CMAKE_Fortran_COMPILER_ID MATCHES GNU)
+  set_property (SOURCE secure_hash/md5_hash_type.F90
+                       secure_hash/sha1_hash_type.F90
+                PROPERTY COMPILE_FLAGS -fno-range-check)
+endif()
+
+set(CMAKE_Fortran_MODULE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/mod_files/)
+
 include_directories(${YAJL_INCLUDE_DIR}) # for yajl_ext.c
 
 add_library(petaca ${Petaca_SOURCE_FILES})
 
-target_link_libraries(petaca dl) # for fortran_dynamic_loader
-target_link_libraries(petaca yajl)  # for yajl-fort
+target_link_libraries(petaca PUBLIC yajl dl)
 
-install(TARGETS petaca DESTINATION lib)
-        
+target_include_directories(petaca PUBLIC
+    $<BUILD_INTERFACE:${Petaca_INCLUDE_DIR}>
+    $<BUILD_INTERFACE:${CMAKE_Fortran_MODULE_DIRECTORY}>
+    $<INSTALL_INTERFACE:include>
+)
+
+install(TARGETS petaca
+        EXPORT  truchas
+        LIBRARY DESTINATION lib
+        ARCHIVE DESTINATION lib
+)
+
 install(DIRECTORY ${CMAKE_Fortran_MODULE_DIRECTORY} DESTINATION include)
-
-### Preprocessor defines; mainly compiler bug workarounds.
-foreach (def ${Fortran_COMPILE_DEFINITIONS})
-  set_property (TARGET petaca APPEND PROPERTY COMPILE_DEFINITIONS ${def})
-endforeach ()
-

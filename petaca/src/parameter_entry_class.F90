@@ -486,7 +486,7 @@ contains
     logical, intent(out) :: errc
     select type (v => this%value)
     type is (character(*))
-#ifdef INTEL_DPD200255963
+#if defined(INTEL_DPD200255963)
       if (allocated(value)) deallocate(value)
       allocate(value(size(v)), source=v)
 #else
@@ -706,7 +706,7 @@ contains
     logical, intent(out) :: errc
     select type (v => this%value)
     type is (character(*))
-#ifdef INTEL_DPD200255963
+#if defined(INTEL_DPD200255963)
       if (allocated(value)) deallocate(value)
       allocate(value(size(v,1),size(v,2)), source=v)
 #else
