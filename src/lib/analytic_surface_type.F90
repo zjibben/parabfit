@@ -36,8 +36,11 @@ module analytic_surface_type
     procedure :: Fstr
     procedure, private :: print_uf
     procedure, private :: print_f
+#ifndef NAGFOR
+    ! NAG Compiler does not support this as of v6.1
     generic :: write(unformatted) => print_uf
     generic :: write(formatted) => print_f
+#endif
   end type analytic_surface
 
   real(r8), parameter :: eccentricity_max = 1e4_r8
@@ -69,7 +72,7 @@ contains
 
     ! pick the eigenvector corresponding to the smallest real eigenvalue
     call this%init (vr(:,minloc(lr, dim=1)))
-    
+
   end subroutine bestFit
 
   ! Andrews & Sequin (2013) algorithm for parabolic coefficients
@@ -107,7 +110,7 @@ contains
     end do
 
     call LS_fatal ('could not find good paraboloidic fit')
-    
+
   end subroutine bestParaboloidFit
 
   subroutine goodParaboloidInSpace (this, C0, C1, xcen)
@@ -124,12 +127,12 @@ contains
     ! switch to matrix form of the coefficients
     A0 = coeffs2matrix (C0)
     A1 = coeffs2matrix (C1)
-    
+
     ! construct cubic polynomial, the roots of which indicate a det=0 matrix (i.e., a paraboloid)
     cubic_coeffs = 0.0_r8
 
     cubic_coeffs(1) = det(A0)
-    
+
     Atmp(:,1) = A1(:,1); Atmp(:,2) = A0(:,2); Atmp(:,3) = A0(:,3)
     cubic_coeffs(2) = cubic_coeffs(2) + det(Atmp)
     Atmp(:,1) = A0(:,1); Atmp(:,2) = A1(:,2); Atmp(:,3) = A0(:,3)
@@ -149,10 +152,10 @@ contains
     t_roots = polynomial_roots(cubic_coeffs)
 
     !call this%init (normalize(C0 + minval(t_roots) * C1))
-    
+
     ! print *, A0
     ! print *, det(A0)
-    
+
     ! print *, 'c0: ', c0
 
     ! print *
@@ -170,7 +173,7 @@ contains
       call this%init (normalize(C0 + t_roots(i) * C1))
       call this%canonicalForm (lr, lin, k, dx)
       !if (isZero(k)) return ! no one-sheet quadrics of this form
-      
+
       ! lr = lr/k
       ! lin = lin/k
       ! sqr_signs = signs(pack(lr, mask=.not.isZero(lr)))
@@ -244,7 +247,7 @@ contains
     ! or all have the same sign, then the best fit is not
     ! a hyperboloid.
     sqr_signs = signs(sqr)
-    
+
     if (count(sqr_signs /= sign(1.0_r8, k)) > 1 .and. .not.isZero(k) .and. &
         .not.(any(isZero(sqr)) .or. all(sqr_signs==sqr_signs(1)))) & !then
         call this%bestParaboloidFit (x)
@@ -299,7 +302,7 @@ contains
     do i = 1,N
       if (.not.isZero(sqr(i))) tr(i) = 0.5_r8 * b(i) / sqr(i)
     end do
-    
+
     ! use a component of tr corresponding to a 0-eigenvalue to cancel out the constant term
     if (any(isZero(sqr) .and. .not.isZero(b))) then
       i = first_true_loc(isZero(sqr) .and. .not.isZero(b))
@@ -308,7 +311,7 @@ contains
 
     k = dot_product(tr, matmul(D, tr)) - dot_product(b, tr) + k
     b = b - 2.0_r8 * matmul(tr, D)
-    
+
     ! normalize the terms by the largest linear component, or the largest nonlinear component
     if (any(.not.isZero(b))) then
       norm_fac = b(first_true_loc(.not.isZero(b)))
@@ -324,7 +327,7 @@ contains
       dx = matmul(transpose(evc), dx) / norm_fac
       dx(1) = 2.0_r8 * sqrt(abs(dx(i))/eccentricity) * abs(norm_fac)
     end if
-    
+
   end subroutine canonicalForm
 
   function coeffs2matrix(c)
@@ -335,12 +338,12 @@ contains
         c(6)/2.0_r8, c(8), c(9)/2.0_r8,&
         c(7)/2.0_r8, c(9)/2.0_r8, c(10)], [3,3])
   end function coeffs2matrix
-  
+
   subroutine taubinCoeffs (this, evl, evc, x)
-    
+
     use array_utils, only: outer_product, isZero
     use, intrinsic :: iso_c_binding, only: c_new_line
-    
+
     class(analytic_surface), intent(in) :: this
     real(r8), allocatable, intent(out) :: evl(:), evc(:,:)
     real(r8), intent(in) :: x(:,:)
@@ -348,7 +351,7 @@ contains
     real(r8), allocatable :: M(:,:), N(:,:), lr(:), li(:), vr(:,:), tmpM(:,:), tmpV(:), tmpV2(:)
     real(r8) :: tmpR
     integer :: ierr,s,i,j
-    
+
     ! Exclusively 3D for now. Adding a 2D-specific version would be trivial, though.
     ASSERT(size(x,1)==3)
 
@@ -389,12 +392,12 @@ contains
     ! do i = 1,s
     !   print '(10es10.2)', M(:,i)
     ! end do
-    
+
     ! print *, c_new_line, "N:"
     ! do i = 1,s
     !   print '(10es10.2)', N(:,i)
     ! end do
-    
+
         ! print *, c_new_line, "evs:"
     ! do i = 1,s
     !   print '(10es10.2)', lr(i), li(i)
@@ -491,7 +494,7 @@ contains
     character(32) :: term_str
     integer :: i
 
-    terms = ['1','x','y','z','x**2','x*y','x*z','y**2','y*z','z**2']
+    terms = ['1   ','x   ','y   ','z   ','x**2','x*y ','x*z ','y**2','y*z ','z**2']
     Fstr = ''
 
     do i = 1,size(this%coeff)

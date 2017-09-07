@@ -36,7 +36,7 @@ contains
   function cylinder_region_value (xc, axis, radius, halfheight) result(r)
 
     use array_utils, only: normalize
-    
+
     real(r8), intent(in) :: xc(:), axis(:), radius, halfheight
     type(cylinder_region) :: r
 
@@ -56,8 +56,6 @@ contains
     real(r8), intent(in) :: x(:)
 
     real(r8) :: xt(ndim), d, r
-
-    ASSERT(size(x)==ndim)
 
     ! get distance from cylinder origin both along and orthogonal to the axis
     xt = x - this%center

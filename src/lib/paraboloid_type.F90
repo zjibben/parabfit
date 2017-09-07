@@ -46,8 +46,11 @@ module paraboloid_type
     procedure :: fstr_rot
     procedure, private :: print_uf
     procedure, private :: print_f
+#ifndef NAGFOR
+    ! NAG Compiler does not support this as of v6.1
     generic :: write(unformatted) => print_uf
     generic :: write(formatted) => print_f
+#endif
   end type paraboloid
 
   real(r8), parameter :: eccentricity_max = 1e4_r8
@@ -86,7 +89,7 @@ contains
     integer :: i
 
     ASSERT(size(x,1)==3) ! Exclusively 3D for now. Adding a 2D version would be trivial, though.
-    ASSERT(size(x, dim=2) = size(weight))
+    ASSERT(size(x, dim=2) == size(weight))
 
     ! get the center and normal vector
     !xcen = sum(x(:,1:3), dim=2) / 3.0_r8
@@ -227,7 +230,7 @@ contains
     real(r8), allocatable :: A(:,:), b(:), tmpl(:), work(:)
 
     ASSERT(size(x, dim=1) == 3)
-    ASSERT(size(x, dim=2) = size(weight))
+    ASSERT(size(x, dim=2) == size(weight))
 
     s = 6 ! number of terms for direct paraboloid z = f(x)
 
@@ -624,7 +627,7 @@ contains
     character(32) :: term_str
     integer :: i
 
-    terms = ['1','x','y','z','x**2','x*y','x*z','y**2','y*z','z**2']
+    terms = ['1   ','x   ','y   ','z   ','x**2','x*y ','x*z ','y**2','y*z ','z**2']
     !terms = ['1','x','y','x**2','x*y','y**2']
     Fstr = ''
 
@@ -652,7 +655,7 @@ contains
     character(32) :: term_str
     integer :: i
 
-    terms = ['1','x','y','z','x**2','x*y','y**2']
+    terms = ['1   ','x   ','y   ','z   ','x**2','x*y ','y**2']
     Fstr = ''
 
     do i = 1,size(this%cr)

@@ -118,7 +118,7 @@ contains
     if (rho_min==-huge(1.0_r8) .or. rho_max==huge(1.0_r8)) then
       P%normal = norm
       print '(a,3f10.3)', 'normal: ', norm
-      call poly%print_data (normalized=.true.)
+      call poly%print_data ()
       !write(*,*) 'volume ',poly%volume ()
       do i = 1,poly%nVerts
         rho = dot_product(poly%x(:,i),norm)

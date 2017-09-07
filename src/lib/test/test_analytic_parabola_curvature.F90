@@ -2,6 +2,9 @@ program test_analytic_parabola_curvature
 
   use kinds, only: r8
   use logging_services
+#ifdef NAGFOR
+  use,intrinsic :: f90_unix, only: exit
+#endif
   implicit none
 
   integer :: status, N, p
