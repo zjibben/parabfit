@@ -47,7 +47,6 @@ contains
 
     ! get the initial guess from Youngs' method
     int_norm = interface_normal(vof, mesh, gmesh, .false.)
-
     m = 1 ! WARN: right now assuming 2 materials
     tmp3 = 0
     !i = 687
@@ -240,6 +239,9 @@ contains
     this%ncell = gmesh%caneighbor(i)%n_elements + 1
 
     !print *, 'nc: ',this%ncell
+    if (allocated(this%cell)) deallocate(this%cell)
+    if (allocated(this%vof)) deallocate(this%vof)
+    if (allocated(this%cell_vol)) deallocate(this%cell_vol)
 
     allocate(this%cell(this%ncell), this%vof(this%ncell), this%cell_vol(this%ncell))
 

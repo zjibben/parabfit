@@ -52,21 +52,27 @@ contains
     type(polyhedron) :: tmp(2),remainder
     integer          :: m,nm,ierr
 
+    !print *, 'part0'
     ierr = 0
     if (allocated(this%mat_poly)) deallocate(this%mat_poly)
     if (allocated(this%interface_polygons)) deallocate(this%interface_polygons)
-    allocate(this%mat_poly(size(vof)), this%interface_polygons(size(vof)))
+    allocate(this%mat_poly(size(vof)), this%interface_polygons(size(vof)), stat=ierr)
     this%mat_poly(:)%nVerts = 0
-    this%interface_polygons(:)%n_elements = 0
+    this%interface_polygons%n_elements = 0
     this%m = 0
+    !print *, 'part1', ierr, loc(tmp(1)), loc(tmp(2))
 
-    call remainder%init (this)
+    remainder = this
+    !print *, loc(this%tet(1)), loc(remainder%tet(1))
+    !print *, 'part2', associated(this%tet), associated(tmp(1)%tet) !, associated(tmp(2)%tet) !, associated(remainder%tet)
 
     this%nmat = count(vof > cutvof)
     nm = 0
 
     do m = 1,size(vof)
+      !print *, 'part3'
       if (vof(m) < cutvof) cycle
+      !print *, 'part4'
       nm = nm+1 ! update the counter of how many materials we've seen thus far
 
       ! reconstruct the plane from the remaining free space
@@ -82,9 +88,17 @@ contains
         exit
       else
         ! if this is not the final material in the cell, split the cell
+        !print *, 'part5'
         interface_plane = locate_plane_nd (remainder, norm(:,m), vof(m)*this%volume(), this%volume())
-        !tmp = remainder%split (interface_plane)
+        ! interface_plane%normal = [1.0_r8, 0.0_r8, 0.0_r8]
+        ! interface_plane%rho = 0.349086120553874_r8
+        ! print *, 'part6' !, interface_plane%rho
+        ! print *, 'v1', interface_plane
+        ! print *, 'v2', ierr
+        ! print *, 'v3', this%interface_polygons(m)%n_elements
         call remainder%split (interface_plane,tmp,this%interface_polygons(m),ierr)
+        ! print *, 'part7'
+        ! stop
 
         ! this check ensures the partitions give their vofs within the requested cutvof
         ! it will fail if the Brent's iterations did not converge within the maximum
@@ -97,6 +111,19 @@ contains
         this%mat_poly(m) = tmp(2)
       end if
     end do
+
+    if (this%interface_polygons(1)%n_elements < 1) then
+      m = 1
+      remainder = this
+      print *, 'hmm vof ',vof
+      print *, this%nmat, (1-cutvof)*remainder%volume(), vof(m)*this%volume(), &
+          remainder%volume() / this%volume(), &
+          (1.0_r8-cutvof)*remainder%volume() < vof(m)*this%volume() .or. &
+          isZero(remainder%volume() / this%volume())
+      interface_plane = locate_plane_nd (remainder, norm(:,m), vof(m)*this%volume(), this%volume())
+      print *, remainder%volume_behind_plane (interface_plane,ierr) &
+          / remainder%volume()
+    end if
 
   contains
 

@@ -29,7 +29,7 @@ module polyhedron_type
     integer,  allocatable :: face_vid(:,:), edge_vid(:,:) ! face and edge IDs
     integer, allocatable :: vertex_faces(:,:), edge_faces(:,:), face_eid(:,:)
     real(r8)              :: vol        ! should be private, but need inheritance
-    type(polyhedron), pointer :: tet(:)
+    type(polyhedron), pointer :: tet(:) => null()
     logical :: tesselated
     ! ideally vol should be private, but Fortran then also hides it from child types
   contains
@@ -38,7 +38,7 @@ module polyhedron_type
     procedure, private :: init_polyhedron_null
     procedure, private :: init_tet
     procedure, private :: init_tesselated
-    generic            :: init => init_polyhedron, init_polyhedron_copy, init_polyhedron_null
+    generic            :: init => init_polyhedron, init_polyhedron_null, init_polyhedron_copy
     procedure          :: volume
     procedure          :: intersection_verts
     procedure          :: split
@@ -54,12 +54,15 @@ module polyhedron_type
     procedure, private :: update_face_normals
     procedure, private :: is_valid
     procedure, private :: remove_dangling_vertices
-    procedure, private :: tesselated_volume_behind_plane
-    procedure, private :: tesselate_nonplanar_faces
     procedure, private :: tesselate_face
-    procedure, private :: tesselate
+    procedure :: tesselate
+    procedure, private :: tesselated_volume_behind_plane
+    procedure, private :: pure_volume_behind_plane
+    procedure, private :: tesselate_nonplanar_faces
     procedure, private :: tesselated_volume
+    procedure, private :: pure_volume
     procedure, private :: tesselated_split
+    procedure, private :: pure_split
     generic :: assignment(=) => init_polyhedron_copy
     final :: polyhedron_delete
   end type polyhedron
@@ -68,7 +71,8 @@ contains
 
   subroutine polyhedron_delete (this)
     type(polyhedron) :: this
-    if (allocated(this%tet)) deallocate(this%tet)
+    if (associated(this%tet)) deallocate(this%tet)
+    this%tet => null()
   end subroutine polyhedron_delete
 
   subroutine init_polyhedron (this, ierr, x, face_v, edge_v, face_normal, vol, tesselate)
@@ -79,8 +83,6 @@ contains
     integer,            intent(in)  :: face_v(:,:), edge_v(:,:)
     real(r8), optional, intent(in)  :: face_normal(:,:), vol
     logical, optional, intent(in) :: tesselate
-
-    integer :: f,nV
 
     if (present(tesselate)) then
       this%tesselated = tesselate
@@ -97,6 +99,8 @@ contains
     if (allocated(this%face_vid))    deallocate(this%face_vid)
     if (allocated(this%edge_vid))    deallocate(this%edge_vid)
     if (allocated(this%face_normal)) deallocate(this%face_normal)
+    if (associated(this%tet)) deallocate(this%tet)
+    this%tet => null()
 
     allocate(this%x(ndim,this%nVerts),& !this%face(this%nFaces),&
          this%face_vid(size(face_v,dim=1),this%nFaces),&
@@ -147,7 +151,9 @@ contains
     class(polyhedron), intent(out) :: this
     type(polyhedron), intent(in) :: tets(:)
 
-    this%tet = tets
+    call this%init()
+
+    allocate(this%tet(size(tets)), source=tets)
     this%tesselated = .true.
 
   end subroutine init_tesselated
@@ -160,8 +166,6 @@ contains
     integer,            intent(out) :: ierr
     real(r8),           intent(in)  :: x(:,:)
     real(r8), optional, intent(in)  :: face_normal(:,:), vol
-
-    integer :: f,nV
 
     ierr = 0
     ASSERT(size(x, dim=2) == 4)
@@ -239,12 +243,14 @@ contains
 
   subroutine update_face_normals (this)
 
-    use array_utils,   only: normalize, isZero
+    use array_utils,   only: normalize
     use cell_geometry, only: cross_product
 
     class(polyhedron), intent(inout) :: this
 
-    integer :: f,nV
+    integer :: f
+
+    if (.not.allocated(this%face_normal)) allocate(this%face_normal(3,this%nFaces))
 
     do f = 1,this%nFaces
       this%face_normal(:,f) = normalize(cross_product (&
@@ -362,40 +368,51 @@ contains
   end subroutine remove_dangling_vertices
 
   subroutine init_polyhedron_null (this)
+
     class(polyhedron), intent(out) :: this
+
     this%nVerts = 0
     this%nEdges = 0
     this%nFaces = 0
     this%vol = 0.0_r8
+    this%tesselated = .false.
+
+    if (allocated(this%x)) deallocate(this%x)
+    if (allocated(this%edge_vid)) deallocate(this%edge_vid)
+    if (allocated(this%face_vid)) deallocate(this%face_vid)
+    if (allocated(this%face_normal)) deallocate(this%face_normal)
+    if (allocated(this%vertex_faces)) deallocate(this%vertex_faces)
+    if (allocated(this%edge_faces)) deallocate(this%edge_faces)
+    if (allocated(this%face_eid)) deallocate(this%face_eid)
+
+    if (associated(this%tet)) deallocate(this%tet)
+    this%tet => null()
   end subroutine init_polyhedron_null
 
   subroutine init_polyhedron_copy (this,poly)
+
     class(polyhedron), intent(out) :: this
     class(polyhedron), intent(in)  :: poly
 
     this%nVerts = poly%nVerts
     this%nEdges = poly%nEdges
     this%nFaces = poly%nFaces
-    this%vol    = poly%vol
-    this%x = poly%x
-    this%edge_vid = poly%edge_vid
-    this%face_vid = poly%face_vid
-    this%face_normal = poly%face_normal
-    this%vertex_faces = poly%vertex_faces
-    this%edge_faces = poly%edge_faces
-    this%face_eid = poly%face_eid
+    this%vol = poly%vol
     this%tesselated = poly%tesselated
 
-    if (allocated(poly%tet)) then
-      allocate(this%tet(size(poly%tet)))
-      this%tet = poly%tet
-    end if
+    if (allocated(poly%x)) this%x = poly%x
+    if (allocated(poly%edge_vid)) this%edge_vid = poly%edge_vid
+    if (allocated(poly%face_vid)) this%face_vid = poly%face_vid
+    if (allocated(poly%face_normal)) this%face_normal = poly%face_normal
+    if (allocated(poly%vertex_faces)) this%vertex_faces = poly%vertex_faces
+    if (allocated(poly%edge_faces)) this%edge_faces = poly%edge_faces
+    if (allocated(poly%face_eid)) this%face_eid = poly%face_eid
+
+    if (associated(poly%tet)) allocate(this%tet(size(poly%tet)), source=poly%tet)
 
   end subroutine init_polyhedron_copy
 
   subroutine compute_scaled_polyhedron (this, scaled, volume_factor)
-
-    use cell_geometry, only: cross_product
 
     class(polyhedron), intent(in) :: this
     type(polyhedron), intent(out) :: scaled
@@ -432,7 +449,7 @@ contains
   !         zero. Note this occurs even though the polyhedra splitting routine is "robust" and will
   !         not allow vertices to be within some distance alpha (=1e-9). These tiny distances can
   !         still produce volumes on the order of e-27, far below the double precision limit of e-16.
-  real(r8) function volume (this)
+  real(r8) function pure_volume (this)
 
     use consts,          only: alittle
     use array_utils,     only: isZero, normalize
@@ -447,13 +464,8 @@ contains
     type(polyhedron) :: scaled
 
     !ierr = 0
-    volume = this%vol
-    if (.not.allocated(this%x) .or. volume > 0.0_r8) return
-
-    if (this%tesselated) then
-      volume = this%tesselated_volume()
-      return
-    end if
+    pure_volume = this%vol
+    if (.not.allocated(this%x) .or. pure_volume > 0.0_r8) return
 
     ! scale the polyhedron (see note 1)
     ! scaled = this
@@ -461,7 +473,7 @@ contains
     call this%compute_scaled_polyhedron(scaled, volume_factor)
 
     ! sum up the integral of n_x*x over all faces (could just as easily be any other direction)
-    volume = 0
+    pure_volume = 0
     do f = 1,scaled%nFaces
       nV = count(scaled%face_vid(:,f) /= 0) ! number of vertices on this face
       xc = sum(scaled%x(:,scaled%face_vid(:nV,f)), dim=2) / nV
@@ -477,27 +489,32 @@ contains
         area = area + t
       end do
       area = area / 2
-      volume = volume + vt / 18 + dot_product(xc, scaled%face_normal(:,f)) * area / 3
+      pure_volume = pure_volume + vt / 18 + dot_product(xc, scaled%face_normal(:,f)) * area / 3
     end do
-    volume = volume * volume_factor
-    this%vol = volume
+    pure_volume = pure_volume * volume_factor
+    this%vol = pure_volume
 
     if (this%vol < 0) then
       if (isZero(this%vol, 1e5_r8*alittle)) then
         ! if this polyhedron has a volume of almost zero, make it zero
         ! this seems to be necessary for very tiny polyhedrons,
         ! where floating point errors may make the volume calculation drop below zero
-        volume = 0.0_r8
+        pure_volume = 0.0_r8
         this%vol = 0.0_r8
         deallocate(this%x)
         this%nVerts = 0
       else
+        pure_volume = 0.0_r8
+        this%vol = 0.0_r8
+        deallocate(this%x)
+        this%nVerts = 0
+
         print *, 'vf: ',volume_factor
         call this%print_data ()
         print *
 
         !ierr = 1
-        call LS_fatal ("calculated negative polyhedron volume!")
+        !call LS_fatal ("calculated negative polyhedron volume!")
       end if
     end if
 
@@ -521,6 +538,21 @@ contains
     !     print *
     !   end do
     ! end if
+
+  end function pure_volume
+
+  real(r8) function volume(this)
+
+    class(polyhedron), intent(inout) :: this
+
+    volume = this%vol
+    if (.not.allocated(this%x) .or. volume > 0) return
+
+    if (this%tesselated) then
+      volume = this%tesselated_volume()
+    else
+      volume = this%pure_volume()
+    end if
 
   end function volume
 
@@ -687,12 +719,12 @@ contains
         ! if this vertex shares no faces with the
         ! previous vertex, there is an order mismatch
         ! => swap this vertex with one of the next ones
-        if (.not.vertex_faces(v).intersects(vertex_faces(p))) then
+        if (.not.vertex_faces(v)%intersects(vertex_faces(p))) then
           !print *, i
           do s = 1,intersection_verts%nVerts - i - 1
             n = index_sort(i+s)
-            !print *, s, vertex_faces(n).intersects(vertex_faces(p))
-            if (vertex_faces(n).intersects(vertex_faces(p))) exit
+            !print *, s, vertex_faces(n)%intersects(vertex_faces(p))
+            if (vertex_faces(n)%intersects(vertex_faces(p))) exit
           end do
           !s = 0
           in = i+s
@@ -703,7 +735,7 @@ contains
           do j = 1,intersection_verts%nVerts
             v = index_sort(j)
             p = index_sort(modulo(j-2,intersection_verts%nVerts)+1)
-            intersects(j) = .not.vertex_faces(v).intersects(vertex_faces(p))
+            intersects(j) = .not.vertex_faces(v)%intersects(vertex_faces(p))
           end do
           !print *, intersects(:intersection_verts%nVerts)
           !print *
@@ -739,6 +771,7 @@ contains
     xtet(:,1) = sum(this%x, dim=2) / this%nVerts
 
     ! for each vertex on each edge of each face, we create a tet
+    if (associated(this%tet)) deallocate(this%tet)
     allocate(this%tet(2*count(this%face_vid>0)))
     t = 0
     do f = 1,this%nFaces
@@ -756,6 +789,8 @@ contains
         call this%tet(t)%init_tet(ierr, xtet)
       end do
     end do
+
+    ASSERT(t == size(this%tet))
 
     this%tesselated = .true.
 
@@ -828,18 +863,18 @@ contains
     integer :: e, f, nV, v, j(this%nFaces)
 
     ierr = 0
-    allocate(this%face_eid(maxval(count(this%face_vid > 0, dim=2)), this%nFaces))
+    ! allocate(this%face_eid(maxval(count(this%face_vid > 0, dim=2)), this%nFaces))
 
-    j=0
-    do e = 1,this%nEdges
-      f = this%edge_faces(1,e)
-      j(f) = j(f)+1
-      this%face_eid(j(f),f) = e
+    ! j=0
+    ! do e = 1,this%nEdges
+    !   f = this%edge_faces(1,e)
+    !   j(f) = j(f)+1
+    !   this%face_eid(j(f),f) = e
 
-      f = this%edge_faces(2,e)
-      j(f) = j(f)+1
-      this%face_eid(j(f),f) = e
-    end do
+    !   f = this%edge_faces(2,e)
+    !   j(f) = j(f)+1
+    !   this%face_eid(j(f),f) = e
+    ! end do
 
   end subroutine calculate_face_eid
 
@@ -873,6 +908,24 @@ contains
 
   end function intersected_edges
 
+  subroutine split(this,P,split_poly,interface_polygons,ierr)
+
+    use plane_type
+
+    class(polyhedron), intent(in) :: this
+    class(plane),      intent(in) :: P
+    type(polyhedron), intent(inout) :: split_poly(:)
+    type(polygon_box), intent(out) :: interface_polygons ! interface polygon
+    integer,          intent(out) :: ierr
+
+    if (this%tesselated) then
+      call this%tesselated_split(P, split_poly, interface_polygons, ierr)
+    else
+      call this%pure_split(P, split_poly, interface_polygons, ierr)
+    end if
+
+  end subroutine split
+
   ! return two polyhedrons produced by dividing a given polyhedron with a plane
   ! the first element returned is in front of the plane
   ! the second element returned is behind the plane
@@ -882,27 +935,23 @@ contains
   !         vertices may end up within alpha of each other. In this
   !         case, say both polyhedra are null, since we are within
   !         the cutvof anyways.
-  subroutine split (this,P,split_poly,interface_polygons,ierr)
+  subroutine pure_split (this,P,split_poly,interface_polygons,ierr)
 
     use consts, only: alpha
     use plane_type
 
     class(polyhedron), intent(in) :: this
     class(plane),      intent(in) :: P
-    type(polyhedron), intent(out) :: split_poly(:)
+    type(polyhedron), intent(inout) :: split_poly(:)
     type(polygon_box), intent(out) :: interface_polygons ! interface polygon
     integer,          intent(out) :: ierr
 
     integer       :: v, v_assoc_pe(this%nEdges),side(this%nVerts)
     type(polygon) :: intpoly
-    real(r8)      :: dist, tmp1, tmp2
-
-    if (this%tesselated) then
-      call this%tesselated_split(P, split_poly, interface_polygons, ierr)
-      return
-    end if
+    real(r8)      :: dist, tmp1, tmp2, tmp(3)
 
     ASSERT(size(split_poly)==2)
+    ASSERT(.not.this%tesselated)
     ierr = 0
     interface_polygons%n_elements = 0
 
@@ -982,7 +1031,7 @@ contains
       !call LS_fatal ('polyhedron split failed: invalid volume')
     end if
 
-  end subroutine split
+  end subroutine pure_split
 
   subroutine tesselated_split (this,P,split_poly,interface_polygons,ierr)
 
@@ -990,7 +1039,7 @@ contains
 
     class(polyhedron), intent(in) :: this
     class(plane),      intent(in) :: P
-    type(polyhedron), intent(out) :: split_poly(:)
+    type(polyhedron), intent(inout) :: split_poly(:)
     type(polygon_box), intent(out) :: interface_polygons
     integer,          intent(out) :: ierr
 
@@ -999,11 +1048,12 @@ contains
     type(polygon_box) :: intpoly
     type(polygon), allocatable :: tmp_polygon(:)
 
+
     allocate(interface_polygons%elements(size(this%tet)))
     interface_polygons%n_elements = 0
 
     do t = 1,size(this%tet)
-      call this%tet(t)%split(P, tmp(t,:), intpoly, ierr)
+      call this%tet(t)%pure_split(P, tmp(t,:), intpoly, ierr)
       if (intpoly%n_elements == 1) then
         interface_polygons%n_elements = interface_polygons%n_elements + 1
         interface_polygons%elements(interface_polygons%n_elements) = intpoly%elements(1)
@@ -1033,15 +1083,32 @@ contains
     tesselated_volume_behind_plane = 0
     do t = 1,size(this%tet)
       tesselated_volume_behind_plane = tesselated_volume_behind_plane + &
-          this%tet(t)%volume_behind_plane(P,ierr)
+          this%tet(t)%pure_volume_behind_plane(P,ierr)
       if (ierr /= 0) exit
-      !print *, 'donetv',t,size(this%tet)
     end do
 
   end function tesselated_volume_behind_plane
 
+  real(r8) function volume_behind_plane(this, P, ierr)
+
+    use consts,          only: alpha
+    use ieee_arithmetic, only: ieee_is_nan
+    use plane_type
+
+    class(polyhedron), intent(in) :: this
+    class(plane),      intent(in) :: P
+    integer,           intent(out) :: ierr
+
+    if (this%tesselated) then
+      volume_behind_plane = this%tesselated_volume_behind_plane(P,ierr)
+    else
+      volume_behind_plane = this%pure_volume_behind_plane(P,ierr)
+    end if
+
+  end function volume_behind_plane
+
   ! return the volume behind (opposite normal) a plane and inside the polyhedron
-  real(r8) function volume_behind_plane (this,P,ierr)
+  real(r8) function pure_volume_behind_plane (this,P,ierr)
 
     use consts,          only: alpha
     use ieee_arithmetic, only: ieee_is_nan
@@ -1053,13 +1120,8 @@ contains
 
     real(r8)         :: dist
     integer          :: v, side(this%nVerts), v_assoc_pe(this%nEdges)
-    type(polyhedron) :: behind, split(2)
+    type(polyhedron) :: behind
     type(polygon)    :: intpoly
-
-    if (this%tesselated) then
-      volume_behind_plane = this%tesselated_volume_behind_plane(P,ierr)
-      return
-    end if
 
     ierr = 0
 
@@ -1082,15 +1144,15 @@ contains
         if (ierr /= 0) then
           call dumpData ()
           write(*,*) 'volume_behind_plane: polyhedron split failed'
-          volume_behind_plane = 0.0_r8
+          pure_volume_behind_plane = 0.0_r8
           return
         end if
       else
-        volume_behind_plane = 0.0_r8
+        pure_volume_behind_plane = 0.0_r8
         return
       end if
     else
-      volume_behind_plane = 0.0_r8
+      pure_volume_behind_plane = 0.0_r8
       return
     end if
 
@@ -1103,11 +1165,11 @@ contains
     end if
 
     ! calculate the volume of the polyhedron behind the plane
-    volume_behind_plane = behind%volume ()
+    pure_volume_behind_plane = behind%volume ()
 
-    if (ieee_is_nan(volume_behind_plane) .or. volume_behind_plane < 0.0_r8) then
+    if (ieee_is_nan(pure_volume_behind_plane) .or. pure_volume_behind_plane < 0.0_r8) then
       call dumpData ()
-      write(*,*) 'problematic vol: ',volume_behind_plane
+      write(*,*) 'problematic vol: ',pure_volume_behind_plane
       call LS_fatal ('polyhedron split failed: invalid volume')
     end if
 
@@ -1132,7 +1194,7 @@ contains
       write(*,*)
     end subroutine dumpData
 
-  end function volume_behind_plane
+  end function pure_volume_behind_plane
 
   ! WARNING: need to update this routine to pass face normals down to the child polyhedron
   ! Reference [1]
@@ -1248,7 +1310,7 @@ contains
     !         makes it easy for constructing the new face later.
     subroutine generate_new_verts (x,p2c_vid,nVerts,nParVerts, this,side,v_assoc_pe,valid_side)
 
-      use array_utils, only: magnitude,isZero
+      use array_utils, only: isZero
 
       real(r8),         intent(out) :: x(:,:)
       integer,          intent(out) :: p2c_vid(:), nVerts, nParVerts
