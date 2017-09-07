@@ -44,7 +44,7 @@ contains
     integer :: i, ncell, fh1, fh2
     real(r8) :: lnormFT(3), lnormHF(3)
 
-    call set_timer_type (realtime_timing)
+    !call set_timer_type (realtime_timing)
 
     print '(a)'
     print '(a)', 'CURVATURE'
@@ -56,14 +56,13 @@ contains
     write (fh1, '(a)') '# dx l1 l2 l3'
     write (fh2, '(a)') '# dx l1 l2 l3'
 
-    do i = 1,1
-    !do i = 1,1
+    do i = 1,4
       ncell = 10 * 2**i
     ! do i = 1,25
     !   ncell = floor(10 * 1.15_r8**i)
       !call mesh_2d_test (ncell, 'cylinder.json', lnormFT, lnormHF)
-      !call mesh_3d_test (ncell, 'sphere.json', lnormFT, lnormHF)
-      call mesh_unstr_test (ncell, 'sphere.json', lnormFT, lnormHF)
+      call mesh_3d_test (ncell, 'sphere.json', lnormFT, lnormHF)
+      !call mesh_unstr_test (ncell, 'sphere.json', lnormFT, lnormHF)
       write (fh1, '(4es15.5)') 1.0_r8 / ncell, lnormFT
       write (fh2, '(4es15.5)') 1.0_r8 / ncell, lnormHF
     end do
@@ -99,7 +98,10 @@ contains
 
     call surf%bestFit (x)
 
+#ifndef NAGFOR
+    ! NAG doesn't support derived type i/o as of v6.1
     print '(dt,a,es12.4)', surf, ',     curvature: ', surf%curvature([0.0_r8,0.0_r8,0.0_r8])
+#endif
 
   end subroutine plane_test
 
@@ -125,7 +127,10 @@ contains
 
     call surf%bestFit (x)
 
+#ifndef NAGFOR
+    ! NAG doesn't support derived type i/o as of v6.1
     print '(dt,a,es12.4)', surf, ',     curvature: ', surf%curvature([0.0_r8,0.0_r8,0.0_r8])
+#endif
 
   end subroutine parabola_test
 
@@ -187,7 +192,10 @@ contains
 
     call surf%bestFit (x)
 
+#ifndef NAGFOR
+    ! NAG doesn't support derived type i/o as of v6.1
     print '(dt,a,es12.4)', surf, ',     curvature: ', surf%curvature(sum(x(:,1:3), dim=2) / 3.0_r8)
+#endif
 
   end subroutine messy_test
 
@@ -252,7 +260,10 @@ contains
     !call surf%bestParaboloidFit (x)
     call surf%bestOneSheetFit (x)
 
+#ifndef NAGFOR
+    ! NAG doesn't support derived type i/o as of v6.1
     print '(dt,a,es12.4)', surf, ',     curvature: ', surf%curvature(sum(x(:,1:3), dim=2) / 3.0_r8)
+#endif
 
   end subroutine messy_test2
 
@@ -312,7 +323,10 @@ contains
     !call surf%bestParaboloidFit (x)
     !call surf%bestOneSheetFit (x)
 
+#ifndef NAGFOR
+    ! NAG doesn't support derived type i/o as of v6.1
     print '(dt,a,es12.4)', surf, ',     curvature: ', surf%curvature(sum(x(:,1:3), dim=2) / 3)
+#endif
 
   end subroutine messy_test3
 
@@ -381,7 +395,10 @@ contains
     !call surf%bestParaboloidFit (x)
     !call surf%bestOneSheetFit (x)
 
+#ifndef NAGFOR
+    ! NAG doesn't support derived type i/o as of v6.1
     print '(dt,a,es12.4)', surf, ',     curvature: ', surf%curvature(sum(x(:,1:3), dim=2) / 3)
+#endif
 
   end subroutine messy_test4
 
@@ -435,8 +452,12 @@ contains
 
     call surf%bestFit (x, weight, [-1.89492268E-01_r8, -9.81882213E-01_r8, 9.46296280E-08_r8])
     curvature = surf%curvature(x(:,1))
+
+#ifndef NAGFOR
+    ! NAG doesn't support derived type i/o as of v6.1
     print '(dt,2(a,es15.5))', surf, ',     curvature: ', curvature, &
         ',   err: ', abs(curvature + 1/R) * R
+#endif
 
   end subroutine messy_test5
 
@@ -618,6 +639,7 @@ contains
     write (tmp, '(a,i0,a)') "cube_", mesh_size, "_rnd.exo"
     mesh_filename = trim(adjustl(tmp))
     mesh = new_unstr_mesh (mesh_filename)
+    call recalculate_mesh_volumes(mesh)
     call gmesh%init (mesh)
     print '(a)', "mesh initialized"
 
@@ -641,7 +663,7 @@ contains
       call vof_initialize (mesh, gmesh, plist, vof, [1,2], 2)
       call store_vof_field(filename, vof)
     end if
-    deallocate(plist)
+    !deallocate(plist)
 
     ! calculate errors for FT and HF curvature methods
     curvature_ex = 2 / 0.35_r8 ! sphere
@@ -664,6 +686,7 @@ contains
     use curvature_hf, only: heightFunction
     use lvira_normals
     use fit_normals
+    use vof_io
 
     real(r8), intent(in) :: vof(:,:), int_norm(:,:,:)
     type(unstr_mesh), intent(in) :: mesh
@@ -671,16 +694,26 @@ contains
     real(r8), intent(in) :: curvature_ex
     real(r8) :: lnorm(3)
 
+    character(:), allocatable :: filename
+    character(30) :: tmp
     integer :: i, nvofcell, ierr, imax, w, fh
     type(surface) :: intrec
     type(multimat_cell) :: cell
-    real(r8) :: int_norm_local(3,2), err, curvature(mesh%ncell), wgt_scale
+    real(r8) :: int_norm_local(3,2), err, curvature(mesh%ncell), wgt_scale, totvolume
     real(r8), allocatable :: weight_scales(:), int_norm_hf(:,:), throwaway(:), int_norm_hf2(:,:,:), &
         int_norm_lvira(:,:,:)
 
     !call heightFunction (throwaway, int_norm_hf, vof(1,:), int_norm(:,1,:), mesh, gmesh)
 
-    call interface_normals_lvira(int_norm_lvira, vof, mesh, gmesh)
+    write (tmp, '(a,i0,a)') "normals_3d_", mesh%ncell, ".dat"
+    filename = trim(adjustl(tmp))
+    if (file_exists(filename)) then
+      allocate(int_norm_lvira(3,2,mesh%ncell))
+      call read_normals(filename, int_norm_lvira)
+    else
+      call interface_normals_lvira(int_norm_lvira, vof, mesh, gmesh)
+      call store_normals(filename, int_norm_lvira)
+    end if
     !call interface_normals_fit(int_norm_lvira, vof, mesh, gmesh)
     int_norm_hf = int_norm_lvira(:,1,:)
 
@@ -703,8 +736,9 @@ contains
     int_norm_hf2(:,2,:) = -int_norm_hf
 
     ! get the interface reconstructions
-    lnorm = 0; nvofcell = 0
+    lnorm = 0; nvofcell = 0; totvolume = 0
     do i = 1,mesh%ncell
+      if (vof(1,i) > 1-cutvof .or. vof(1,i) < cutvof) cycle
       call cell%init (ierr, mesh%x(:,mesh%cnode(:,i)), hex_f, hex_e, gmesh%outnorm(:,:,i), &
           mesh%volume(i))
       if (ierr /= 0) call LS_fatal ('cell_outward_volflux failed: could not initialize cell')
@@ -720,13 +754,13 @@ contains
       call intrec%append (cell%interface_polygons(1), i)
 
       err = abs(vof(1,i) - cell%mat_poly(1)%volume() / mesh%volume(i))
-      nvofcell = nvofcell + 1
-      lnorm(1) = lnorm(1) + err
-      lnorm(2) = lnorm(2) + err**2
+      totvolume = totvolume + mesh%volume(i)
+      lnorm(1) = lnorm(1) + err * mesh%volume(i)
+      lnorm(2) = lnorm(2) + err**2 * mesh%volume(i)
       lnorm(3) = max(lnorm(3),err)
     end do
-    lnorm(1) = lnorm(1) / nvofcell
-    lnorm(2) = sqrt(lnorm(2) / nvofcell)
+    lnorm(1) = lnorm(1) / totvolume
+    lnorm(2) = sqrt(lnorm(2) / totvolume)
     !print '(a,3es10.2)', 'VOF L1,L2,Linf = ',lnorm
 
     call intrec%write_ply("ft_test.ply")
@@ -738,7 +772,7 @@ contains
       !wgt_scale = (2.0_r8 ** (w - 1) - 1) * 3.0_r8 / 2.0_r8 ** 19
       wgt_scale = 0
 
-      curvature = 0; lnorm = 0; nvofcell = 0
+      curvature = 0; lnorm = 0; nvofcell = 0; totvolume = 0
       !i = 18178
       do i = 1,mesh%ncell
         if (any(gmesh%cneighbor(:,i)<1)) cycle ! WARN: skipping boundaries. BCs might be automatic?
@@ -755,9 +789,9 @@ contains
           ! append to norms
           err = abs((curvature(i) - curvature_ex) / curvature_ex)
           if (err > lnorm(3)) imax = i
-          nvofcell = nvofcell + 1
-          lnorm(1) = lnorm(1) + err
-          lnorm(2) = lnorm(2) + err**2
+          totvolume = totvolume + mesh%volume(i)
+          lnorm(1) = lnorm(1) + err * mesh%volume(i)
+          lnorm(2) = lnorm(2) + err**2 * mesh%volume(i)
           lnorm(3) = max(lnorm(3),err)
 
           !if (err > 6.5e-2_r8) then
@@ -788,8 +822,8 @@ contains
         write (fh, '(2(es15.5,a),es15.5)') &
             minval(mesh%x(1,mesh%cnode(:,i))),',', minval(mesh%x(2,mesh%cnode(:,i))),',', err
       end do
-      lnorm(1) = lnorm(1) / nvofcell
-      lnorm(2) = sqrt(lnorm(2) / nvofcell)
+      lnorm(1) = lnorm(1) / totvolume
+      lnorm(2) = sqrt(lnorm(2) / totvolume)
       close(fh)
 
       !print '(es10.2, a,3es10.2)', wgt_scale, '  FT L1,L2,Linf = ',lnorm
@@ -868,6 +902,7 @@ contains
     use curvature_hf, only: heightFunction
     use lvira_normals
     use fit_normals
+    use vof_io
 
     real(r8), intent(in) :: vof(:,:)
     type(unstr_mesh), intent(in) :: mesh
@@ -875,25 +910,60 @@ contains
     real(r8), intent(in) :: curvature_ex
     real(r8) :: lnorm(3)
 
+    character(:), allocatable :: filename
+    character(30) :: tmp
     integer :: i, ierr, imax
     type(surface) :: intrec
     type(multimat_cell) :: cell
     real(r8) :: err, curvature(mesh%ncell), totvolume
     real(r8), allocatable :: int_norm_lvira(:,:,:)
 
-    call interface_normals_lvira(int_norm_lvira, vof, mesh, gmesh)
+    write (tmp, '(a,i0,a)') "normals_unstr_", mesh%ncell, ".dat"
+    filename = trim(adjustl(tmp))
+    if (file_exists(filename)) then
+      allocate(int_norm_lvira(3,2,mesh%ncell))
+      call read_normals(filename, int_norm_lvira)
+    else
+      call interface_normals_lvira(int_norm_lvira, vof, mesh, gmesh)
+      call store_normals(filename, int_norm_lvira)
+    end if
+    print '(a)', 'normals calculated'
     !call interface_normals_fit(int_norm_lvira, vof, mesh, gmesh)
 
     ! get the interface reconstructions
     lnorm = 0; totvolume = 0
+
+    ! ! DEBUGGING ########
+    ! allocate(int_norm_lvira(3,2,mesh%ncell))
+    ! int_norm_lvira = 0
+    ! !do i = 1300,1329
+    ! i = 1329
+
+    ! ! call interface_normal_lvira(int_norm_lvira(:,1,i), i, vof(1,:), mesh, gmesh)
+    ! int_norm_lvira(:,1,i) = [1.0_r8, 0.0_r8, 0.0_r8]
+    ! int_norm_lvira(:,2,i) = -int_norm_lvira(:,1,i)
+    ! ! ##################
+
+
     do i = 1,mesh%ncell
+      if (vof(1,i) > 1-cutvof .or. vof(1,i) < cutvof) cycle
+      !print *, 'here0'
       call cell%init (ierr, mesh%x(:,mesh%cnode(:,i)), hex_f, hex_e, gmesh%outnorm(:,:,i), &
           mesh%volume(i))
       if (ierr /= 0) call LS_fatal ('cell_outward_volflux failed: could not initialize cell')
+      !print *, 'here1'
 
       call cell%partition (vof(:,i), int_norm_lvira(:,:,i))
+      !print *, 'here2'
+
+      if (cell%interface_polygons(1)%n_elements < 1) then
+        print *, 'hmm ',i
+        print *, 'vof ',vof(1,i)
+        stop
+      end if
 
       call intrec%append (cell%interface_polygons(1), i)
+      !print *, 'here3'
 
       err = abs(vof(1,i) - cell%mat_poly(1)%volume() / mesh%volume(i))
       totvolume = totvolume + mesh%volume(i)
@@ -904,6 +974,9 @@ contains
     lnorm(1) = lnorm(1) / totvolume
     lnorm(2) = sqrt(lnorm(2) / totvolume)
     !print '(a,3es10.2)', 'VOF L1,L2,Linf = ',lnorm
+    ! print *, 'here4'
+    ! stop
+    print '(a)', 'interfaces located'
 
     call intrec%write_ply("ft_test.ply")
 
@@ -990,5 +1063,22 @@ contains
     end do
 
   end subroutine compare_vof_fields
+
+  subroutine recalculate_mesh_volumes(mesh)
+
+    use polyhedron_type
+    use hex_types, only: hex_f, hex_e
+
+    type(unstr_mesh), intent(inout) :: mesh
+
+    integer :: i, ierr
+    type(polyhedron) :: cell
+
+    do i = 1,mesh%ncell
+      call cell%init (ierr, mesh%x(:,mesh%cnode(:,i)), hex_f, hex_e)
+      mesh%volume(i) = cell%volume()
+    end do
+
+  end subroutine recalculate_mesh_volumes
 
 end module analytic_surface_type_test
