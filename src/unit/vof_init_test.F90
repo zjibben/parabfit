@@ -38,7 +38,7 @@ contains
 
     real(r8), intent(in) :: xc(:), dx
 
-    type(dnc_hex) :: hex
+    type(dnc_cell) :: cell
     type(material_geometry) :: matl_geom
     type(region_box) :: rgn(2)
     type(scalar_func_box) :: subfunc(2)
@@ -57,17 +57,17 @@ contains
     call matl_geom%init (matl_index)
 
     ! set up cell
-    hex%x(:,1) = xc + 0.5_r8 * dx * [-1.0_r8, -1.0_r8, -1.0_r8]
-    hex%x(:,2) = xc + 0.5_r8 * dx * [ 1.0_r8, -1.0_r8, -1.0_r8]
-    hex%x(:,3) = xc + 0.5_r8 * dx * [ 1.0_r8,  1.0_r8, -1.0_r8]
-    hex%x(:,4) = xc + 0.5_r8 * dx * [-1.0_r8,  1.0_r8, -1.0_r8]
-    hex%x(:,5) = xc + 0.5_r8 * dx * [-1.0_r8, -1.0_r8,  1.0_r8]
-    hex%x(:,6) = xc + 0.5_r8 * dx * [ 1.0_r8, -1.0_r8,  1.0_r8]
-    hex%x(:,7) = xc + 0.5_r8 * dx * [ 1.0_r8,  1.0_r8,  1.0_r8]
-    hex%x(:,8) = xc + 0.5_r8 * dx * [-1.0_r8,  1.0_r8,  1.0_r8]
+    cell%x(:,1) = xc + 0.5_r8 * dx * [-1.0_r8, -1.0_r8, -1.0_r8]
+    cell%x(:,2) = xc + 0.5_r8 * dx * [ 1.0_r8, -1.0_r8, -1.0_r8]
+    cell%x(:,3) = xc + 0.5_r8 * dx * [ 1.0_r8,  1.0_r8, -1.0_r8]
+    cell%x(:,4) = xc + 0.5_r8 * dx * [-1.0_r8,  1.0_r8, -1.0_r8]
+    cell%x(:,5) = xc + 0.5_r8 * dx * [-1.0_r8, -1.0_r8,  1.0_r8]
+    cell%x(:,6) = xc + 0.5_r8 * dx * [ 1.0_r8, -1.0_r8,  1.0_r8]
+    cell%x(:,7) = xc + 0.5_r8 * dx * [ 1.0_r8,  1.0_r8,  1.0_r8]
+    cell%x(:,8) = xc + 0.5_r8 * dx * [-1.0_r8,  1.0_r8,  1.0_r8]
 
     ! calculate the vof
-    vof = hex%vof (matl_geom, 2, 0)
+    vof = cell%vof (matl_geom, 2, 0)
 
     ! print results
     vof_ex = 0.614298769812239_r8

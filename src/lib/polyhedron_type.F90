@@ -38,7 +38,8 @@ module polyhedron_type
     procedure, private :: init_polyhedron_null
     procedure, private :: init_tet
     procedure, private :: init_tesselated
-    generic            :: init => init_polyhedron, init_polyhedron_null, init_polyhedron_copy
+    generic            :: init => init_polyhedron, init_polyhedron_null, init_polyhedron_copy, &
+        init_tet
     procedure          :: volume
     procedure          :: intersection_verts
     procedure          :: split
@@ -189,9 +190,9 @@ contains
         1,4,3,&
         2,3,4], [3,this%nFaces])
     this%face_eid = reshape([&
-        1,2,4,&
+        2,4,1,&
         1,5,3,&
-        2,3,6,&
+        3,6,2,&
         4,6,5], [3,this%nFaces])
     this%edge_faces = reshape([&
         1,2,&
@@ -608,12 +609,12 @@ contains
           x(:,Nintersections) = intx
           if (present(v_assoc_pe)) v_assoc_pe(e) = Nintersections
 
-          if (on_point > 0) then
-            nf = count(this%vertex_faces(:,this%edge_vid(on_point,e)) > 0)
-            call vertex_faces(Nintersections)%add(this%vertex_faces(:nf,this%edge_vid(on_point,e)))
-          else
-            call vertex_faces(Nintersections)%add(this%edge_faces(:,e))
-          end if
+          ! if (on_point > 0) then
+          !   nf = count(this%vertex_faces(:,this%edge_vid(on_point,e)) > 0)
+          !   call vertex_faces(Nintersections)%add(this%vertex_faces(:nf,this%edge_vid(on_point,e)))
+          ! else
+          !   call vertex_faces(Nintersections)%add(this%edge_faces(:,e))
+          ! end if
 
         end if
       end if
@@ -833,21 +834,34 @@ contains
     integer :: e, f, nV, v, j(this%nEdges)
 
     ierr = 0
-    allocate(this%edge_faces(2, this%nEdges))
+    allocate(this%face_eid(maxval(count(this%face_vid > 0, dim=2)), this%nFaces), &
+        this%edge_faces(2, this%nEdges))
+    this%edge_faces = 0; this%face_eid = 0
 
     j = 0
     faces: do f = 1,this%nFaces
       nV = count(this%face_vid(:,f) > 0)
       do v = 1,nV
         e = pair_index(this%face_vid([v, modulo(v,nV)+1],f), this%edge_vid)
-        if (e == -1) exit faces
+        if (e == -1) then
+          ierr = 1
+          exit faces
+        end if
+
         j(e) = j(e) + 1
+        if (j(e) > 2) then
+          ierr = 1
+          exit faces
+        end if
+
         this%edge_faces(j(e), e) = f
+        this%face_eid(v,f) = e
       end do
     end do faces
 
-    if (e < 1) then
+    if (ierr==1 .or. any(this%edge_faces==0)) then
       ierr = 1
+      print *, 'edge_faces failure'
       ! print *, this%face_vid([v, modulo(v,nV)+1],f)
       call this%print_data()
       ! call LS_Fatal("could not find pair in list")
@@ -864,6 +878,7 @@ contains
 
     ierr = 0
     ! allocate(this%face_eid(maxval(count(this%face_vid > 0, dim=2)), this%nFaces))
+    ! this%face_eid = 0
 
     ! j=0
     ! do e = 1,this%nEdges
@@ -875,6 +890,12 @@ contains
     !   j(f) = j(f)+1
     !   this%face_eid(j(f),f) = e
     ! end do
+
+    ! if (ierr == 1) then
+    !   print *, this%edge_faces
+    !   call this%print_data()
+    !   call LS_Fatal("face_eid failure")
+    ! end if
 
   end subroutine calculate_face_eid
 
