@@ -37,7 +37,7 @@ module hex_types
     procedure :: init => init_cell_data
     procedure :: calc_face_areas_and_normals
   end type cell_data
-  
+
   type, extends(base_hex), public :: reconstruction_hex
     type(plane) :: P
     real(r8)    :: int_area  ! area of the interface for materials
@@ -45,7 +45,7 @@ module hex_types
     ! contains
     !   procedure              :: locate_plane
   end type reconstruction_hex
-  
+
   integer, parameter, public :: hex_f(4,6) = reshape([ & ! face vertices
        3,4,8,7, & ! y+
        1,2,6,5, & ! y-
@@ -90,6 +90,40 @@ module hex_types
        0.0_r8, 1.0_r8, 1.0_r8],&
        shape(cube_v))
 
+  integer, parameter, public :: tet_fv(3,4) = reshape([&
+      1,3,2,&
+      1,2,4,&
+      1,4,3,&
+      2,3,4], shape(tet_fv))
+
+  integer, parameter, public :: tet_ev(2,6) = reshape([&
+      1,2,&
+      1,3,&
+      1,4,&
+      2,3,&
+      2,4,&
+      3,4], shape(tet_ev))
+
+  integer, parameter, public :: tet_fe(3,4) = reshape([&
+        2,4,1,&
+        1,5,3,&
+        3,6,2,&
+        4,6,5], shape(tet_fe))
+
+  integer, parameter, public :: tet_ef(2,6) = reshape([&
+      1,2,&
+      1,3,&
+      3,2,&
+      1,4,&
+      2,4,&
+      3,4], shape(tet_ef))
+
+  integer, parameter, public :: tet_vf(3,4) = reshape([&
+      1,2,3,&
+      1,2,4,&
+      1,3,4,&
+      2,3,4], shape(tet_vf))
+
 contains
 
   subroutine init_cell_data (this, node, volume, face_area, face_normal, cfpar)
@@ -105,7 +139,7 @@ contains
     integer :: f
 
     ASSERT(all(shape(node)==[ndim,nvc]))
-    
+
     this%node = node
 
     if (present(volume)) then
@@ -113,7 +147,7 @@ contains
     else
       this%volume = this%calc_volume ()
     end if
-    
+
     if (present(face_area) .and. present(face_normal) .and. present(cfpar)) then
       ASSERT(size(face_area)==nfc)
       ASSERT(all(shape(face_normal)==[ndim,nfc]))
@@ -136,14 +170,14 @@ contains
     real(r8) :: cvol_tmp(8)
     call eval_hex_volumes(this%node, calc_volume, cvol_tmp)
   end function calc_volume
-  
+
   subroutine calc_face_areas_and_normals (this)
     use cell_geometry, only: quad_face_normal, vector_length
-    
+
     class(cell_data), intent(inout) :: this
 
     integer :: f
-    
+
     do f = 1,6
       this%face_normal(:,f) = quad_face_normal(this%node(:,hex_f(:,f)))
       this%face_area(f) = vector_length(this%face_normal(:,f))
@@ -153,23 +187,23 @@ contains
       this%face_normal(:,f) = calculate_outward_normal (this%face_normal(:,f), sum(this%node, dim=2)/8.0_r8, &
            sum(this%node(:,hex_f(:,f)), dim=2)/4.0_r8)
     end do
-    
+
   end subroutine calc_face_areas_and_normals
 
   function calculate_outward_normal (normal, cell_center, face_center) result(outward_normal)
     real(r8), intent(in) :: normal(:), cell_center(:), face_center(:)
     real(r8)             :: outward_normal(3)
-    
+
     real(r8) :: outward_dir(3)
-    
+
     outward_dir = face_center - cell_center
-    
+
     if ( sum(normal*outward_dir)>0.0_r8 ) then
       outward_normal = normal
     else
       outward_normal = -normal
     end if
-    
+
   end function calculate_outward_normal
-  
+
 end module hex_types

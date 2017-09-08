@@ -56,13 +56,13 @@ contains
     write (fh1, '(a)') '# dx l1 l2 l3'
     write (fh2, '(a)') '# dx l1 l2 l3'
 
-    do i = 1,1
+    do i = 1,4
       ncell = 10 * 2**i
     ! do i = 1,25
     !   ncell = floor(10 * 1.15_r8**i)
       !call mesh_2d_test (ncell, 'cylinder.json', lnormFT, lnormHF)
-      call mesh_3d_test (ncell, 'sphere.json', lnormFT, lnormHF)
-      !call mesh_unstr_test (ncell, 'sphere.json', lnormFT, lnormHF)
+      !call mesh_3d_test (ncell, 'sphere.json', lnormFT, lnormHF)
+      call mesh_unstr_test (ncell, 'sphere.json', lnormFT, lnormHF)
       write (fh1, '(4es15.5)') 1.0_r8 / ncell, lnormFT
       write (fh2, '(4es15.5)') 1.0_r8 / ncell, lnormHF
     end do
@@ -944,7 +944,6 @@ contains
     ! int_norm_lvira(:,2,i) = -int_norm_lvira(:,1,i)
     ! ! ##################
 
-
     do i = 1,mesh%ncell
       if (vof(1,i) > 1-cutvof .or. vof(1,i) < cutvof) cycle
       !print *, 'here0'
@@ -957,9 +956,8 @@ contains
       !print *, 'here2'
 
       if (cell%interface_polygons(1)%n_elements < 1) then
-        print *, 'hmm ',i
-        print *, 'vof ',vof(1,i)
-        stop
+        print *, 'vof ',i,vof(1,i)
+        call LS_fatal("invalid cell partition")
       end if
 
       call intrec%append (cell%interface_polygons(1), i)
@@ -1074,10 +1072,12 @@ contains
     integer :: i, ierr
     type(polyhedron) :: cell
 
+    !$omp parallel do private(cell, ierr)
     do i = 1,mesh%ncell
       call cell%init (ierr, mesh%x(:,mesh%cnode(:,i)), hex_f, hex_e)
       mesh%volume(i) = cell%volume()
     end do
+    !$omp end parallel do
 
   end subroutine recalculate_mesh_volumes
 

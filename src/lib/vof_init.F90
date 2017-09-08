@@ -15,7 +15,6 @@ module vof_init
   use kinds, only: r8
   use material_geometry_type
   use logging_services
-  use hex_types, only: hex_f, hex_e
   use polyhedron_type
   use, intrinsic :: ieee_arithmetic, only: ieee_is_nan ! DEBUGGING
   implicit none
@@ -29,7 +28,7 @@ module vof_init
     integer, allocatable :: mfacec(:), medgec(:), matl_at_node(:)
     integer :: mcellc, ntets
   contains
-    procedure :: subcell
+    procedure :: get_subcell
     procedure :: set_division_variables
     procedure :: cell_center
     procedure :: face_centers
@@ -45,7 +44,7 @@ module vof_init
   public :: vof_initialize
 
   ! TODO: make these user-specified parameters
-  integer , parameter :: cell_vof_recursion_limit = 8
+  integer , parameter :: cell_vof_recursion_limit = 5
 
 contains
 
@@ -104,8 +103,7 @@ contains
     integer,              intent(in)    :: matl_ids(:)
     real(r8),             intent(inout) :: vof(:,:)
 
-    integer                 :: i,v, ierr
-    type(dnc_cell)          :: cell
+    integer :: i
     type(material_geometry) :: matl_init_geometry
 
     print '(a)', "initializing vof ... "
@@ -115,30 +113,14 @@ contains
     ! the function which will determine what points are inside the materials
     call matl_init_geometry%init (plist, matl_ids)
 
-    ! next, loop though every cell and check if all vertices lie within a single material
+    ! loop though every cell and check if all vertices lie within a single material
     ! if so, set the Vof for that material to 1.0.
     ! if not, divide the hex cell into 8 subdomains defined by the centroid and centers of faces
     ! repeat the process recursively for each subdomain up to a given threshold
 
-    !$omp parallel do default(private) shared(vof,mesh,gmesh,matl_init_geometry,nmat)
+    !$omp parallel do
     do i = 1,mesh%ncell
-      ! initialize dnc_cell
-      call cell%init (ierr, mesh%x(:,mesh%cnode(:,i)), hex_f, hex_e, gmesh%outnorm(:,:,i), &
-          mesh%volume(i), tesselate=.false.)
-      allocate(cell%matl_at_node(cell%nVerts))
-      do v = 1,cell%nVerts
-        cell%matl_at_node(v) = matl_init_geometry%index_at(cell%x(:,v))
-      end do
-      if (any(cell%matl_at_node==0)) call LS_fatal("parent node materials unset")
-
-      ! calculate the vof
-      vof(:,i) = cell%vof (matl_init_geometry, nmat, 0)
-
-      !if (all(vof(:,i) /= 1)) print *, vof(:,i)
-      if (any(ieee_is_nan(vof(:,i))) .or. abs(sum(vof(:,i)) - 1) > 1e-12_r8) then
-        !print *, this%contains_interface(matl_geometry) .and. depth < cell_vof_recursion_limit
-        call LS_Fatal("invalid vof init")
-      end if
+      vof(:,i) = cell_vof(i, nmat, mesh, gmesh, matl_init_geometry)
     end do
     !$omp end parallel do
 
@@ -147,10 +129,42 @@ contains
 
   end subroutine vof_initialize
 
+  function cell_vof (i, nmat, mesh, gmesh, matl_init_geometry)
+
+    use unstr_mesh_type
+    use mesh_geom_type
+    use parameter_list_type
+    use hex_types, only: hex_f, hex_e
+
+    integer, intent(in) :: i, nmat
+    type(unstr_mesh), intent(in) :: mesh
+    type(mesh_geom), intent(in) :: gmesh
+    type(material_geometry), intent(in) :: matl_init_geometry
+    real(r8) :: cell_vof(nmat)
+
+    integer :: ierr, v
+    type(dnc_cell) :: cell
+
+    ! initialize dnc_cell
+    call cell%init (ierr, mesh%x(:,mesh%cnode(:,i)), hex_f, hex_e, gmesh%outnorm(:,:,i), &
+        mesh%volume(i), tesselate=.false.)
+    allocate(cell%matl_at_node(cell%nVerts))
+    do v = 1,cell%nVerts
+      cell%matl_at_node(v) = matl_init_geometry%index_at(cell%x(:,v))
+    end do
+    if (any(cell%matl_at_node==0)) call LS_fatal("parent node materials unset")
+
+    ! calculate the vof
+    cell_vof = cell%vof (matl_init_geometry, nmat, 0)
+
+  end function cell_vof
+
   ! calculates the volume fractions of materials in a cell
   recursive function vof (this, matl_geometry, nmat, depth) result(hex_vof)
 
-    class(dnc_cell),     intent(inout) :: this
+    use array_utils, only: isZero
+
+    class(dnc_cell), intent(inout) :: this
     class(base_region), intent(in) :: matl_geometry
     integer,            intent(in) :: nmat,depth
     real(r8)                       :: hex_vof(nmat)
@@ -163,10 +177,10 @@ contains
     ! and we haven't yet hit our recursion limit, divide the hex and repeat
     if (this%contains_interface(matl_geometry) .and. depth < cell_vof_recursion_limit) then
       ! tally the vof from sub-cells
-      call this%set_division_variables(matl_geometry)
+      call this%set_division_variables(subcell, matl_geometry)
       hex_vof = 0; sum_vol = 0
       do i = 1,this%ntets
-        call subcell%dnc_cell_copy(this%subcell(matl_geometry, i))
+        call this%get_subcell(subcell, matl_geometry, i)
         if (any(subcell%matl_at_node==0) .or. .not.allocated(subcell%x) &
             .or. subcell%volume()==0) then
           print *, depth
@@ -177,6 +191,10 @@ contains
         sum_vol = sum_vol + subcell%volume()
       end do
       hex_vof = hex_vof / sum_vol
+      if (.not.isZero(sum_vol - this%volume())) then
+        print *, sum_vol, this%volume(), sum_vol - this%volume()
+        call LS_Fatal("volumes don't match")
+      end if
     else
       ! if we are past the recursion limit
       ! or the cell does not contain an interface, calculate
@@ -270,9 +288,12 @@ contains
 
   end function edge_centers
 
-  subroutine set_division_variables (this, matl_geometry)
+  subroutine set_division_variables (this, subcell, matl_geometry)
+
+    use hex_types, only: tet_fv, tet_ev, tet_fe, tet_ef, tet_vf
 
     class(dnc_cell), intent(inout) :: this
+    class(dnc_cell), intent(out) :: subcell
     class(base_region), intent(in) :: matl_geometry
 
     integer :: j
@@ -283,6 +304,8 @@ contains
     this%edgec = this%edge_centers()
 
     ! get material ids at all points above
+    if (allocated(this%mfacec)) deallocate(this%mfacec)
+    if (allocated(this%medgec)) deallocate(this%medgec)
     allocate(this%mfacec(this%nFaces), this%medgec(this%nEdges))
     this%mcellc = matl_geometry%index_at(this%cellc)
     do j = 1,this%nFaces
@@ -294,11 +317,27 @@ contains
 
     this%ntets = 2*count(this%face_vid > 0)
 
+    ! initialize subcell structure (will be a tet)
+    subcell%nVerts = 4
+    subcell%nEdges = 6
+    subcell%nFaces = 4
+    subcell%tesselated = .false.
+    subcell%edge_vid = tet_ev
+    subcell%face_vid = tet_fv
+    subcell%face_eid = tet_fe
+    subcell%edge_faces = tet_ef
+    subcell%vertex_faces = tet_vf
+
+    allocate(subcell%x(3,4), subcell%matl_at_node(4))
+
   end subroutine set_division_variables
 
-  type(dnc_cell) function subcell (this, matl_geometry, i)
+  subroutine get_subcell (this, subcell, matl_geometry, i)
 
-    class(dnc_cell), intent(inout) :: this
+    use cell_geometry, only: tet_volume
+
+    class(dnc_cell), intent(in) :: this
+    class(dnc_cell), intent(inout) :: subcell
     class(base_region), intent(in) :: matl_geometry
     integer, intent(in) :: i
 
@@ -346,28 +385,30 @@ contains
     ! stop
     e = this%face_eid(feid,f)
 
-    xtmp(:,1) = this%cellc
-    xtmp(:,2) = this%facec(:,f)
+    subcell%x(:,1) = this%cellc
+    subcell%x(:,2) = this%facec(:,f)
     if (edge_side==1) then
-      xtmp(:,3) = this%x(:,this%face_vid(feid,f))
-      xtmp(:,4) = this%edgec(:,e)
+      subcell%x(:,3) = this%x(:,this%face_vid(feid,f))
+      subcell%x(:,4) = this%edgec(:,e)
     else
-      xtmp(:,3) = this%edgec(:,e)
-      xtmp(:,4) = this%x(:,this%face_vid(modulo(feid,nV)+1,f))
+      subcell%x(:,3) = this%edgec(:,e)
+      subcell%x(:,4) = this%x(:,this%face_vid(modulo(feid,nV)+1,f))
     end if
 
-    matl_at_node(1) = this%mcellc
-    matl_at_node(2) = this%mfacec(f)
+    subcell%matl_at_node(1) = this%mcellc
+    subcell%matl_at_node(2) = this%mfacec(f)
     if (edge_side==1) then
-      matl_at_node(3) = this%matl_at_node(this%face_vid(feid,f))
-      matl_at_node(4) = this%medgec(e)
+      subcell%matl_at_node(3) = this%matl_at_node(this%face_vid(feid,f))
+      subcell%matl_at_node(4) = this%medgec(e)
     else
-      matl_at_node(3) = this%medgec(e)
-      matl_at_node(4) = this%matl_at_node(this%face_vid(modulo(feid,nV)+1,f))
+      subcell%matl_at_node(3) = this%medgec(e)
+      subcell%matl_at_node(4) = this%matl_at_node(this%face_vid(modulo(feid,nV)+1,f))
     end if
 
-    call subcell%init (ierr, xtmp(:,:4))
-    subcell%matl_at_node = matl_at_node(:4)
+    !call subcell%init (ierr, xtmp(:,:4), set_face_normals=.false.)
+    ! subcell%x = xtmp(:,:4)
+    ! subcell%matl_at_node = matl_at_node(:4)
+    subcell%vol = tet_volume(subcell%x)
 
     ! print *, 'here0', allocated(subcell%x), subcell%tesselated
 
@@ -550,6 +591,6 @@ contains
     end if
     !print *, subcell%matl_at_node
 
-  end function subcell
+  end subroutine get_subcell
 
 end module vof_init

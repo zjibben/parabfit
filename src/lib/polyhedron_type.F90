@@ -100,6 +100,8 @@ contains
     if (allocated(this%face_vid))    deallocate(this%face_vid)
     if (allocated(this%edge_vid))    deallocate(this%edge_vid)
     if (allocated(this%face_normal)) deallocate(this%face_normal)
+    if (allocated(this%face_eid)) deallocate(this%face_eid)
+    if (allocated(this%edge_faces)) deallocate(this%edge_faces)
     if (associated(this%tet)) deallocate(this%tet)
     this%tet => null()
 
@@ -159,14 +161,18 @@ contains
 
   end subroutine init_tesselated
 
-  subroutine init_tet (this, ierr, x, face_normal, vol)
+  subroutine init_tet (this, ierr, x, face_normal, vol, set_face_normals)
 
     use cell_geometry, only: tet_volume
+    use hex_types, only: tet_fv, tet_ev, tet_fe, tet_ef, tet_vf
 
     class(polyhedron),  intent(out) :: this
     integer,            intent(out) :: ierr
     real(r8),           intent(in)  :: x(:,:)
     real(r8), optional, intent(in)  :: face_normal(:,:), vol
+    logical, optional, intent(in) :: set_face_normals
+
+    logical :: set_face_normalsh
 
     ierr = 0
     ASSERT(size(x, dim=2) == 4)
@@ -177,41 +183,25 @@ contains
     this%tesselated = .false.
 
     this%x = x
-    this%edge_vid = reshape([&
-        1,2,&
-        1,3,&
-        1,4,&
-        2,3,&
-        2,4,&
-        3,4], [2,this%nEdges])
-    this%face_vid = reshape([&
-        1,3,2,&
-        1,2,4,&
-        1,4,3,&
-        2,3,4], [3,this%nFaces])
-    this%face_eid = reshape([&
-        2,4,1,&
-        1,5,3,&
-        3,6,2,&
-        4,6,5], [3,this%nFaces])
-    this%edge_faces = reshape([&
-        1,2,&
-        1,3,&
-        3,2,&
-        1,4,&
-        2,4,&
-        3,4], [2,this%nEdges])
-    this%vertex_faces = reshape([&
-        1,2,3,&
-        1,2,4,&
-        1,3,4,&
-        2,3,4], [3,this%nVerts])
+    this%edge_vid = tet_ev
+    this%face_vid = tet_fv
+    this%face_eid = tet_fe
+    this%edge_faces = tet_ef
+    this%vertex_faces = tet_vf
 
     if (present(face_normal)) then
       this%face_normal = face_normal
     else
-      allocate(this%face_normal(3,this%nFaces))
-      call this%update_face_normals()
+      if (present(set_face_normals)) then
+        set_face_normalsh = set_face_normals
+      else
+        set_face_normalsh = .true.
+      end if
+
+      if (set_face_normalsh) then
+        allocate(this%face_normal(3,this%nFaces))
+        call this%update_face_normals()
+      end if
     end if
 
     this%vol = merge(vol, tet_volume(this%x), present(vol))

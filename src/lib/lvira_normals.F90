@@ -255,8 +255,8 @@ contains
     do c = 2,this%ncell
       cid = gmesh%caneighbor(i)%elements(c-1)
 
-      call this%cell(c)%init (ierr, mesh%x(:,mesh%cnode(:,cid)), hex_f, hex_e, gmesh%outnorm(:,:,cid), &
-          mesh%volume(cid))
+      call this%cell(c)%init (ierr, mesh%x(:,mesh%cnode(:,cid)), hex_f, hex_e, &
+          gmesh%outnorm(:,:,cid), mesh%volume(cid))
       this%vof(c) = vof(cid)
       this%cell_vol(c) = mesh%volume(cid)
     end do
