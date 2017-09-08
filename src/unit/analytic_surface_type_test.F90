@@ -1072,12 +1072,10 @@ contains
     integer :: i, ierr
     type(polyhedron) :: cell
 
-    !$omp parallel do private(cell, ierr)
     do i = 1,mesh%ncell
       call cell%init (ierr, mesh%x(:,mesh%cnode(:,i)), hex_f, hex_e)
       mesh%volume(i) = cell%volume()
     end do
-    !$omp end parallel do
 
   end subroutine recalculate_mesh_volumes
 
