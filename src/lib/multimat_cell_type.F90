@@ -22,12 +22,14 @@ module multimat_cell_type
   ! the cell geometry, and also contains an array
   ! of polyhedra each describing the geometry of a
   ! particular material
-  type, extends(polyhedron), public :: multimat_cell
+  type, public :: multimat_cell
     integer                       :: nmat,m ! number of materials actually present in cell
     !integer,          allocatable :: mat_id(:)
+    type(polyhedron) :: geom
     type(polyhedron), allocatable :: mat_poly(:)
     type(polygon_box), allocatable :: interface_polygons(:)
   contains
+    procedure :: init
     procedure :: partition
     procedure, private :: volumes_behind_plane
     procedure :: outward_volflux
@@ -35,6 +37,19 @@ module multimat_cell_type
   end type multimat_cell
 
 contains
+
+  subroutine init (this, ierr, x, face_v, edge_v, face_normal, vol, tesselate)
+
+    class(multimat_cell), intent(out) :: this
+    integer, intent(out) :: ierr
+    real(r8), intent(in)  :: x(:,:)
+    integer, intent(in)  :: face_v(:,:), edge_v(:,:)
+    real(r8), optional, intent(in)  :: face_normal(:,:), vol
+    logical, optional, intent(in) :: tesselate
+
+    call this%geom%init(ierr, x, face_v, edge_v, face_normal, vol, tesselate)
+
+  end subroutine init
 
   ! given a set of VoFs, normals, and an order,
   ! create child polyhedra for each material
@@ -57,12 +72,12 @@ contains
     if (allocated(this%mat_poly)) deallocate(this%mat_poly)
     if (allocated(this%interface_polygons)) deallocate(this%interface_polygons)
     allocate(this%mat_poly(size(vof)), this%interface_polygons(size(vof)), stat=ierr)
-    this%mat_poly(:)%nVerts = 0
+    this%mat_poly(:)%parent%nVerts = 0
     this%interface_polygons%n_elements = 0
     this%m = 0
     !print *, 'part1', ierr, loc(tmp(1)), loc(tmp(2))
 
-    remainder = this
+    remainder = this%geom
     !print *, loc(this%tet(1)), loc(remainder%tet(1))
     !print *, 'part2', associated(this%tet), associated(tmp(1)%tet) !, associated(tmp(2)%tet) !, associated(remainder%tet)
 
@@ -78,8 +93,8 @@ contains
       ! reconstruct the plane from the remaining free space
       ! use the plane to generate the polyhedron for this material,
       ! and update the free-space polyhedron
-      if (nm==this%nmat .or. (1.0_r8-cutvof)*remainder%volume() < vof(m)*this%volume() .or. &
-          isZero(remainder%volume() / this%volume())) then
+      if (nm==this%nmat .or. (1.0_r8-cutvof)*remainder%volume() < vof(m)*this%geom%volume() .or. &
+          isZero(remainder%volume() / this%geom%volume())) then
         ! if this is the final material in the cell,
         ! or its volume is within a cutvof of the remaining volume,
         ! it gets the entire remainder of the polyhedron
@@ -89,7 +104,8 @@ contains
       else
         ! if this is not the final material in the cell, split the cell
         !print *, 'part5'
-        interface_plane = locate_plane_nd (remainder, norm(:,m), vof(m)*this%volume(), this%volume())
+        interface_plane = locate_plane_nd (remainder, norm(:,m), vof(m)*this%geom%volume(), &
+            this%geom%volume())
         ! interface_plane%normal = [1.0_r8, 0.0_r8, 0.0_r8]
         ! interface_plane%rho = 0.349086120553874_r8
         ! print *, 'part6' !, interface_plane%rho
@@ -114,13 +130,14 @@ contains
 
     if (this%interface_polygons(1)%n_elements < 1) then
       m = 1
-      remainder = this
+      remainder = this%geom
       print *, 'hmm vof ',vof
-      print *, this%nmat, (1-cutvof)*remainder%volume(), vof(m)*this%volume(), &
-          remainder%volume() / this%volume(), &
-          (1.0_r8-cutvof)*remainder%volume() < vof(m)*this%volume() .or. &
-          isZero(remainder%volume() / this%volume())
-      interface_plane = locate_plane_nd (remainder, norm(:,m), vof(m)*this%volume(), this%volume())
+      print *, this%nmat, (1-cutvof)*remainder%volume(), vof(m)*this%geom%volume(), &
+          remainder%volume() / this%geom%volume(), &
+          (1.0_r8-cutvof)*remainder%volume() < vof(m)*this%geom%volume() .or. &
+          isZero(remainder%volume() / this%geom%volume())
+      interface_plane = locate_plane_nd (remainder, norm(:,m), vof(m)*this%geom%volume(), &
+          this%geom%volume())
       print *, remainder%volume_behind_plane (interface_plane,ierr) &
           / remainder%volume()
     end if
@@ -136,7 +153,7 @@ contains
       write(*,*) 'partition error!'
 
       write(*,*) 'cell:'
-      call this%print_data ()
+      call this%geom%print_data ()
 
       write(*,*) 'vof: ',vof
 
@@ -148,11 +165,11 @@ contains
       write(*,*) 'previous vofs:'
       rem = 1.0_r8
       do i = 1,m-1
-        write(*,'(i3,a,2es20.10)') i,': ',this%mat_poly(i)%volume() / this%volume()
-        rem = rem - this%mat_poly(i)%volume() / this%volume()
+        write(*,'(i3,a,2es20.10)') i,': ',this%mat_poly(i)%volume() / this%geom%volume()
+        rem = rem - this%mat_poly(i)%volume() / this%geom%volume()
       end do
       write(*,*) 'remaining vof: ',rem
-      rem = rem - tmp(2)%volume() / this%volume()
+      rem = rem - tmp(2)%volume() / this%geom%volume()
       write(*,*) 'remaining after last cutout vof: ',rem
 
       write(*,*)
@@ -172,10 +189,10 @@ contains
 
       write(*,*)
       ! write(*,*) 'remainder polyhedron volume does not match remaining volume from vof'
-      ! write(*,'(a,es20.10)') 'remainder polyhedron vof: ',tmp(1)%volume() / this%volume()
+      ! write(*,'(a,es20.10)') 'remainder polyhedron vof: ',tmp(1)%volume() / this%geom%volume()
       ! write(*,'(a,es20.10)') 'exact remaining vof:      ',1.0_r8 - sum(vof(:m))
       ! write(*,'(a,es20.10)') 'error:                    ',&
-      !     abs(tmp(1)%volume() / this%volume() - (1.0_r8 - sum(vof(:m))))
+      !     abs(tmp(1)%volume() / this%geom%volume() - (1.0_r8 - sum(vof(:m))))
 
       call LS_fatal ("partition error")
     end subroutine partitionError
@@ -188,7 +205,7 @@ contains
 
     use plane_type
 
-    class(multimat_cell), intent(in) :: this
+    class(multimat_cell), intent(inout) :: this
     class(plane),         intent(in) :: P
     integer,              intent(out) :: ierr
     real(r8)                         :: vol(size(this%mat_poly))
@@ -213,7 +230,6 @@ contains
 
     class(multimat_cell), intent(inout) :: this !inout because of call to volume
     real(r8),             intent(in)    :: adv_dt, fluxing_velocity(:), face_area(:)
-    !real(r8), optional,   intent(in)    :: face_area(:) ! WARNING: this isn't really optional, and maybe should be copied into the object
     integer, intent(out) :: ierr
     real(r8)                            :: outward_volflux(size(this%mat_poly),nfc)
 
@@ -223,16 +239,16 @@ contains
 
     ierr = 0
     do f = 1,nfc
-      if (fluxing_velocity(f)*adv_dt*face_area(f) < cutvof*this%volume()) then
+      if (fluxing_velocity(f)*adv_dt*face_area(f) < cutvof*this%geom%volume()) then
         ! if we would be fluxing very very little, don't flux anything
         outward_volflux(:,f) = 0.0_r8
       else
         ! find the plane equation for the back end of the flux volume
         ! WARNING: in general, this could be non-planar, just like cell faces
-        flux_plane%normal = -this%face_normal(:,f)
+        flux_plane%normal = -this%geom%parent%face_normal(:,f)
 
-        nV = count(this%face_vid(:,f) /= 0) ! number of vertices on this face
-        xf = sum(this%x(:,this%face_vid(1:nV,f)),dim=2) / real(nV,r8) ! face center
+        nV = count(this%geom%parent%face_vid(:,f) /= 0) ! number of vertices on this face
+        xf = sum(this%geom%parent%x(:,this%geom%parent%face_vid(1:nV,f)),dim=2) / nV ! face center
 
         flux_plane%rho  = sum(xf*flux_plane%normal) + adv_dt * fluxing_velocity(f)
 
@@ -258,7 +274,7 @@ contains
           write(*,'(a,4es20.10)') 'flux plane n,p: ',flux_plane%normal, flux_plane%rho
           write(*,*) 'nmat ',this%nmat, this%m
 
-          call this%print_data ()
+          call this%geom%print_data ()
 
           call LS_fatal ("in nested dissection outward_volflux: negative fluxes calculated!")
         end if
@@ -281,19 +297,20 @@ contains
     interface_polygon%nVerts = 0
     ! if this polyhedron doesn't exist, or the polyhedron describes a pure cell,
     ! there is no interface to find
-    if (m > size(this%mat_poly) .or. this%nmat<2 .or. this%mat_poly(m)%nVerts<4) return
+    if (m > size(this%mat_poly) .or. this%nmat<2 .or. this%mat_poly(m)%parent%nVerts<4) return
 
     ! by the convention set in polyhedron_type%polyhedron_on_side_of_plane,
     ! the face corresponding to the phase interface is the last face in the polyhedron
-    interface_face_id = this%mat_poly(m)%nFaces
+    interface_face_id = this%mat_poly(m)%parent%nFaces
 
     ! count how many real vertices are listed for this face (0s represent non-existent vertices)
-    nVerts = count(this%mat_poly(m)%face_vid(:,interface_face_id)/=0)
+    nVerts = count(this%mat_poly(m)%parent%face_vid(:,interface_face_id)/=0)
 
     ! initialize the polyhedron with the vertices used by the interface face
     ! and the corresponding normal vector
-    call interface_polygon%init (this%mat_poly(m)%x(:,this%mat_poly(m)%face_vid(1:nVerts,interface_face_id))) !, &
-         !this%mat_poly(m)%face_normal(:,interface_face_id))
+    call interface_polygon%init(&
+        this%mat_poly(m)%parent%x(:,this%mat_poly(m)%parent%face_vid(1:nVerts,interface_face_id)))
+    !this%mat_poly(m)%face_normal(:,interface_face_id))
 
   end function interface_polygon
 

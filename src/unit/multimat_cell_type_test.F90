@@ -240,7 +240,7 @@ contains
 
     partition_unit_test = .true.
     do m = 1,size(vof)
-      vof_result = cell%mat_poly(m)%volume() / cell%volume()
+      vof_result = cell%mat_poly(m)%volume() / cell%geom%volume()
       write(*,*) 'mv', m, vof_result, vof(m)
       if (.not.isZero(vof(m) - vof_result, cutvof)) then
         write(*,*) 'partition test failed on material: ',m

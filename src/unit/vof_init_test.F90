@@ -35,6 +35,7 @@ contains
     use scalar_func_class
     use scalar_func_containers, only: scalar_func_box
     use scalar_func_factories, only: alloc_const_scalar_func, alloc_piecewise_scalar_func
+    use hex_types, only: hex_f, hex_e
 
     real(r8), intent(in) :: xc(:), dx
 
@@ -43,7 +44,8 @@ contains
     type(region_box) :: rgn(2)
     type(scalar_func_box) :: subfunc(2)
     class(scalar_func), allocatable :: matl_index
-    real(r8) :: vof(2), vof_ex
+    real(r8) :: vof(2), vof_ex, x(3,8)
+    integer :: ierr
 
     ! set up the cylinder geometry
     call alloc_cylinder_region (rgn(1)%r, [0.0_r8, 0.0_r8, 0.0_r8], [0.0_r8, 0.0_r8, 1.0_r8], &
@@ -57,17 +59,19 @@ contains
     call matl_geom%init (matl_index)
 
     ! set up cell
-    cell%x(:,1) = xc + 0.5_r8 * dx * [-1.0_r8, -1.0_r8, -1.0_r8]
-    cell%x(:,2) = xc + 0.5_r8 * dx * [ 1.0_r8, -1.0_r8, -1.0_r8]
-    cell%x(:,3) = xc + 0.5_r8 * dx * [ 1.0_r8,  1.0_r8, -1.0_r8]
-    cell%x(:,4) = xc + 0.5_r8 * dx * [-1.0_r8,  1.0_r8, -1.0_r8]
-    cell%x(:,5) = xc + 0.5_r8 * dx * [-1.0_r8, -1.0_r8,  1.0_r8]
-    cell%x(:,6) = xc + 0.5_r8 * dx * [ 1.0_r8, -1.0_r8,  1.0_r8]
-    cell%x(:,7) = xc + 0.5_r8 * dx * [ 1.0_r8,  1.0_r8,  1.0_r8]
-    cell%x(:,8) = xc + 0.5_r8 * dx * [-1.0_r8,  1.0_r8,  1.0_r8]
+    x(:,1) = xc + 0.5_r8 * dx * [-1.0_r8, -1.0_r8, -1.0_r8]
+    x(:,2) = xc + 0.5_r8 * dx * [ 1.0_r8, -1.0_r8, -1.0_r8]
+    x(:,3) = xc + 0.5_r8 * dx * [ 1.0_r8,  1.0_r8, -1.0_r8]
+    x(:,4) = xc + 0.5_r8 * dx * [-1.0_r8,  1.0_r8, -1.0_r8]
+    x(:,5) = xc + 0.5_r8 * dx * [-1.0_r8, -1.0_r8,  1.0_r8]
+    x(:,6) = xc + 0.5_r8 * dx * [ 1.0_r8, -1.0_r8,  1.0_r8]
+    x(:,7) = xc + 0.5_r8 * dx * [ 1.0_r8,  1.0_r8,  1.0_r8]
+    x(:,8) = xc + 0.5_r8 * dx * [-1.0_r8,  1.0_r8,  1.0_r8]
+
+    call cell%init(ierr, matl_geom, x, hex_f, hex_e)
 
     ! calculate the vof
-    vof = cell%vof (matl_geom, 2, 0)
+    vof = cell%vof(matl_geom, 2, 0)
 
     ! print results
     vof_ex = 0.614298769812239_r8

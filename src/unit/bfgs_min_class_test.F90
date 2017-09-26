@@ -33,7 +33,7 @@ contains
 
   real(r8) function bfgs_test_f(this, x)
 
-    class(bfgs_test_func), intent(in) :: this
+    class(bfgs_test_func), intent(inout) :: this
     real(r8), intent(in) :: x(:)
 
     ASSERT(size(x) == 2)

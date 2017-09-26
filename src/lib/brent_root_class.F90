@@ -28,7 +28,7 @@ module brent_root_class
   abstract interface
     function func (this, x) result (fx)
       import brent_root, r8
-      class(brent_root), intent(in) :: this
+      class(brent_root), intent(inout) :: this
       real(r8), intent(in) :: x
       real(r8) :: fx
     end function func

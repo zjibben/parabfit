@@ -24,10 +24,10 @@ module surface_type
     type(polygon_box), public, allocatable :: element(:)
     integer, public, allocatable :: cell_id(:)
   contains
-    procedure, private :: append_polyhedron
+    !procedure, private :: append_polyhedron
     procedure, private :: append_polygon
     procedure, private :: append_surf
-    generic   :: append => append_polygon, append_surf, append_polyhedron
+    generic   :: append => append_polygon, append_surf !, append_polyhedron
     !procedure :: write_gmv
     procedure :: write_ply
     procedure :: purge
@@ -68,40 +68,40 @@ contains
 
   end subroutine append_polygon
 
-  ! append a polyhedron to the surface
-  ! (may instead want to write a routine in the polyhedron type that returns a surface)
-  subroutine append_polyhedron (this, poly)
+  ! ! append a polyhedron to the surface
+  ! ! (may instead want to write a routine in the polyhedron type that returns a surface)
+  ! subroutine append_polyhedron (this, poly)
 
-    use polyhedron_type
+  !   use polyhedron_type
 
-    class(surface),    intent(inout) :: this
-    class(polyhedron), intent(inout) :: poly
+  !   class(surface),    intent(inout) :: this
+  !   class(polyhedron), intent(inout) :: poly
 
-    integer       :: nV,N,f
-    type(polygon) :: face
-    type(polygon_box) :: tmp(size(this%element))
+  !   integer       :: nV,N,f
+  !   type(polygon) :: face
+  !   type(polygon_box) :: tmp(size(this%element))
 
-    if (allocated(this%element)) then
-      N = size(this%element)
-      tmp = this%element
-      deallocate(this%element)
-      allocate(this%element(N+1))
-      this%element(1:N) = tmp
-    else
-      N = 0
-      allocate(this%element(1))
-    end if
+  !   if (allocated(this%element)) then
+  !     N = size(this%element)
+  !     tmp = this%element
+  !     deallocate(this%element)
+  !     allocate(this%element(N+1))
+  !     this%element(1:N) = tmp
+  !   else
+  !     N = 0
+  !     allocate(this%element(1))
+  !   end if
 
-    this%element(N+1)%n_elements = poly%nFaces
-    allocate(this%element(N+1)%elements(poly%nFaces))
-    do f = 1,poly%nFaces
-      nV = count(poly%face_vid(:,f) /= 0) ! number of vertices on this face
-      call face%init (poly%x(:,poly%face_vid(1:nV,f)), poly%face_normal(:,f))
+  !   this%element(N+1)%n_elements = poly%nFaces
+  !   allocate(this%element(N+1)%elements(poly%nFaces))
+  !   do f = 1,poly%nFaces
+  !     nV = count(poly%face_vid(:,f) /= 0) ! number of vertices on this face
+  !     call face%init (poly%x(:,poly%face_vid(1:nV,f)), poly%face_normal(:,f))
 
-      this%element(N+1)%elements(f) = face
-    end do
+  !     this%element(N+1)%elements(f) = face
+  !   end do
 
-  end subroutine append_polyhedron
+  ! end subroutine append_polyhedron
 
   ! append elements of another surface to
   subroutine append_surf (this, surf)

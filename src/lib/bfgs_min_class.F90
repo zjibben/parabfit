@@ -29,7 +29,7 @@ module bfgs_min_class
   abstract interface
     function func (this, x) result(fx)
       import r8, bfgs_min
-      class(bfgs_min), intent(in) :: this
+      class(bfgs_min), intent(inout) :: this
       real(r8), intent(in) :: x(:)
       real(r8) :: fx
     end function func
@@ -119,7 +119,7 @@ contains
 
   subroutine line_search(this, l, s, f, x, d, gradf, status)
 
-    class(bfgs_min), intent(in) :: this
+    class(bfgs_min), intent(inout) :: this
     real(r8), intent(out) :: l, s(:)
     real(r8), intent(inout) :: f, x(:)
     real(r8), intent(in) :: d(:), gradf(:)
@@ -209,7 +209,7 @@ contains
   ! estimate the gradient of f using standard differencing
   function gradf(this, x, dx)
 
-    class(bfgs_min), intent(in) :: this
+    class(bfgs_min), intent(inout) :: this
     real(r8), intent(in) :: x(:), dx
     real(r8) :: gradf(size(x))
 

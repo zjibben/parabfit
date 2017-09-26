@@ -127,7 +127,7 @@ contains
       end do
 
       write(*,*) 'cell dimensions: '
-      call cell%print_data ()
+      call cell%geom%print_data ()
 
       call LS_fatal ("cell_outward_volflux failed")
     end if

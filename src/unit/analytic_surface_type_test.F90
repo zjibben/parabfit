@@ -571,6 +571,7 @@ contains
     mesh = new_unstr_mesh ([-0.5_r8, -0.5_r8, -0.5_r8], &
         [0.5_r8, 0.5_r8, 0.5_r8], [mesh_size,mesh_size,mesh_size])
     call gmesh%init (mesh)
+    print '(a)', 'mesh initialized'
 
     ! fill the mesh with volume fractions for a circle
     ! right now this relies on an input file to describe the cylinder. In the future I'd like to
@@ -592,6 +593,7 @@ contains
       call store_vof_field(filename, vof)
     end if
     deallocate(plist)
+    print '(a)', 'vof initialized'
 
     ! get the interface reconstructions
     int_norm = interface_normal (vof, mesh, gmesh, .false.)
@@ -700,8 +702,7 @@ contains
     type(surface) :: intrec
     type(multimat_cell) :: cell
     real(r8) :: int_norm_local(3,2), err, curvature(mesh%ncell), wgt_scale, totvolume
-    real(r8), allocatable :: weight_scales(:), int_norm_hf(:,:), throwaway(:), int_norm_hf2(:,:,:), &
-        int_norm_lvira(:,:,:)
+    real(r8), allocatable :: weight_scales(:), int_norm_lvira(:,:,:)
 
     !call heightFunction (throwaway, int_norm_hf, vof(1,:), int_norm(:,1,:), mesh, gmesh)
 
@@ -711,11 +712,12 @@ contains
       allocate(int_norm_lvira(3,2,mesh%ncell))
       call read_normals(filename, int_norm_lvira)
     else
+      print '(a)', 'calculating normals ...'
       call interface_normals_lvira(int_norm_lvira, vof, mesh, gmesh)
       call store_normals(filename, int_norm_lvira)
+      print '(a)', 'done'
     end if
     !call interface_normals_fit(int_norm_lvira, vof, mesh, gmesh)
-    int_norm_hf = int_norm_lvira(:,1,:)
 
     ! 2d override. important on boundary cells
     ! print *, 'WARNING: 2D override'
@@ -731,16 +733,12 @@ contains
     !   end if
     ! end do
 
-    allocate(int_norm_hf2(3,2,mesh%ncell))
-    int_norm_hf2(:,1,:) =  int_norm_hf
-    int_norm_hf2(:,2,:) = -int_norm_hf
-
     ! get the interface reconstructions
     lnorm = 0; nvofcell = 0; totvolume = 0
     do i = 1,mesh%ncell
       if (vof(1,i) > 1-cutvof .or. vof(1,i) < cutvof) cycle
       call cell%init (ierr, mesh%x(:,mesh%cnode(:,i)), hex_f, hex_e, gmesh%outnorm(:,:,i), &
-          mesh%volume(i))
+          mesh%volume(i), tesselate=.false.)
       if (ierr /= 0) call LS_fatal ('cell_outward_volflux failed: could not initialize cell')
 
       ! int_norm_local = 0
@@ -748,7 +746,7 @@ contains
       ! int_norm_local(:,2) = -int_norm_local(:,1)
       ! !call cell%partition (vof(:,i), int_norm_local)
 
-      call cell%partition (vof(:,i), int_norm_hf2(:,:,i))
+      call cell%partition (vof(:,i), int_norm_lvira(:,:,i))
       !call cell%partition (vof(:,i), int_norm(:,:,i))
 
       call intrec%append (cell%interface_polygons(1), i)
@@ -783,7 +781,7 @@ contains
         err = 0
         if (vof(1,i) > 1e-2_r8 .and. vof(1,i) < 1-1e-2_r8) then
           curvature(i) = abs(curvature_from_patch (intrec%local_patch(i,gmesh, vof(1,:)), &
-              wgt_scale, int_norm_hf2(:,1,i), vof(1,:), mesh, gmesh, i))
+              wgt_scale, int_norm_lvira(:,1,i), vof(1,:), mesh, gmesh, i))
           if (isZero(curvature(i))) cycle
 
           ! append to norms
@@ -1072,10 +1070,12 @@ contains
     integer :: i, ierr
     type(polyhedron) :: cell
 
+    print '(a)', 'recalculating mesh volumes ... '
     do i = 1,mesh%ncell
       call cell%init (ierr, mesh%x(:,mesh%cnode(:,i)), hex_f, hex_e)
       mesh%volume(i) = cell%volume()
     end do
+    print '(a)', 'done'
 
   end subroutine recalculate_mesh_volumes
 

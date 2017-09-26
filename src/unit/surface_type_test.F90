@@ -26,9 +26,9 @@ contains
     ! generate a cube and use its faces as the definition of a surface, then print to file
     call cube%init (ierr, cube_v, hex_f, hex_e)
 
-    do f = 1,cube%nfaces
-      nV = count(cube%face_vid(:,f) /= 0) ! number of vertices on this face
-      call element%init (cube%x(:,cube%face_vid(1:nV,f)))
+    do f = 1,cube%parent%nfaces
+      nV = count(cube%parent%face_vid(:,f) /= 0) ! number of vertices on this face
+      call element%init (cube%parent%x(:,cube%parent%face_vid(1:nV,f)))
 
       !call surf%append (element, f)
     end do

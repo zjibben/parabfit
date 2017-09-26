@@ -116,6 +116,7 @@ set(Pececillo_SOURCE_FILES
     flux_volume_module.F90
     plane_type.F90
     polygon_type.F90
+    pure_polyhedron_type.F90
     polyhedron_type.F90
     multimat_cell_type.F90
     surface_type.F90

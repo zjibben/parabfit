@@ -47,7 +47,7 @@ contains
     use polyhedron_type
     use plane_type
 
-    type(polyhedron), intent(in) :: poly
+    type(polyhedron), intent(inout) :: poly
     real(r8),         intent(in) :: norm(:), vol, cell_volume
 
     real(r8)             :: rho_min,rho_mid,rho_max
@@ -77,8 +77,8 @@ contains
 
     real(r8),                intent(out) :: rho_min, rho_mid, rho_max
     real(r8),                intent(in)  :: norm(:)
-    type(polyhedron),        intent(in)  :: poly ! we could instead just pass in poly%x
-    type(vof_error_func), intent(in)  :: volume_error
+    type(polyhedron),        intent(inout)  :: poly
+    type(vof_error_func), intent(inout)  :: volume_error
 
     real(r8)                             :: err_min,err_max,err, rho
     integer                              :: i, ierr
@@ -90,8 +90,8 @@ contains
     err_max =  huge(1.0_r8); rho_max =  huge(1.0_r8)
 
     ! find the outer bounds
-    do i = 1,poly%nVerts
-      rho = dot_product(poly%x(:,i),norm)
+    do i = 1,poly%parent%nVerts
+      rho = dot_product(poly%parent%x(:,i),norm)
 
       if (rho <= rho_min .or. rho >= rho_max) cycle
 
@@ -120,8 +120,8 @@ contains
       print '(a,3f10.3)', 'normal: ', norm
       call poly%print_data ()
       !write(*,*) 'volume ',poly%volume ()
-      do i = 1,poly%nVerts
-        rho = dot_product(poly%x(:,i),norm)
+      do i = 1,poly%parent%nVerts
+        rho = dot_product(poly%parent%x(:,i),norm)
         err = volume_error%signed_eval(rho)
         P%rho = rho
         write(*,'(a,i3,3es14.4)') 'vertex, rho, error, vol: ', i, rho, err, &
@@ -172,7 +172,7 @@ contains
   end subroutine func_init
 
   real(r8) function func_eval (this, x)
-    class(vof_error_func), intent(in) :: this
+    class(vof_error_func), intent(inout) :: this
     real(r8), intent(in) :: x
     func_eval = abs(this%signed_eval (x))
   end function func_eval
@@ -181,8 +181,8 @@ contains
 
     use plane_type
 
-    class(vof_error_func), intent(in) :: this
-    real(r8),                 intent(in) :: x
+    class(vof_error_func), intent(inout) :: this
+    real(r8), intent(in) :: x
 
     type(plane) :: P
     integer :: ierr
