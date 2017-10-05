@@ -56,10 +56,8 @@ contains
     write (fh1, '(a)') '# dx l1 l2 l3'
     write (fh2, '(a)') '# dx l1 l2 l3'
 
-    do i = 1,4
+    do i = 1,1
       ncell = 10 * 2**i
-    ! do i = 1,25
-    !   ncell = floor(10 * 1.15_r8**i)
       !call mesh_2d_test (ncell, 'cylinder.json', lnormFT, lnormHF)
       !call mesh_3d_test (ncell, 'sphere.json', lnormFT, lnormHF)
       call mesh_unstr_test (ncell, 'sphere.json', lnormFT, lnormHF)
@@ -473,7 +471,6 @@ contains
     use interface_patch_type
     use vof_init
     use multimat_cell_type
-    use hex_types, only: hex_f, hex_e
     use array_utils, only: normalize, isZero
     use curvature_hf
     use vof_io
@@ -529,7 +526,7 @@ contains
 
     ! calculate errors for FT and HF curvature methods
     curvature_ex = 1 / 0.35_r8 ! cylinder
-    lnormFT = ft_mesh_test (vof, int_norm, mesh, gmesh, curvature_ex)
+    lnormFT = ft_mesh_test ('reg', vof, int_norm, mesh, gmesh, curvature_ex)
     lnormHF = hf_mesh_test (vof, int_norm, mesh, gmesh, curvature_ex)
 
     print '(i5, 2(a,3es10.2))', mesh_size, '  FT L1,L2,Linf = ',lnormFT, &
@@ -549,7 +546,6 @@ contains
     use interface_patch_type
     use vof_init
     use multimat_cell_type
-    use hex_types, only: hex_f, hex_e
     use array_utils, only: normalize, isZero
     use curvature_hf
     use vof_io
@@ -600,7 +596,7 @@ contains
 
     ! calculate errors for FT and HF curvature methods
     curvature_ex = 2 / 0.35_r8 ! sphere
-    lnormFT = ft_mesh_test (vof, int_norm, mesh, gmesh, curvature_ex)
+    lnormFT = ft_mesh_test ('reg', vof, int_norm, mesh, gmesh, curvature_ex)
     lnormHF = hf_mesh_test (vof, int_norm, mesh, gmesh, curvature_ex)
 
     print '(i5, 2(a,3es10.2))', mesh_size, '  FT L1,L2,Linf = ',lnormFT, &
@@ -620,7 +616,6 @@ contains
     use interface_patch_type
     use vof_init
     use multimat_cell_type
-    use hex_types, only: hex_f, hex_e
     use array_utils, only: normalize, isZero
     use curvature_hf
     use vof_io
@@ -629,20 +624,23 @@ contains
     character(*), intent(in) :: shape_filename
     real(r8), intent(out) :: lnormFT(:), lnormHF(:)
 
-    character(:), allocatable :: errmsg, filename, mesh_filename
+    character(:), allocatable :: errmsg, filename, mesh_filename, cell_type
     character(30) :: tmp
     type(unstr_mesh) :: mesh
     type(mesh_geom) :: gmesh
     type(parameter_list), pointer :: plist
-    real(r8) :: curvature_ex, vof(2,mesh_size**3), curvature(mesh_size**3)
+    real(r8) :: curvature_ex
+    real(r8), allocatable :: vof(:,:), curvature(:)
     integer :: infile
 
     ! create a regular 2D mesh
-    write (tmp, '(a,i0,a)') "cube_", mesh_size, "_rnd.exo"
+    cell_type = 'tet' ! rnd, tet
+    write (tmp, '(a,i0,3a)') "cube_", mesh_size, "_", cell_type, ".exo"
     mesh_filename = trim(adjustl(tmp))
     mesh = new_unstr_mesh (mesh_filename)
-    call recalculate_mesh_volumes(mesh)
     call gmesh%init (mesh)
+    call recalculate_mesh_volumes(mesh,gmesh)
+    allocate(vof(2,mesh%ncell), curvature(mesh%ncell))
     print '(a)', "mesh initialized"
 
     ! fill the mesh with volume fractions for a circle
@@ -657,7 +655,7 @@ contains
     plist => plist%sublist('initial-vof')
     print '(a)', "parameter list read"
 
-    write (tmp, '(a,i0,a)') "vof_unstr_", mesh_size, ".dat"
+    write (tmp, '(a,i0,3a)') "vof_unstr_", mesh_size, "_", cell_type, ".dat"
     filename = trim(adjustl(tmp))
     if (file_exists(filename)) then
       call read_vof_field(filename, vof)
@@ -669,14 +667,14 @@ contains
 
     ! calculate errors for FT and HF curvature methods
     curvature_ex = 2 / 0.35_r8 ! sphere
-    lnormFT = ft_unstr_mesh_test(vof, mesh, gmesh, curvature_ex)
+    lnormFT = ft_unstr_mesh_test(cell_type, vof, mesh, gmesh, curvature_ex)
     lnormHF = 0
 
-    print '(i5, a,3es10.2)', mesh_size, '  FT L1,L2,Linf = ',lnormFT
+    print '(i5, a,3es10.2)', mesh%ncell, '  FT L1,L2,Linf = ',lnormFT
 
   end subroutine mesh_unstr_test
 
-  function ft_mesh_test (vof, int_norm, mesh, gmesh, curvature_ex) result(lnorm)
+  function ft_mesh_test (cell_type, vof, int_norm, mesh, gmesh, curvature_ex) result(lnorm)
 
     use consts, only: cutvof
     use surface_type
@@ -690,6 +688,7 @@ contains
     use fit_normals
     use vof_io
 
+    character(*), intent(in) :: cell_type
     real(r8), intent(in) :: vof(:,:), int_norm(:,:,:)
     type(unstr_mesh), intent(in) :: mesh
     type(mesh_geom), intent(in) :: gmesh
@@ -702,11 +701,11 @@ contains
     type(surface) :: intrec
     type(multimat_cell) :: cell
     real(r8) :: int_norm_local(3,2), err, curvature(mesh%ncell), wgt_scale, totvolume
-    real(r8), allocatable :: weight_scales(:), int_norm_lvira(:,:,:)
+    real(r8), allocatable :: int_norm_lvira(:,:,:) !,weight_scales(:)
 
     !call heightFunction (throwaway, int_norm_hf, vof(1,:), int_norm(:,1,:), mesh, gmesh)
 
-    write (tmp, '(a,i0,a)') "normals_3d_", mesh%ncell, ".dat"
+    write (tmp, '(a,i0,3a)') "normals_3d_", mesh%ncell, "_", cell_type, ".dat"
     filename = trim(adjustl(tmp))
     if (file_exists(filename)) then
       allocate(int_norm_lvira(3,2,mesh%ncell))
@@ -737,8 +736,9 @@ contains
     lnorm = 0; nvofcell = 0; totvolume = 0
     do i = 1,mesh%ncell
       if (vof(1,i) > 1-cutvof .or. vof(1,i) < cutvof) cycle
-      call cell%init (ierr, mesh%x(:,mesh%cnode(:,i)), hex_f, hex_e, gmesh%outnorm(:,:,i), &
-          mesh%volume(i), tesselate=.false.)
+      call cell%init (ierr, i, mesh, gmesh, tesselate=.false.)
+      ! call cell%init (ierr, mesh%x(:,mesh%cnode(:,i)), hex_f, hex_e, gmesh%outnorm(:,:,i), &
+      !     mesh%volume(i), tesselate=.false.)
       if (ierr /= 0) call LS_fatal ('cell_outward_volflux failed: could not initialize cell')
 
       ! int_norm_local = 0
@@ -888,7 +888,7 @@ contains
 
   end function ft_mesh_test
 
-  function ft_unstr_mesh_test (vof, mesh, gmesh, curvature_ex) result(lnorm)
+  function ft_unstr_mesh_test (cell_type, vof, mesh, gmesh, curvature_ex) result(lnorm)
 
     use consts, only: cutvof
     use surface_type
@@ -902,6 +902,7 @@ contains
     use fit_normals
     use vof_io
 
+    character(*), intent(in) :: cell_type
     real(r8), intent(in) :: vof(:,:)
     type(unstr_mesh), intent(in) :: mesh
     type(mesh_geom), intent(in) :: gmesh
@@ -916,7 +917,7 @@ contains
     real(r8) :: err, curvature(mesh%ncell), totvolume
     real(r8), allocatable :: int_norm_lvira(:,:,:)
 
-    write (tmp, '(a,i0,a)') "normals_unstr_", mesh%ncell, ".dat"
+    write (tmp, '(a,i0,3a)') "normals_unstr_", mesh%ncell, "_", cell_type, ".dat"
     filename = trim(adjustl(tmp))
     if (file_exists(filename)) then
       allocate(int_norm_lvira(3,2,mesh%ncell))
@@ -945,8 +946,9 @@ contains
     do i = 1,mesh%ncell
       if (vof(1,i) > 1-cutvof .or. vof(1,i) < cutvof) cycle
       !print *, 'here0'
-      call cell%init (ierr, mesh%x(:,mesh%cnode(:,i)), hex_f, hex_e, gmesh%outnorm(:,:,i), &
-          mesh%volume(i))
+      call cell%init (ierr, i, mesh, gmesh)
+      ! call cell%init (ierr, mesh%x(:,mesh%cnode(:,i)), hex_f, hex_e, gmesh%outnorm(:,:,i), &
+      !     mesh%volume(i))
       if (ierr /= 0) call LS_fatal ('cell_outward_volflux failed: could not initialize cell')
       !print *, 'here1'
 
@@ -1060,19 +1062,21 @@ contains
 
   end subroutine compare_vof_fields
 
-  subroutine recalculate_mesh_volumes(mesh)
+  subroutine recalculate_mesh_volumes(mesh,gmesh)
 
     use polyhedron_type
     use hex_types, only: hex_f, hex_e
 
     type(unstr_mesh), intent(inout) :: mesh
+    type(mesh_geom), intent(in) :: gmesh
 
     integer :: i, ierr
     type(polyhedron) :: cell
 
     print '(a)', 'recalculating mesh volumes ... '
     do i = 1,mesh%ncell
-      call cell%init (ierr, mesh%x(:,mesh%cnode(:,i)), hex_f, hex_e)
+      call cell%init (ierr, i, mesh, gmesh)
+      !call cell%init (ierr, mesh%x(:,mesh%cnode(:,i)), hex_f, hex_e)
       mesh%volume(i) = cell%volume()
     end do
     print '(a)', 'done'

@@ -59,7 +59,6 @@ contains
     use interface_patch_type
     use vof_init
     use multimat_cell_type
-    use hex_types, only: hex_f, hex_e
     use array_utils, only: normalize, isZero
     use curvature_hf
 

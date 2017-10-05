@@ -35,11 +35,11 @@ program unit_test
 
   ! ! test polyhedrons and surfaces
   ! call polygon_unit_test ()
-  !call polyhedron_unit_test ()
+  ! call polyhedron_unit_test ()
   ! call surface_unit_test ()
 
-  ! ! nested dissection locate plane
-  ! call locate_plane_nd_unit_test_suite ()
+  ! nested dissection locate plane
+  !call locate_plane_nd_unit_test_suite ()
   ! call multimat_cell_unit_test_suite ()
   ! call volume_track_nd_unit_test ()
 

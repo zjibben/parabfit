@@ -8,9 +8,7 @@ module consts
   real(r8), parameter :: cutvof        = 1e-8_r8
   real(r8), parameter :: fluid_cutoff  = 1e-2_r8
 
-  integer,  parameter :: ndim = 3 ! number of dimensions
-  integer,  parameter :: nfc  = 6 ! number of faces per cell
-  integer,  parameter :: nvc  = 8 ! number of vertices per cell
-  integer,  parameter :: nvf  = 4 ! number of vertices per cell face  
+  integer, parameter :: ndim = 3 ! hardwired for now
+  integer :: nfc, nvf, nvc
 
 end module consts

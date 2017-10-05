@@ -114,7 +114,8 @@ contains
       fb = this%f(b)
     end do
 
-    root=huge(1.0_r8)
+    root=b !huge(1.0_r8)
+    this%numitr = i
     stat = 1
 
   end subroutine find_root

@@ -12,12 +12,16 @@
 module hex_types
 
   use kinds, only: r8
-  use consts, only: ndim, nfc, nvc
+  use consts, only: ndim
   use material_geometry_type
   use logging_services
   use plane_type
   implicit none
   private
+
+  integer, parameter :: nvc = 8
+  integer, parameter :: nfc = 6
+  integer, parameter :: nvf = 4
 
   ! hex type to make divide and conquer algorithm simpler
   type, public :: base_hex
@@ -54,14 +58,6 @@ module hex_types
        1,4,3,2, & ! z-
        5,6,7,8],& ! z+
        shape(hex_f))
-  ! [ & ! face vertices
-  !      [ 3,4,8,7 ], & ! y+
-  !      [ 1,2,6,5 ], & ! y-
-  !      [ 1,5,8,4 ], & ! x-
-  !      [ 2,3,7,6 ], & ! x+
-  !      [ 1,4,3,2 ], & ! z-
-  !      [ 5,6,7,8 ]  & ! z+
-  !      ]
 
   integer, parameter, public :: hex_e(2,12) = reshape([ &
        1,2, & ! edge vertices
@@ -90,11 +86,16 @@ module hex_types
        0.0_r8, 1.0_r8, 1.0_r8],&
        shape(cube_v))
 
+  ! integer, parameter, public :: tet_fv(3,4) = reshape([&
+  !     1,3,2,&
+  !     1,2,4,&
+  !     1,4,3,&
+  !     2,3,4], shape(tet_fv))
   integer, parameter, public :: tet_fv(3,4) = reshape([&
-      1,3,2,&
-      1,2,4,&
+      2,3,4,&
       1,4,3,&
-      2,3,4], shape(tet_fv))
+      1,2,4,&
+      1,3,2], shape(tet_fv))
 
   integer, parameter, public :: tet_ev(2,6) = reshape([&
       1,2,&
@@ -104,31 +105,47 @@ module hex_types
       2,4,&
       3,4], shape(tet_ev))
 
+  ! integer, parameter, public :: tet_fe(3,4) = reshape([&
+  !       2,4,1,&
+  !       1,5,3,&
+  !       3,6,2,&
+  !       4,6,5], shape(tet_fe))
   integer, parameter, public :: tet_fe(3,4) = reshape([&
-        2,4,1,&
-        1,5,3,&
+        4,6,5,&
         3,6,2,&
-        4,6,5], shape(tet_fe))
+        1,5,3,&
+        2,4,1], shape(tet_fe))
 
+  ! integer, parameter, public :: tet_ef(2,6) = reshape([&
+  !     1,2,&
+  !     1,3,&
+  !     3,2,&
+  !     1,4,&
+  !     2,4,&
+  !     3,4], shape(tet_ef))
   integer, parameter, public :: tet_ef(2,6) = reshape([&
-      1,2,&
-      1,3,&
+      3,4,&
+      2,4,&
       3,2,&
       1,4,&
-      2,4,&
-      3,4], shape(tet_ef))
+      1,3,&
+      1,2], shape(tet_ef))
 
+  ! integer, parameter, public :: tet_vf(3,4) = reshape([&
+  !     1,2,3,&
+  !     1,2,4,&
+  !     1,3,4,&
+  !     2,3,4], shape(tet_vf))
   integer, parameter, public :: tet_vf(3,4) = reshape([&
-      1,2,3,&
-      1,2,4,&
+      2,3,4,&
       1,3,4,&
-      2,3,4], shape(tet_vf))
+      1,2,4,&
+      1,2,3], shape(tet_vf))
 
 contains
 
   subroutine init_cell_data (this, node, volume, face_area, face_normal, cfpar)
 
-    use consts, only: ndim,nvc,nfc
     use array_utils, only: normalize
 
     class(cell_data),   intent(out) :: this
@@ -178,14 +195,14 @@ contains
 
     integer :: f
 
-    do f = 1,6
+    do f = 1,nfc
       this%face_normal(:,f) = quad_face_normal(this%node(:,hex_f(:,f)))
       this%face_area(f) = vector_length(this%face_normal(:,f))
-      this%face_normal(:,f) = this%face_normal(:,f) / sqrt(sum(this%face_normal(:,f)**2))
+      this%face_normal(:,f) = this%face_normal(:,f) / norm2(this%face_normal(:,f))
 
       ! ensure the normals are outward facing
-      this%face_normal(:,f) = calculate_outward_normal (this%face_normal(:,f), sum(this%node, dim=2)/8.0_r8, &
-           sum(this%node(:,hex_f(:,f)), dim=2)/4.0_r8)
+      this%face_normal(:,f) = calculate_outward_normal (this%face_normal(:,f), &
+          sum(this%node, dim=2) / nvc, sum(this%node(:,hex_f(:,f)), dim=2) / nvf)
     end do
 
   end subroutine calc_face_areas_and_normals
@@ -198,7 +215,7 @@ contains
 
     outward_dir = face_center - cell_center
 
-    if ( sum(normal*outward_dir)>0.0_r8 ) then
+    if (dot_product(normal,outward_dir) > 0) then
       outward_normal = normal
     else
       outward_normal = -normal

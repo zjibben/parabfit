@@ -50,7 +50,7 @@ contains
         0.5_r8, 0.5_r8, 0.5_r8],&
         shape(pyr_v))
     integer          :: pyr_f(4,5) = reshape([ &
-        1,2,3,4, & ! face vertices
+        1,4,3,2, & ! face vertices
         1,2,5,0, &
         2,3,5,0, &
         3,4,5,0, &
@@ -109,20 +109,20 @@ contains
     write(*,*) 'POLYHEDRON'
     write(*,*) '===================================================='
 
-    ! ! calculate the volume of a unit cube (1)
-    ! write(*,*) 'SHAPE VOLUMES'
-    ! call cube%init (ierr, cube_v, hex_f, hex_e)
-    ! volume = cube%volume ()
-    ! success = isZero (volume-1.0_r8)
-    ! write(*,*) 'cube volume?                     ', success
-    ! if (.not.success) write(*,*) 'volume: ',volume
+    ! calculate the volume of a unit cube (1)
+    write(*,*) 'SHAPE VOLUMES'
+    call cube%init (ierr, cube_v, hex_f, hex_e)
+    volume = cube%volume ()
+    success = isZero (volume-1.0_r8)
+    write(*,*) 'cube volume?                     ', success
+    if (.not.success) write(*,*) 'volume: ',volume
 
-    ! ! calculate the volume of a pyramid (1/6)
-    ! call pyramid%init (ierr, pyr_v, pyr_f, pyr_e)
-    ! volume = pyramid%volume ()
-    ! success = isZero (volume-1.0_r8/6.0_r8)
-    ! write(*,*) 'pyramid volume?                  ', success
-    ! if (.not.success) write(*,*) 'volume: ',volume
+    ! calculate the volume of a pyramid (1/6)
+    call pyramid%init (ierr, pyr_v, pyr_f, pyr_e)
+    volume = pyramid%volume ()
+    success = isZero (volume-1.0_r8/6.0_r8)
+    write(*,*) 'pyramid volume?                  ', success
+    if (.not.success) write(*,*) 'volume: ',volume
 
     ! ! calculate the volume of a pyramid
     ! call pyramid%init (ierr, reshape([&
@@ -235,10 +235,10 @@ contains
     ! volume = cutcube%volume ()
     ! write(*,*) 'cutcube3 volume?                 ', volume > 0.0_r8
 
-    ! ! create a plane, and return coordinates it intersects with polyhedron edges
-    ! write(*,*) 'SHAPE SPLITTING'
-    ! P%normal = [ 1.0_r8, 0.0_r8, 0.0_r8 ]
-    ! P%rho    = 0.5_r8
+    ! create a plane, and return coordinates it intersects with polyhedron edges
+    write(*,*) 'SHAPE SPLITTING'
+    P%normal = [ 1.0_r8, 0.0_r8, 0.0_r8 ]
+    P%rho    = 0.5_r8
 
     ! ! intpoly = cube%intersection_verts (P)
 
@@ -247,11 +247,12 @@ contains
     ! !   write(*,*) intpoly%x(:,i)
     ! ! end do
 
-    ! ! split the cube vertically down the center
-    ! !write(*,*) 'cube split volumes'
+    ! split the cube vertically down the center
+    !write(*,*) 'cube split volumes'
     ! call cube%split (P,tmp,ierr)
     ! success = isZero (tmp(1)%volume ()-0.5_r8) .and. isZero (tmp(2)%volume ()-0.5_r8)
-    ! write(*,*) 'vertical cut?                    ',success
+    success = isZero(cube%volume_behind_plane(P, ierr) - 0.5_r8)
+    write(*,*) 'vertical cut?                    ',success
 
     ! ! split the cube at an angle
     ! P%normal = [ 1.0_r8, 1.0_r8, 0.0_r8 ] / sqrt(2.0_r8)

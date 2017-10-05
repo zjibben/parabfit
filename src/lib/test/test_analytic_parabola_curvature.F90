@@ -223,8 +223,7 @@ contains
 
       if (.not.isMixedCell(vof(1,i))) cycle
 
-      call cell%init (ierr, mesh%x(:,mesh%cnode(:,i)), hex_f, hex_e, gmesh%outnorm(:,:,i), &
-          mesh%volume(i))
+      call cell%init (ierr, i, mesh, gmesh)
       if (ierr /= 0) call LS_fatal ('could not initialize cell')
 
       call cell%partition (vof(:,i), int_norm(:,:,i))

@@ -29,7 +29,9 @@ module vof_init
     integer, allocatable :: mfacec(:), medgec(:), matl_at_node(:)
     integer :: mcellc, ntets
   contains
-    procedure :: init => dnc_cell_init
+    procedure, private :: dnc_cell_init
+    procedure, private :: init_from_polyhedron
+    generic :: init => dnc_cell_init, init_from_polyhedron
     procedure :: get_subcell
     procedure :: set_division_variables
     procedure :: cell_center
@@ -47,14 +49,43 @@ module vof_init
 
 contains
 
-  subroutine dnc_cell_init(this, ierr, matl_init_geometry, x, face_v, edge_v, face_normal, vol, &
-      tesselate)
+  subroutine dnc_cell_init(this, ierr, matl_init_geometry, i, mesh, gmesh, tesselate)
+
+    use unstr_mesh_type
+    use mesh_geom_type
 
     class(dnc_cell), intent(out) :: this
     integer, intent(out) :: ierr
     type(material_geometry), intent(in) :: matl_init_geometry
-    real(r8), intent(in)  :: x(:,:)
-    integer, intent(in)  :: face_v(:,:), edge_v(:,:)
+    integer, intent(in) :: i
+    class(unstr_mesh), intent(in) :: mesh
+    class(mesh_geom), intent(in) :: gmesh
+    logical, optional, intent(in) :: tesselate
+
+    integer :: v
+
+    call this%geom%init(ierr, i, mesh, gmesh, tesselate)
+    !call this%geom%init(ierr, x, face_v, edge_v, face_normal, vol, tesselate)
+
+    allocate(this%matl_at_node(this%geom%parent%nVerts))
+    do v = 1,this%geom%parent%nVerts
+      this%matl_at_node(v) = matl_init_geometry%index_at(this%geom%parent%x(:,v))
+    end do
+    if (any(this%matl_at_node==0)) call LS_fatal("parent node materials unset")
+
+  end subroutine dnc_cell_init
+
+  subroutine init_from_polyhedron(this, ierr, matl_init_geometry, x, face_v, edge_v, face_normal, &
+      vol, tesselate)
+
+    use unstr_mesh_type
+    use mesh_geom_type
+
+    class(dnc_cell), intent(out) :: this
+    integer, intent(out) :: ierr
+    type(material_geometry), intent(in) :: matl_init_geometry
+    real(r8),           intent(in)  :: x(:,:)
+    integer,            intent(in)  :: face_v(:,:), edge_v(:,:)
     real(r8), optional, intent(in)  :: face_normal(:,:), vol
     logical, optional, intent(in) :: tesselate
 
@@ -68,7 +99,7 @@ contains
     end do
     if (any(this%matl_at_node==0)) call LS_fatal("parent node materials unset")
 
-  end subroutine dnc_cell_init
+  end subroutine init_from_polyhedron
 
   ! this subroutine initializes the vof values in all cells
   ! from a user input function. It calls a divide and conquer algorithm
@@ -93,16 +124,12 @@ contains
     print '(a)', "initializing vof ... "
     call start_timer("vof init")
 
-    ! first, determine the initial state provided by the user, and assign
-    ! the function which will determine what points are inside the materials
     call matl_init_geometry%init (plist, matl_ids)
 
-    ! loop though every cell and check if all vertices lie within a single material
-    ! if so, set the Vof for that material to 1.0.
-    ! if not, divide the hex cell into 8 subdomains defined by the centroid and centers of faces
-    ! repeat the process recursively for each subdomain up to a given threshold
+    ! Dynamically schedule since only a few cells are mixed
+    ! and they take the vast majority of the runtime.
 
-    !$omp parallel do
+    !$omp parallel do schedule(dynamic,100)
     do i = 1,mesh%ncell
       vof(:,i) = cell_vof(i, nmat, mesh, gmesh, matl_init_geometry)
     end do
@@ -118,7 +145,6 @@ contains
     use unstr_mesh_type
     use mesh_geom_type
     use parameter_list_type
-    use hex_types, only: hex_f, hex_e
 
     integer, intent(in) :: i, nmat
     type(unstr_mesh), intent(in) :: mesh
@@ -129,16 +155,17 @@ contains
     integer :: ierr, v
     type(dnc_cell) :: cell
 
-    ! initialize dnc_cell
-    call cell%init (ierr, matl_init_geometry, mesh%x(:,mesh%cnode(:,i)), hex_f, hex_e, &
-        gmesh%outnorm(:,:,i), mesh%volume(i), tesselate=.false.)
-
-    ! calculate the vof
+    call cell%init (ierr, matl_init_geometry, i, mesh, gmesh, tesselate=.false.)
     cell_vof = cell%vof (matl_init_geometry, nmat, 0)
 
   end function cell_vof
 
   ! calculates the volume fractions of materials in a cell
+  !
+  !
+  ! check if all vertices lie within a single material.
+  ! if so, set the Vof for that material to 1.0.
+  ! if not, divide the cell into tets and repeat recursively to a given threshold
   recursive function vof (this, matl_geometry, nmat, depth) result(hex_vof)
 
     use array_utils, only: isZero

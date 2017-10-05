@@ -841,15 +841,15 @@ contains
             call plane_cell%init (int_norm(:,ni,i), vofint, this%mesh%volume(i), &
                 this%mesh%x(:,this%mesh%cnode(:,i)))
             call plane_cell%locate_plane (locate_plane_niters)
-            call poly%init (ierr, plane_cell%node, hex_f, hex_e)
+            call poly%init (ierr, i, this%mesh, this%gmesh)
+            !call poly%init (ierr, plane_cell%node, hex_f, hex_e)
             if (ierr /= 0) call LS_fatal ('plane reconstruction dump failed')
             !call this%intrec(ni)%append (poly%intersection_verts (plane_cell%P), i)
           end if
         end do
       case (NESTED_DISSECTION)
         ! send cell data to the multimat_cell type
-        call ndcell%init (ierr, this%mesh%x(:,this%mesh%cnode(:,i)), hex_f, hex_e, &
-            this%gmesh%outnorm(:,:,i), this%mesh%volume(i))
+        call ndcell%init (ierr, i, this%mesh, this%gmesh)
         if (ierr /= 0) call LS_fatal ('plane reconstruction dump failed')
 
         ! partition the cell based on vofs and norms

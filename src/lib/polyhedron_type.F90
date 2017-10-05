@@ -98,12 +98,9 @@ contains
   end subroutine init_from_mesh
 
   subroutine init_pure_polyhedron(this, p)
-
     class(polyhedron), intent(out) :: this
     type(pure_polyhedron), intent(in) :: p
-
     this%parent = p
-
   end subroutine init_pure_polyhedron
 
   subroutine init_tesselated(this, polyhedra)
@@ -118,26 +115,17 @@ contains
   end subroutine init_tesselated
 
   subroutine init_tet (this, ierr, x, face_normal, vol, set_face_normals)
-
-    use cell_geometry, only: tet_volume
-    use hex_types, only: tet_fv, tet_ev, tet_fe, tet_ef, tet_vf
-
     class(polyhedron),  intent(out) :: this
     integer,            intent(out) :: ierr
     real(r8),           intent(in)  :: x(:,:)
     real(r8), optional, intent(in)  :: face_normal(:,:), vol
     logical, optional, intent(in) :: set_face_normals
-
     call this%parent%init(ierr, x, face_normal, vol, set_face_normals)
-
   end subroutine init_tet
 
   subroutine init_polyhedron_null (this)
-
     class(polyhedron), intent(out) :: this
-
     call this%parent%init()
-
   end subroutine init_polyhedron_null
 
   real(r8) function volume(this)
@@ -231,7 +219,7 @@ contains
 
     use plane_type
 
-    class(polyhedron), intent(in) :: this
+    class(polyhedron), intent(inout) :: this
     class(plane), intent(in) :: P
     integer, intent(out) :: ierr
 
@@ -248,11 +236,9 @@ contains
 
   real(r8) function volume_behind_plane(this, P, ierr)
 
-    use consts,          only: alpha
-    use ieee_arithmetic, only: ieee_is_nan
     use plane_type
 
-    class(polyhedron), intent(in) :: this
+    class(polyhedron), intent(inout) :: this
     class(plane),      intent(in) :: P
     integer,           intent(out) :: ierr
 

@@ -29,7 +29,9 @@ module multimat_cell_type
     type(polyhedron), allocatable :: mat_poly(:)
     type(polygon_box), allocatable :: interface_polygons(:)
   contains
-    procedure :: init
+    procedure, private :: init_from_polyhedron
+    procedure, private :: init_from_mesh
+    generic :: init => init_from_polyhedron, init_from_mesh
     procedure :: partition
     procedure, private :: volumes_behind_plane
     procedure :: outward_volflux
@@ -38,7 +40,7 @@ module multimat_cell_type
 
 contains
 
-  subroutine init (this, ierr, x, face_v, edge_v, face_normal, vol, tesselate)
+  subroutine init_from_polyhedron (this, ierr, x, face_v, edge_v, face_normal, vol, tesselate)
 
     class(multimat_cell), intent(out) :: this
     integer, intent(out) :: ierr
@@ -49,7 +51,23 @@ contains
 
     call this%geom%init(ierr, x, face_v, edge_v, face_normal, vol, tesselate)
 
-  end subroutine init
+  end subroutine init_from_polyhedron
+
+  subroutine init_from_mesh (this, ierr, i, mesh, gmesh, tesselate)
+
+    use unstr_mesh_type
+    use mesh_geom_type
+
+    class(multimat_cell), intent(out) :: this
+    integer, intent(out) :: ierr
+    integer, intent(in) :: i
+    class(unstr_mesh), intent(in) :: mesh
+    class(mesh_geom), intent(in) :: gmesh
+    logical, optional, intent(in) :: tesselate
+
+    call this%geom%init(ierr, i, mesh, gmesh, tesselate)
+
+  end subroutine init_from_mesh
 
   ! given a set of VoFs, normals, and an order,
   ! create child polyhedra for each material

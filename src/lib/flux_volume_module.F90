@@ -1,7 +1,7 @@
 !=======================================================================
 ! Purpose(s):
 !
-!   Define the variables and procedures associated with 
+!   Define the variables and procedures associated with
 !   computing the advection flux volume.
 !
 ! Public Interface(s):
@@ -20,15 +20,19 @@
 
 module flux_volume_module
   use kinds,  only: r8
-  use consts, only: nvc,ndim,nvf,nfc,alittle,cutvof
+  use consts, only: ndim,alittle,cutvof
   use logging_services
   implicit none
   private
 
   public :: flux_vol_quantity, flux_vol_vertices
-  
+
   ! maximum allowable iterations for the flux volume vertex location
   integer,  parameter :: flux_vol_iter_max = 10
+
+  integer, parameter :: nvc = 8
+  integer, parameter :: nfc = 6
+  integer, parameter :: nvf = 4
 
   type flux_vol_quantity
     integer  :: Fc           ! face number through which we this cell is fluxing
@@ -37,7 +41,7 @@ module flux_volume_module
   end type flux_vol_quantity
 
 contains
-  
+
   !=======================================================================
   ! Purpose(s):
   !
@@ -48,7 +52,7 @@ contains
   !   lie approximately "DIST" away from the advection cell face.  These
   !   are only approximately "DIST" away because the cell cross-sectional
   !   area may increase or decrease as one moves away from the advection
-  !   cell face.  The value used is varied from "DIST" such that the 
+  !   cell face.  The value used is varied from "DIST" such that the
   !   vertices describe a hexagonal volume that matches the value of
   !   Flux_Vol.
   !
@@ -80,7 +84,7 @@ contains
 
     ! first gather the vertex coordinates and store them in flux_vol%Xv
     Flux_Vol%Xv = cell%node
-    
+
     ! need only go through this exercise for mixed donor cells and for outgoing fluxes
     if (.not.is_mixed_donor_cell .or. dist*cell%face_area(face) <= cutvof*cell%volume) return
 
@@ -89,7 +93,7 @@ contains
       ia  = Edge_ends(1,e,face) ! front node
       ib  = Edge_ends(2,e,face) ! back node
       Uedge(:,e) = Flux_Vol%Xv(:,ib) - Flux_Vol%Xv(:,ia)
-      
+
       ndotuedge = sum(cell%face_normal(:,face) * Uedge(:,e))
       Percnt(e) = -Dist/(ndotuedge+alittle)
     end do
@@ -119,7 +123,7 @@ contains
         Flux_Vol%Xv(:,ib) = Flux_Vol%Xv(:,ia) + Mult*Percnt(e)*Uedge(:,e)
       end do
       ! !$omp end simd
-      
+
       ! compute the flux volume bounded by the computed vertices
       call eval_hex_volumes (flux_vol%xv, volume, tmp)
 

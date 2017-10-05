@@ -36,7 +36,7 @@ contains
     use polyhedron_type
     use unstr_mesh_type
     use mesh_geom_type
-    use hex_types, only: hex_f, hex_e
+    !use hex_types, only: hex_f, hex_e
 
     type(polygon_box), intent(in) :: interface_reconstructions(:)
     real(r8), intent(in) :: weight_scale
@@ -48,6 +48,7 @@ contains
 
     integer :: i
     real(r8) :: pts(ndim,3*size(interface_reconstructions)), wgt(3*size(interface_reconstructions))
+    real(r8) :: xc(ndim), area, a
     !type(analytic_surface) :: surf
     type(paraboloid) :: surf
     logical :: verboseh
@@ -104,10 +105,20 @@ contains
     ! !call surf%bestParaboloidFit (pts)
     ! call surf%bestFit (pts, wgt, normal)
 
+    ! get centroid
+    xc = 0; area = 0
+    do i = 1,interface_reconstructions(1)%n_elements
+      a = interface_reconstructions(1)%elements(i)%area2()
+      xc = xc + interface_reconstructions(1)%elements(i)%centroid2() * a
+      area = area + a
+    end do
+    xc = xc / area
+
     ! patch_polygons = flat_polygon_box(interface_reconstructions)
     ! call surf%volumetricFit(patch_polygons%elements)
     call surf%volumetricFit(interface_reconstructions)
-    curvature_from_patch = surf%curvature(interface_reconstructions(1)%elements(1)%centroid())
+    curvature_from_patch = surf%curvature(xc)
+    !curvature_from_patch = surf%curvature(interface_reconstructions(1)%elements(1)%centroid())
 
     ! if (verboseh) then
     !   ! do i = 1,size(interface_reconstructions)

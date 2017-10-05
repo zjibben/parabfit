@@ -48,8 +48,8 @@ contains
     integer :: i
     real(r8) :: l, f, gradf(size(x)), d(size(x)), s(size(x)), y(size(x)), xold(size(x)), &
         hess_inv(size(x),size(x)), identity(size(x),size(x)), &
-        gradfnew(size(x)), &
-        xhist(size(x), this%maxitr+1) ! DEBUGGING
+        gradfnew(size(x)) !, &
+        !xhist(size(x), this%maxitr+1) ! DEBUGGING
 
     identity = 0
     do i = 1,size(x)
@@ -61,7 +61,7 @@ contains
     gradf = this%gradf(x, 1e-7_r8)
     hess_inv = identity
 
-    xhist(:,1) = x
+    !xhist(:,1) = x
     ! print '(a,2es13.3)', 'x: ', x
     ! print '(a,2es13.3)', 'f: ', f
     ! print '(a,3es13.3)', 'g: ', gradf, norm2(gradf)
@@ -75,7 +75,7 @@ contains
       ! get new position
       xold = x
       call this%line_search(l, s, f, x, d, gradf, status)
-      xhist(:,i+1) = x
+      !xhist(:,i+1) = x
       if (status==1) exit
 
       ! update the hessian inverse and gradient

@@ -24,14 +24,14 @@ module polygon_type
 
   type, public :: polygon
     integer :: nVerts
-    real(r8), allocatable :: x(:,:) !, norm(:)
-    real(r8) :: norm(ndim)
+    real(r8), allocatable :: x(:,:), norm(:)
     real(r8) :: rot(3,3)
   contains
     procedure :: init => init_polygon
     procedure :: centroid
     procedure :: centroid2
     procedure :: area
+    procedure :: area2
     procedure :: order
     procedure :: sort_order
     procedure :: basis
@@ -115,9 +115,9 @@ contains
       ASSERT(size(norm)==ndim)
       this%norm = norm
     else
-      !if (allocated(this%norm)) deallocate(this%norm)
-      !if (.not.allocated(this%norm)) allocate(this%norm(ndim))
-      this%norm = 0.0_r8
+      if (allocated(this%norm)) deallocate(this%norm)
+      allocate(this%norm(ndim))
+      this%norm = 0
     end if
 
     if (all(isZero (this%norm))) then
@@ -146,31 +146,46 @@ contains
   function centroid2 (this) result(centroid)
 
     use consts, only: ndim
+    use cell_geometry, only: cross_product
 
     class(polygon), intent(in) :: this
 
     integer :: i, j
-    real(r8) :: centroid(ndim), c(2), xr(ndim,this%nVerts), a, tmp
+    real(r8) :: centroid(ndim), c(2), xr(ndim,this%nVerts), a, tmp, area, &
+        xc(ndim), xi(ndim), xj(ndim)
 
-    ! get vertex coordinates in the plane of the polygon
+    ! ! get vertex coordinates in the plane of the polygon
+    ! do i = 1,this%nVerts
+    !   xr(:,i) = matmul(this%rot, this%x(:,i) - this%x(:,1))
+    ! end do
 
-    do i = 1,this%nVerts
-      xr(:,i) = matmul(this%rot, this%x(:,i) - this%x(:,1))
-    end do
+    ! ! calculate the centroid in the plane of the polygon
+    ! c = 0; a = 0
+    ! do i = 1,this%nVerts
+    !   j = modulo(i,this%nVerts) + 1
+    !   tmp = xr(1,i)*xr(2,j) - xr(1,j)*xr(2,i)
+    !   c = c + (xr(:2,i) + xr(:2,j)) * tmp
+    !   a = a + tmp
+    ! end do
+    ! a = a / 2
+    ! c = c / (6*a)
 
-    ! calculate the centroid in the plane of the polygon
-    c = 0; a = 0
+    ! ! rotate the centroid back into real space
+    ! centroid = matmul(transpose(this%rot), [c(1), c(2), 0.0_r8]) + this%x(:,1)
+
+    xc = this%centroid() ! translate to fake centroid to reduce floating point errors
+    centroid = 0; area = 0
     do i = 1,this%nVerts
       j = modulo(i,this%nVerts) + 1
-      tmp = xr(1,i)*xr(2,j) - xr(1,j)*xr(2,i)
-      c = c + (xr(:2,i) + xr(:2,j)) * tmp
-      a = a + tmp
-    end do
-    a = a / 2
-    c = c / (6*a)
+      xi = this%x(:,i) - xc
+      xj = this%x(:,j) - xc
 
-    ! rotate the centroid back into real space
-    centroid = matmul(transpose(this%rot), [c(1), c(2), 0.0_r8]) + this%x(:,1)
+      tmp = dot_product(cross_product(xi, xj), this%norm)
+      centroid = centroid + dot_product(xi + xj, this%norm) * tmp
+      area = area + tmp
+    end do
+    area = area / 2
+    centroid = centroid / (6*area) + xc
 
   end function centroid2
 
@@ -203,6 +218,29 @@ contains
     end do
 
   end function area
+
+  function area2 (this) result(area)
+
+    use cell_geometry, only: cross_product
+
+    class(polygon), intent(in) :: this
+    real(r8) :: area
+
+    integer :: i, j
+    real(r8) :: xi(ndim), xj(ndim), xc(ndim)
+
+    xc = this%centroid()
+
+    area = 0
+    do i = 1,this%nVerts
+      j = modulo(i,this%nVerts) + 1
+      xi = this%x(:,i) - xc
+      xj = this%x(:,j) - xc
+      area = area + dot_product(cross_product(xi, xj), this%norm)
+    end do
+    area = area / 2
+
+  end function area2
 
   ! order the vertices of a convex polygon
   !

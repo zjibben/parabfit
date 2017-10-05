@@ -48,7 +48,7 @@ module pure_polyhedron_type
     procedure, private :: polyhedron_on_side_of_plane
     procedure, private :: update_face_normals
     procedure, private :: is_valid
-    procedure, private :: remove_dangling_vertices
+    !procedure, private :: remove_dangling_vertices
   end type pure_polyhedron
 
 contains
@@ -147,6 +147,12 @@ contains
 
     this%vol = merge(vol, tet_volume(this%x), present(vol))
 
+    if (this%vol < 0) then
+      call this%print_data()
+    end if
+
+    ASSERT(this%vol >= 0)
+
   end subroutine init_tet
 
   function is_valid (this) result(ierr)
@@ -192,112 +198,112 @@ contains
 
   end subroutine update_face_normals
 
-  subroutine remove_dangling_vertices (this)
+  ! subroutine remove_dangling_vertices (this)
 
-    class(pure_polyhedron), intent(inout) :: this
+  !   class(pure_polyhedron), intent(inout) :: this
 
-    integer :: v,vv
+  !   integer :: v,vv
 
-    ! no dangling vertices
-    ! every vertex must be connected to at least three other vertices
-    ! vertices connected to only two other vertices may be removed, and
-    ! its connected vertices joined
-    ! WARNING: this assumes the dangling vertex is still attached to two other vertices,
-    !          and doesn't consider vertices with only one edge
-    v = 1
-    do while (v <= this%nVerts)
-      if (count(this%edge_vid==v)<3) then
-        ! delete this vertex
-        do vv = v+1,this%nVerts
-          this%x(:,vv-1) = this%x(:,vv)
-        end do
-        this%nVerts = this%nVerts - 1
+  !   ! no dangling vertices
+  !   ! every vertex must be connected to at least three other vertices
+  !   ! vertices connected to only two other vertices may be removed, and
+  !   ! its connected vertices joined
+  !   ! WARNING: this assumes the dangling vertex is still attached to two other vertices,
+  !   !          and doesn't consider vertices with only one edge
+  !   v = 1
+  !   do while (v <= this%nVerts)
+  !     if (count(this%edge_vid==v)<3) then
+  !       ! delete this vertex
+  !       do vv = v+1,this%nVerts
+  !         this%x(:,vv-1) = this%x(:,vv)
+  !       end do
+  !       this%nVerts = this%nVerts - 1
 
-        ! delete the two edges it is connected to, and add a new one between those two vertices
-        call delete_edges_containing_vertex (this,v)
+  !       ! delete the two edges it is connected to, and add a new one between those two vertices
+  !       call delete_edges_containing_vertex (this,v)
 
-        ! remove the vertex from the face it is connected to
-        call delete_faces_containing_vertex (this,v)
-      else
-        v = v+1
-      end if
-    end do
+  !       ! remove the vertex from the face it is connected to
+  !       call delete_faces_containing_vertex (this,v)
+  !     else
+  !       v = v+1
+  !     end if
+  !   end do
 
-  contains
+  ! contains
 
-    subroutine delete_edges_containing_vertex (this,v)
+  !   subroutine delete_edges_containing_vertex (this,v)
 
-      class(pure_polyhedron), intent(inout) :: this
-      integer, intent(in) :: v
+  !     class(pure_polyhedron), intent(inout) :: this
+  !     integer, intent(in) :: v
 
-      integer :: e,ee,vn(2),j
+  !     integer :: e,ee,vn(2),j
 
-      e = 1; j=1
-      do while (e <= this%nEdges)
-        if (any(this%edge_vid(:,e)==v)) then
-          ! store the other vertex connected to this edge
-          vn(j) = this%edge_vid(1,e)
-          if (vn(j)==v) vn(j) = this%edge_vid(2,e)
-          j = j+1
+  !     e = 1; j=1
+  !     do while (e <= this%nEdges)
+  !       if (any(this%edge_vid(:,e)==v)) then
+  !         ! store the other vertex connected to this edge
+  !         vn(j) = this%edge_vid(1,e)
+  !         if (vn(j)==v) vn(j) = this%edge_vid(2,e)
+  !         j = j+1
 
-          ! delete edges containing this vertex
-          do ee = e+1,this%nEdges
-            this%edge_vid(:,ee-1) = this%edge_vid(:,ee)
-          end do
-          this%nEdges = this%nEdges - 1
-        else
-          e = e+1
-        end if
-      end do
+  !         ! delete edges containing this vertex
+  !         do ee = e+1,this%nEdges
+  !           this%edge_vid(:,ee-1) = this%edge_vid(:,ee)
+  !         end do
+  !         this%nEdges = this%nEdges - 1
+  !       else
+  !         e = e+1
+  !       end if
+  !     end do
 
-      ! add the vertex connecting [v1,v2]
-      this%nEdges = this%nEdges + 1
-      this%edge_vid(:,this%nEdges) = vn
+  !     ! add the vertex connecting [v1,v2]
+  !     this%nEdges = this%nEdges + 1
+  !     this%edge_vid(:,this%nEdges) = vn
 
-      ! update the edge structure
-      where (this%edge_vid>v) this%edge_vid = this%edge_vid - 1
+  !     ! update the edge structure
+  !     where (this%edge_vid>v) this%edge_vid = this%edge_vid - 1
 
-    end subroutine delete_edges_containing_vertex
+  !   end subroutine delete_edges_containing_vertex
 
-    subroutine delete_faces_containing_vertex (this,v)
+  !   subroutine delete_faces_containing_vertex (this,v)
 
-      use array_utils, only: first_true_loc
+  !     use array_utils, only: first_true_loc
 
-      class(pure_polyhedron), intent(inout) :: this
-      integer, intent(in) :: v
+  !     class(pure_polyhedron), intent(inout) :: this
+  !     integer, intent(in) :: v
 
-      integer :: f,ff,fv,nV
+  !     integer :: f,ff,fv,nV
 
-      f = 1
-      do while (f <= this%nFaces)
-        if (any(this%face_vid(:,f)==v)) then
-          if (count(this%face_vid(:,f)/=0)==3) then
-            ! if the face only has three vertices, delete the entire face
-            do ff = f+1,this%nFaces
-              this%face_vid(:,ff-1) = this%face_vid(:,ff)
-              this%face_normal(:,ff-1) = this%face_normal(:,ff)
-            end do
-            this%nFaces = this%nFaces - 1
-          else
-            nV = count(this%face_vid(:,f)/=0)
-            fv = first_true_loc (this%face_vid(:,f)==v)
-            do ff = fv+1,nV
-              this%face_vid(ff-1,f) = this%face_vid(ff,f)
-            end do
-            this%face_vid(nV,f) = 0
-            f = f+1
-          end if
-        else
-          f = f+1
-        end if
-      end do
+  !     f = 1
+  !     do while (f <= this%nFaces)
+  !       if (any(this%face_vid(:,f)==v)) then
+  !         if (count(this%face_vid(:,f)/=0)==3) then
+  !           ! if the face only has three vertices, delete the entire face
+  !           do ff = f+1,this%nFaces
+  !             this%face_vid(:,ff-1) = this%face_vid(:,ff)
+  !             this%face_normal(:,ff-1) = this%face_normal(:,ff)
+  !           end do
+  !           this%nFaces = this%nFaces - 1
+  !         else
+  !           nV = count(this%face_vid(:,f)/=0)
+  !           fv = first_true_loc (this%face_vid(:,f)==v)
+  !           do ff = fv+1,nV
+  !             this%face_vid(ff-1,f) = this%face_vid(ff,f)
+  !           end do
+  !           this%face_vid(nV,f) = 0
+  !           f = f+1
+  !         end if
+  !       else
+  !         f = f+1
+  !       end if
+  !     end do
 
-      ! update the face structure
-      where (this%face_vid>v) this%face_vid = this%face_vid - 1
+  !     ! update the face structure
+  !     where (this%face_vid>v) this%face_vid = this%face_vid - 1
 
-    end subroutine delete_faces_containing_vertex
+  !   end subroutine delete_faces_containing_vertex
 
-  end subroutine remove_dangling_vertices
+  ! end subroutine remove_dangling_vertices
 
   subroutine init_polyhedron_null (this)
 
@@ -879,7 +885,7 @@ contains
     use ieee_arithmetic, only: ieee_is_nan
     use plane_type
 
-    class(pure_polyhedron), intent(in) :: this
+    class(pure_polyhedron), intent(inout) :: this
     class(plane),      intent(in) :: P
     integer,           intent(out) :: ierr
 
@@ -901,7 +907,7 @@ contains
     end do
 
     if (.not.any(side>0)) then
-      behind = this
+      volume_behind_plane = this%volume()
     else if (any(side>0) .and. any(side<0)) then
       intpoly = this%intersection_verts (P,v_assoc_pe)
       if (intpoly%nVerts > 2) then
@@ -909,33 +915,31 @@ contains
         if (ierr /= 0) then
           call dumpData ()
           write(*,*) 'volume_behind_plane: polyhedron split failed'
-          volume_behind_plane = 0.0_r8
+          volume_behind_plane = 0
           return
         end if
+
+        ! if any of the polyhedrons have a face with less than 3 vertices, throw an error
+        if (allocated(behind%face_vid)) then
+          if (any(count(behind%face_vid /= 0, dim=1) < 3)) then
+            call dumpData ()
+            call LS_fatal ("polyhedron split failed: invalid face")
+          end if
+        end if
+
+        ! calculate the volume of the polyhedron behind the plane
+        volume_behind_plane = behind%volume ()
+
+        if (ieee_is_nan(volume_behind_plane) .or. volume_behind_plane < 0) then
+          call dumpData ()
+          write(*,*) 'problematic vol: ',volume_behind_plane
+          call LS_fatal ('polyhedron split failed: invalid volume')
+        end if
       else
-        volume_behind_plane = 0.0_r8
-        return
+        volume_behind_plane = 0
       end if
     else
-      volume_behind_plane = 0.0_r8
-      return
-    end if
-
-    ! if any of the polyhedrons have a face with less than 3 vertices, throw an error
-    if (allocated(behind%face_vid)) then
-      if (any(count(behind%face_vid /= 0, dim=1) < 3)) then
-        call dumpData ()
-        call LS_fatal ("polyhedron split failed: invalid face")
-      end if
-    end if
-
-    ! calculate the volume of the polyhedron behind the plane
-    volume_behind_plane = behind%volume ()
-
-    if (ieee_is_nan(volume_behind_plane) .or. volume_behind_plane < 0.0_r8) then
-      call dumpData ()
-      write(*,*) 'problematic vol: ',volume_behind_plane
-      call LS_fatal ('polyhedron split failed: invalid volume')
+      volume_behind_plane = 0
     end if
 
   contains

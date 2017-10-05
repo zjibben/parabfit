@@ -57,9 +57,12 @@ contains
     j=0;lnorm=0.0_r8; kex=1.0_r8/0.25_r8
     !!$omp parallel do schedule(dynamic,100)
     do i = 1,mesh%ncell
-      volume_flux_sub(:,:,i) = cell_outward_volflux (mesh%x(:,mesh%cnode(:,i)), mesh%volume(i), &
-          mesh%area(mesh%cface(:,i)), gmesh%outnorm(:,:,i), vof(:,i), int_norm(:,:,i), dump_intrec, &
-          intrec, adv_dt, fluxing_velocity(:,i), fluidRho(i), i)
+      ! volume_flux_sub(:,:,i) = cell_outward_volflux (mesh%x(:,mesh%cnode(:,i)), mesh%volume(i), &
+      !     mesh%area(mesh%cface(:,i)), gmesh%outnorm(:,:,i), vof(:,i), int_norm(:,:,i), dump_intrec, &
+      !     intrec, adv_dt, fluxing_velocity(:,i), fluidRho(i), i)
+      volume_flux_sub(:,:,i) = cell_outward_volflux (mesh, gmesh, vof(:,i), int_norm(:,:,i), &
+          dump_intrec, intrec, adv_dt, fluxing_velocity(:,i), fluidRho(i), i)
+
       ! if (vof(1,i) > cutvof .and. vof(1,i) < 1.0_r8-cutvof .and. all(gmesh%cneighbor(:,i)>0)) then
       !   k = meanCurvature(int_norm(:,1,:), vof(1,:), mesh%area(mesh%cface(:,i)), mesh%volume(i), i, mesh, gmesh)
       !   lnorm(1) = lnorm(1) + abs(k-kex)    !l1
@@ -83,16 +86,19 @@ contains
 
   end subroutine volume_track_nd
 
-  function cell_outward_volflux (x, vol, farea, outnorm, vof, int_norm, dump_intrec, intrec, adv_dt,&
-       fluxing_velocity, fluidRho, cell_id)
+  function cell_outward_volflux (mesh, gmesh, vof, int_norm, dump_intrec, &
+      intrec, adv_dt, fluxing_velocity, fluidRho, cell_id)
 
     use consts,    only: nfc
     use hex_types, only: hex_f,hex_e
     use multimat_cell_type
     use surface_type
+    use unstr_mesh_type
+    use mesh_geom_type
 
-    real(r8),      intent(in)    :: x(:,:), vol, farea(:), outnorm(:,:), vof(:), int_norm(:,:), &
-        adv_dt, fluxing_velocity(:), fluidRho
+    class(unstr_mesh), intent(in) :: mesh
+    class(mesh_geom), intent(in) :: gmesh
+    real(r8),      intent(in)    :: vof(:), int_norm(:,:), adv_dt, fluxing_velocity(:), fluidRho
     type(surface), intent(inout) :: intrec(:)
     logical,       intent(in)    :: dump_intrec
     integer,       intent(in)    :: cell_id
@@ -102,7 +108,7 @@ contains
     integer :: m, ierr
 
     ! send cell data to the multimat_cell type
-    call cell%init (ierr, x, hex_f, hex_e, outnorm, vol)
+    call cell%init (ierr, cell_id, mesh, gmesh)
     if (ierr /= 0) call LS_fatal ('cell_outward_volflux failed: could not initialize cell')
 
     ! partition the cell based on vofs and norms
@@ -116,7 +122,8 @@ contains
     end if
 
     ! calculate the outward volume flux
-    cell_outward_volflux = cell%outward_volflux (adv_dt, fluxing_velocity, farea, ierr)
+    cell_outward_volflux = cell%outward_volflux(adv_dt, fluxing_velocity, &
+        mesh%area(mesh%cface(:,cell_id)), ierr)
     if (ierr /= 0) then
       write(*,*) 'cell_outward_volflux failed'
       write(*,'(a,10es20.10)') 'vof: ',vof

@@ -37,14 +37,14 @@ contains
     integer :: m, n
 
     call start_timer ("normal calculation")
-    
+
     ! Calculate the volume fraction gradient for each material
     ! recall interface normal is in opposite direction of gradient
     do m = 1,size(vof, dim=1)
       interface_normal(:,m,:) = -gradient (vof(m,:), mesh, gmesh)
     end do
-    
-    !$omp parallel do default(private) shared(interface_normal,vof,mesh,do_onion_skin)
+
+    !$omp parallel do
     do n = 1,mesh%ncell
       call cell_gradients_to_normals (interface_normal(:,:,n), vof(:,n), do_onion_skin)
     end do
@@ -66,7 +66,7 @@ contains
     type(mesh_geom),  intent(in) :: gmesh
     logical,          intent(in) :: do_onion_skin
     real(r8)                     :: interface_normal(3,size(vof,dim=1))
-    
+
     integer :: m
 
     ! Calculate the volume fraction gradient for each material
@@ -76,7 +76,7 @@ contains
     end do
 
     call cell_gradients_to_normals (interface_normal, vof(:,n), do_onion_skin)
-    
+
   end function interface_normal_cell
 
   ! takes the collection of vof gradients in a cell, and ensures they are consistent,
@@ -107,7 +107,7 @@ contains
     real(r8),         intent(inout) :: interface_normal(:,:)
     real(r8),         intent(in) :: vof(:)
     logical,          intent(in) :: do_onion_skin
-    
+
     integer :: m, nmat, nmat_in_cell
     logical, allocatable :: matl_in_cell(:)
 
@@ -132,7 +132,7 @@ contains
       interface_normal(:,last_true_loc(matl_in_cell)) = &
           -interface_normal(:,first_true_loc(matl_in_cell))
     end if
-    
+
   end subroutine normal_matching_cell
 
   ! convert a gradient to a normal by eliminating tiny components,
@@ -150,13 +150,13 @@ contains
     real(r8), intent(inout) :: n(:)
 
     real(r8) :: mag
-    
+
     call eliminateNoise (n)          ! set tiny components to zero
     mag = magnitude(n)               ! calculate the gradient magnitude
     if (mag > alittle) n = n/mag     ! normalize when it won't blow up
     call eliminateNoise (n, 1e-6_r8) ! set tiny components to zero (see note 1)
     if (all(n == 0.0_r8)) n = 1.0_r8 ! set all components to 1.0 in pure cells
-    
+
   end subroutine grad2norm
 
   !   Compute the cell-centered gradient (dPhi_dx,dPhi_dy,dPhi_dz) of a
@@ -185,7 +185,7 @@ contains
 
     integer  :: f,i
     real(r8) :: Phi_f(mesh%nface)
-    
+
     call start_timer("gradient")
 
     ! compute face average of phi
@@ -194,12 +194,12 @@ contains
     ! this could be modified and moved inside the following loop,
     ! although some effort would be duplicated that way
     phi_f = face_avg_global (vertex_avg_global (phi, mesh, gmesh), mesh)
-    
+
     ! green-gauss method
     ! Loop over faces, accumulating the product
     ! phi_f*Face_Normal for each area vector component
 
-    !$omp parallel do default(private) shared(gradient,phi_f,mesh,gmesh)
+    !$omp parallel do private(f)
     do i = 1,mesh%ncell
       ! Accumulate the dot product
       gradient(:,i) = 0.0_r8
@@ -212,7 +212,7 @@ contains
       call eliminateNoise (gradient(:,i))
     end do
     !$omp end parallel do
-    
+
     call stop_timer("gradient")
 
   end function gradient
@@ -229,11 +229,11 @@ contains
     real(r8)                     :: gradient_cell(ndim)
 
     integer  :: f
-    
+
     ! green-gauss method
     ! Loop over faces, accumulating the product
     ! Phi_f*Face_Normal for each area vector component
-    
+
     ! Accumulate the dot product
     gradient_cell = 0.0_r8
     do f = 1,nfc
@@ -245,8 +245,11 @@ contains
     call eliminateNoise (gradient_cell)
 
   end function gradient_cell
-  
+
   real(r8) function face_avg (x_cell, f, mesh, gmesh)
+
+    use consts, only: nvf
+
     real(r8),         intent(in) :: x_cell(:)
     integer,          intent(in) :: f
     type(unstr_mesh), intent(in) :: mesh
@@ -257,14 +260,17 @@ contains
     ! loop through each vertex on the face,
     ! adding up the average value for the node (found through neighboring cells)
     face_avg = 0.0_r8
-    do v = 1,4 
+    do v = 1,nvf
       face_avg = face_avg + vertex_avg (x_cell, mesh%fnode(v,f), mesh, gmesh)
     end do
-    face_avg = face_avg / 4.0_r8
-    
+    face_avg = face_avg / nvf
+
   end function face_avg
-  
+
   function face_avg_global (x_vtx, mesh) result(x_face)
+
+    use consts, only: nvf
+
     real(r8),         intent(in) :: x_vtx(:)
     type(unstr_mesh), intent(in) :: mesh
     real(r8)                     :: x_face(mesh%nface)
@@ -272,9 +278,9 @@ contains
     integer :: f
 
     ! interpolate vertex values to each face (see note 1)
-    !$omp parallel do default(private) shared(x_face,x_vtx,mesh)
+    !$omp parallel do
     do f = 1,mesh%nface
-      x_face(f) = sum(x_vtx(mesh%fnode(:,f))) / 4.0_r8
+      x_face(f) = sum(x_vtx(mesh%fnode(:,f))) / nvf
     end do
     !$omp end parallel do
 
@@ -292,7 +298,7 @@ contains
     integer  :: n
 
     ! calculate the inverse sum of inverse volumes
-    !$omp parallel do default(private) shared(x_vertex, x_cell, mesh, gmesh)
+    !$omp parallel do
     do n = 1,mesh%nnode
       x_vertex(n) = vertex_avg (x_cell, n, mesh, gmesh)
     end do
@@ -324,5 +330,5 @@ contains
     !  /        sum(                   1.0_r8 / mesh%volume(gmesh%vcell(:,n)), mask=(gmesh%vcell(:,n)>0))
 
   end function vertex_avg
-  
+
 end module int_norm_module

@@ -43,7 +43,10 @@ contains
     int_norm = interface_normal(vof, mesh, gmesh, .false.)
     m = 1 ! WARN: right now assuming 2 materials
 
-    !$omp parallel do
+    ! Dynamically schedule since only a few cells are mixed
+    ! and they take the vast majority of the runtime.
+
+    !$omp parallel do schedule(dynamic,100)
     do i = 1,mesh%ncell
       call interface_normal_lvira(int_norm(:,m,i), i, vof(m,:), mesh, gmesh)
     end do
@@ -113,8 +116,9 @@ contains
     allocate(this%cell(this%ncell), this%vof(this%ncell), this%cell_vol(this%ncell))
 
     ! initialize target cell
-    call this%cell(1)%init (ierr, mesh%x(:,mesh%cnode(:,i)), hex_f, hex_e, gmesh%outnorm(:,:,i), &
-        mesh%volume(i))
+    call this%cell(1)%init (ierr, i, mesh, gmesh)
+    ! call this%cell(1)%init (ierr, mesh%x(:,mesh%cnode(:,i)), hex_f, hex_e, gmesh%outnorm(:,:,i), &
+    !     mesh%volume(i))
     this%vof(1) = vof(i)
     this%cell_vol(1) = mesh%volume(i)
 
@@ -122,8 +126,9 @@ contains
     do c = 2,this%ncell
       cid = gmesh%caneighbor(i)%elements(c-1)
 
-      call this%cell(c)%init (ierr, mesh%x(:,mesh%cnode(:,cid)), hex_f, hex_e, &
-          gmesh%outnorm(:,:,cid), mesh%volume(cid))
+      call this%cell(c)%init (ierr, cid, mesh, gmesh)
+      ! call this%cell(c)%init (ierr, mesh%x(:,mesh%cnode(:,cid)), hex_f, hex_e, &
+      !     gmesh%outnorm(:,:,cid), mesh%volume(cid))
       this%vof(c) = vof(cid)
       this%cell_vol(c) = mesh%volume(cid)
     end do
