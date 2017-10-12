@@ -28,6 +28,7 @@ set(Pececillo_SOURCE_FILES
     sphere_region_type.F90
     halfsphere_region_type.F90
     cylinder_region_type.F90
+    ellipsoid_region_type.F90
     region_factories.F90
 
 # Mesh modules

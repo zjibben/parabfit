@@ -30,6 +30,13 @@ contains
     allocate(r, source=sphere_region(xc, radius))
   end subroutine alloc_sphere_region
 
+  subroutine alloc_ellipsoid_region (r, xc, axes)
+    use ellipsoid_region_type
+    class(region), allocatable, intent(out) :: r
+    real(r8), intent(in) :: xc(:), axes(:)
+    allocate(r, source=ellipsoid_region(xc, axes))
+  end subroutine alloc_ellipsoid_region
+
   subroutine alloc_halfsphere_region (r, xc, radius, n)
     use halfsphere_region_type
     class(region), allocatable, intent(out) :: r
@@ -75,6 +82,13 @@ contains
       if (stat /= 0) call LS_fatal (context//errmsg)
       ASSERT(size(x)==3)
       call alloc_sphere_region (r, x, p)
+    case ('ellipsoid')
+      call params%get ('center', x, stat=stat, errmsg=errmsg)
+      if (stat /= 0) call LS_fatal (context//errmsg)
+      call params%get ('axes', axis, stat=stat, errmsg=errmsg)
+      if (stat /= 0) call LS_fatal (context//errmsg)
+      ASSERT(size(x)==3)
+      call alloc_ellipsoid_region (r, x, axis)
     case ('plane')
       call params%get ('normal', normal, stat=stat, errmsg=errmsg)
       if (stat /= 0) call LS_fatal (context//errmsg)

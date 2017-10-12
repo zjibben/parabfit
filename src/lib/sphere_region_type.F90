@@ -31,23 +31,21 @@ contains
 
   !! constructor for SPHERE_REGION objects
   function sphere_region_value (xc, radius) result(r)
-    
+
     real(r8), intent(in) :: xc(:), radius
     type(sphere_region) :: r
 
     r%center = xc
     r%radius = radius
-    
+
   end function sphere_region_value
 
   logical function location_is_inside (this, x)
 
-    use array_utils, only: magnitude2
-
     class(sphere_region), intent(in) :: this
     real(r8),             intent(in) :: x(:)
 
-    location_is_inside = magnitude2(x-this%center) <= this%radius**2
+    location_is_inside = norm2(x-this%center) <= this%radius
 
   end function location_is_inside
 

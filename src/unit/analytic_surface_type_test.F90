@@ -1,3 +1,5 @@
+#include "f90_assert.fpp"
+
 module analytic_surface_type_test
 
   use kinds, only: r8
@@ -59,8 +61,8 @@ contains
     do i = 1,1
       ncell = 10 * 2**i
       !call mesh_2d_test (ncell, 'cylinder.json', lnormFT, lnormHF)
-      !call mesh_3d_test (ncell, 'sphere.json', lnormFT, lnormHF)
-      call mesh_unstr_test (ncell, 'sphere.json', lnormFT, lnormHF)
+      !call mesh_3d_test (ncell, 'ellipsoid.json', lnormFT, lnormHF)
+      call mesh_unstr_test (ncell, 'ellipsoid.json', lnormFT, lnormHF)
       write (fh1, '(4es15.5)') 1.0_r8 / ncell, lnormFT
       write (fh2, '(4es15.5)') 1.0_r8 / ncell, lnormHF
     end do
@@ -641,7 +643,7 @@ contains
     call gmesh%init (mesh)
     call recalculate_mesh_volumes(mesh,gmesh)
     allocate(vof(2,mesh%ncell), curvature(mesh%ncell))
-    print '(a)', "mesh initialized"
+    print '(a,i0)', "mesh initialized ", mesh%ncell
 
     ! fill the mesh with volume fractions for a circle
     ! right now this relies on an input file to describe the cylinder. In the future I'd like to
@@ -670,7 +672,7 @@ contains
     lnormFT = ft_unstr_mesh_test(cell_type, vof, mesh, gmesh, curvature_ex)
     lnormHF = 0
 
-    print '(i5, a,3es10.2)', mesh%ncell, '  FT L1,L2,Linf = ',lnormFT
+    print '(i8,a,3es10.2)', mesh%ncell, '  FT L1,L2,Linf = ',lnormFT
 
   end subroutine mesh_unstr_test
 
@@ -692,7 +694,7 @@ contains
     real(r8), intent(in) :: vof(:,:), int_norm(:,:,:)
     type(unstr_mesh), intent(in) :: mesh
     type(mesh_geom), intent(in) :: gmesh
-    real(r8), intent(in) :: curvature_ex
+    real(r8), intent(inout) :: curvature_ex
     real(r8) :: lnorm(3)
 
     character(:), allocatable :: filename
@@ -785,6 +787,8 @@ contains
           if (isZero(curvature(i))) cycle
 
           ! append to norms
+          curvature_ex = ellipsoid_curvature(i, maxloc(abs(int_norm_lvira(:,1,i)),1), gmesh, &
+              [0.7_r8, 0.5_r8, 0.3_r8])
           err = abs((curvature(i) - curvature_ex) / curvature_ex)
           if (err > lnorm(3)) imax = i
           totvolume = totvolume + mesh%volume(i)
@@ -792,19 +796,19 @@ contains
           lnorm(2) = lnorm(2) + err**2 * mesh%volume(i)
           lnorm(3) = max(lnorm(3),err)
 
-          !if (err > 6.5e-2_r8) then
-          !if (i==47291 .or. i==47131) then
-          !if (i==47131) then
-          !if (i==72891) then
-          !if (i==64185) then
-          ! if (i==68512) then
+          ! if (err > 6.5e-2_r8) then
+          ! !if (i==47291 .or. i==47131) then
+          ! !if (i==47131) then
+          ! !if (i==72891) then
+          ! !if (i==64185) then
+          ! ! if (i==68512) then
 
-          !   call print_details(i)
+          ! !   call print_details(i)
 
-          !   print *
-          !   curvature(i) = abs(curvature_from_patch (intrec%local_patch(i,gmesh, vof(1,:)), &
-          !       wgt_scale, int_norm_hf2(:,1,i), vof(1,:), mesh, gmesh, i, .true.))
-          !   print *
+          ! !   print *
+          ! !   curvature(i) = abs(curvature_from_patch (intrec%local_patch(i,gmesh, vof(1,:)), &
+          ! !       wgt_scale, int_norm_hf2(:,1,i), vof(1,:), mesh, gmesh, i, .true.))
+          ! !   print *
           !   print '(i6, 3es14.4)', i, curvature(i), curvature_ex, err !, c_new_line
           !   print '(2es15.5)', vof(1,i), 1 - vof(1,i)
           !   print '(2es15.5)', gmesh%xc(1:2,i)
@@ -901,12 +905,13 @@ contains
     use lvira_normals
     use fit_normals
     use vof_io
+    use polygon_type
 
     character(*), intent(in) :: cell_type
     real(r8), intent(in) :: vof(:,:)
     type(unstr_mesh), intent(in) :: mesh
     type(mesh_geom), intent(in) :: gmesh
-    real(r8), intent(in) :: curvature_ex
+    real(r8), intent(inout) :: curvature_ex
     real(r8) :: lnorm(3)
 
     character(:), allocatable :: filename
@@ -914,6 +919,7 @@ contains
     integer :: i, ierr, imax
     type(surface) :: intrec
     type(multimat_cell) :: cell
+    type(polygon_box), allocatable :: intrec_patch(:)
     real(r8) :: err, curvature(mesh%ncell), totvolume
     real(r8), allocatable :: int_norm_lvira(:,:,:)
 
@@ -985,17 +991,28 @@ contains
 
       err = 0
       if (vof(1,i) > 1e-2_r8 .and. vof(1,i) < 1-1e-2_r8) then
-        curvature(i) = abs(curvature_from_patch (intrec%local_patch(i,gmesh, vof(1,:)), &
+        intrec_patch = intrec%local_patch(i,gmesh, vof(1,:))
+        curvature(i) = abs(curvature_from_patch (intrec_patch, &
             0.0_r8, int_norm_lvira(:,1,i), vof(1,:), mesh, gmesh, i))
         if (isZero(curvature(i))) cycle
 
         ! append to norms
+        ! curvature_ex = ellipsoid_curvature(i, maxloc(abs(int_norm_lvira(:,1,i)),1), gmesh, &
+        !     [0.7_r8, 0.5_r8, 0.3_r8])
+        curvature_ex = ellipsoid_curvature_x(maxloc(abs(int_norm_lvira(:,1,i)),1), &
+            intrec_patch(1)%elements(1)%centroid2(), &
+            [0.7_r8, 0.5_r8, 0.3_r8])
         err = abs((curvature(i) - curvature_ex) / curvature_ex)
         if (err > lnorm(3)) imax = i
         totvolume = totvolume + mesh%volume(i)
         lnorm(1) = lnorm(1) + err * mesh%volume(i)
         lnorm(2) = lnorm(2) + err**2 * mesh%volume(i)
         lnorm(3) = max(lnorm(3),err)
+
+        if (err > 7e-1_r8) then
+          print '(i6, 3es14.4)', i, curvature(i), curvature_ex, err !, c_new_line
+          call LS_fatal ("large curvature error")
+        end if
       end if
     end do
     lnorm(1) = lnorm(1) / totvolume
@@ -1012,7 +1029,7 @@ contains
     real(r8), intent(in) :: vof(:,:), int_norm(:,:,:)
     type(unstr_mesh), intent(in) :: mesh
     type(mesh_geom), intent(in) :: gmesh
-    real(r8), intent(in) :: curvature_ex
+    real(r8), intent(inout) :: curvature_ex
     real(r8) :: lnorm(3)
 
     integer :: i, nvofcell, ierr, imax
@@ -1029,6 +1046,8 @@ contains
       ! TODO: this really should be in any cell neighboring a cell containing the interface
       if (vof(1,i) > cutvof .and. vof(1,i) < 1-cutvof .and. .not.isZero(curvature(i))) then
         ! append to norms
+        curvature_ex = ellipsoid_curvature(i, maxloc(abs(int_norm(:,1,i)),1), gmesh, &
+            [0.7_r8, 0.5_r8, 0.3_r8])
         err = abs((curvature(i) - curvature_ex) / curvature_ex)
         if (err > lnorm(3)) imax = i
         nvofcell = nvofcell + 1
@@ -1036,10 +1055,10 @@ contains
         lnorm(2) = lnorm(2) + err**2
         lnorm(3) = max(lnorm(3),err)
 
-        ! if (err > 4.5e-2_r8) then
-        !   print '(i6, 3es14.4)', i, curvature(i), curvature_ex, err !, c_new_line
-        !   call LS_fatal ("large curvature error")
-        ! end if
+        if (err > 4e-1_r8) then
+          print '(i6, 3es14.4)', i, curvature(i), curvature_ex, err !, c_new_line
+          call LS_fatal ("large curvature error")
+        end if
       end if
     end do
     lnorm(1) = lnorm(1) / nvofcell
@@ -1082,5 +1101,203 @@ contains
     print '(a)', 'done'
 
   end subroutine recalculate_mesh_volumes
+
+  real(r8) function sinusoid_curvature(x, coeff)
+    real(r8), intent(in) :: x(:), coeff(:)
+    sinusoid_curvature = -(coeff(2)*coeff(3)**2*(coeff(4)**2*coeff(5)**2*sin(coeff(5&
+        &)*x(2))**2 + 1)*cos(coeff(3)*x(1)) + coeff(4)*coeff(5)**2*(coeff(2)**2*coef&
+        &f(3)**2*sin(coeff(3)*x(1))**2 + 1)*cos(coeff(5)*x(2)))*(coeff(2)**2*coeff(3&
+        &)**2*sin(coeff(3)*x(1))**2 + coeff(4)**2*coeff(5)**2*sin(coeff(5)*x(2))**2 &
+        &+ 1)**(-1.5_r8)
+  end function sinusoid_curvature
+
+  real(r8) function ellipsoid_curvature_x(dir, x, coeff)
+
+    integer, intent(in) :: dir
+    real(r8), intent(in) :: x(:), coeff(:)
+
+    ! print *, x
+    ! print *, norm2(x/coeff), dir
+    ! print *, (x/coeff)**2
+    ! print *
+
+    select case(dir)
+    case(1)
+      ellipsoid_curvature_x = -coeff(1)*x(3)*(-coeff(1)**2*x(3)/(coeff(3)**4*(1 - x(3)&
+          &**2/coeff(3)**2 - x(2)**2/coeff(2)**2)) - coeff(1)**2*x(3)**3/(coeff(3)**6*&
+          &(1 - x(3)**2/coeff(3)**2 - x(2)**2/coeff(2)**2)**2) - coeff(1)**2*x(2)**2*x&
+          &(3)/(coeff(2)**4*coeff(3)**2*(1 - x(3)**2/coeff(3)**2 - x(2)**2/coeff(2)**2&
+          &)**2))/(coeff(3)**2*sqrt(1 - x(3)**2/coeff(3)**2 - x(2)**2/coeff(2)**2)*(co&
+          &eff(1)**2*x(3)**2/(coeff(3)**4*(1 - x(3)**2/coeff(3)**2 - x(2)**2/coeff(2)*&
+          &*2)) + coeff(1)**2*x(2)**2/(coeff(2)**4*(1 - x(3)**2/coeff(3)**2 - x(2)**2/&
+          &coeff(2)**2)) + 1)**(1.5_r8)) - coeff(1)/(coeff(3)**2*sqrt(1 - x(3)**2/coeff(3&
+          &)**2 - x(2)**2/coeff(2)**2)*sqrt(coeff(1)**2*x(3)**2/(coeff(3)**4*(1 - x(3)&
+          &**2/coeff(3)**2 - x(2)**2/coeff(2)**2)) + coeff(1)**2*x(2)**2/(coeff(2)**4*&
+          &(1 - x(3)**2/coeff(3)**2 - x(2)**2/coeff(2)**2)) + 1)) - coeff(1)*x(3)**2/(&
+          &coeff(3)**4*(1 - x(3)**2/coeff(3)**2 - x(2)**2/coeff(2)**2)**(1.5_r8)*sqrt(coe&
+          &ff(1)**2*x(3)**2/(coeff(3)**4*(1 - x(3)**2/coeff(3)**2 - x(2)**2/coeff(2)**&
+          &2)) + coeff(1)**2*x(2)**2/(coeff(2)**4*(1 - x(3)**2/coeff(3)**2 - x(2)**2/c&
+          &oeff(2)**2)) + 1)) - coeff(1)*x(2)*(-coeff(1)**2*x(2)*x(3)**2/(coeff(2)**2*&
+          &coeff(3)**4*(1 - x(3)**2/coeff(3)**2 - x(2)**2/coeff(2)**2)**2) - coeff(1)*&
+          &*2*x(2)/(coeff(2)**4*(1 - x(3)**2/coeff(3)**2 - x(2)**2/coeff(2)**2)) - coe&
+          &ff(1)**2*x(2)**3/(coeff(2)**6*(1 - x(3)**2/coeff(3)**2 - x(2)**2/coeff(2)**&
+          &2)**2))/(coeff(2)**2*sqrt(1 - x(3)**2/coeff(3)**2 - x(2)**2/coeff(2)**2)*(c&
+          &oeff(1)**2*x(3)**2/(coeff(3)**4*(1 - x(3)**2/coeff(3)**2 - x(2)**2/coeff(2)&
+          &**2)) + coeff(1)**2*x(2)**2/(coeff(2)**4*(1 - x(3)**2/coeff(3)**2 - x(2)**2&
+          &/coeff(2)**2)) + 1)**(1.5_r8)) - coeff(1)/(coeff(2)**2*sqrt(1 - x(3)**2/coeff(&
+          &3)**2 - x(2)**2/coeff(2)**2)*sqrt(coeff(1)**2*x(3)**2/(coeff(3)**4*(1 - x(3&
+          &)**2/coeff(3)**2 - x(2)**2/coeff(2)**2)) + coeff(1)**2*x(2)**2/(coeff(2)**4&
+          &*(1 - x(3)**2/coeff(3)**2 - x(2)**2/coeff(2)**2)) + 1)) - coeff(1)*x(2)**2/&
+          &(coeff(2)**4*(1 - x(3)**2/coeff(3)**2 - x(2)**2/coeff(2)**2)**(1.5_r8)*sqrt(co&
+          &eff(1)**2*x(3)**2/(coeff(3)**4*(1 - x(3)**2/coeff(3)**2 - x(2)**2/coeff(2)*&
+          &*2)) + coeff(1)**2*x(2)**2/(coeff(2)**4*(1 - x(3)**2/coeff(3)**2 - x(2)**2/&
+          &coeff(2)**2)) + 1))
+    case(2)
+      ellipsoid_curvature_x = -coeff(2)*x(3)*(-coeff(2)**2*x(3)/(coeff(3)**4*(1 - x(3)&
+          &**2/coeff(3)**2 - x(1)**2/coeff(1)**2)) - coeff(2)**2*x(3)**3/(coeff(3)**6*&
+          &(1 - x(3)**2/coeff(3)**2 - x(1)**2/coeff(1)**2)**2) - coeff(2)**2*x(1)**2*x&
+          &(3)/(coeff(1)**4*coeff(3)**2*(1 - x(3)**2/coeff(3)**2 - x(1)**2/coeff(1)**2&
+          &)**2))/(coeff(3)**2*sqrt(1 - x(3)**2/coeff(3)**2 - x(1)**2/coeff(1)**2)*(co&
+          &eff(2)**2*x(3)**2/(coeff(3)**4*(1 - x(3)**2/coeff(3)**2 - x(1)**2/coeff(1)*&
+          &*2)) + 1 + coeff(2)**2*x(1)**2/(coeff(1)**4*(1 - x(3)**2/coeff(3)**2 - x(1)&
+          &**2/coeff(1)**2)))**(1.5_r8)) - coeff(2)/(coeff(3)**2*sqrt(1 - x(3)**2/coeff(3&
+          &)**2 - x(1)**2/coeff(1)**2)*sqrt(coeff(2)**2*x(3)**2/(coeff(3)**4*(1 - x(3)&
+          &**2/coeff(3)**2 - x(1)**2/coeff(1)**2)) + 1 + coeff(2)**2*x(1)**2/(coeff(1)&
+          &**4*(1 - x(3)**2/coeff(3)**2 - x(1)**2/coeff(1)**2)))) - coeff(2)*x(3)**2/(&
+          &coeff(3)**4*(1 - x(3)**2/coeff(3)**2 - x(1)**2/coeff(1)**2)**(1.5_r8)*sqrt(coe&
+          &ff(2)**2*x(3)**2/(coeff(3)**4*(1 - x(3)**2/coeff(3)**2 - x(1)**2/coeff(1)**&
+          &2)) + 1 + coeff(2)**2*x(1)**2/(coeff(1)**4*(1 - x(3)**2/coeff(3)**2 - x(1)*&
+          &*2/coeff(1)**2)))) - coeff(2)*x(1)*(-coeff(2)**2*x(1)*x(3)**2/(coeff(1)**2*&
+          &coeff(3)**4*(1 - x(3)**2/coeff(3)**2 - x(1)**2/coeff(1)**2)**2) - coeff(2)*&
+          &*2*x(1)/(coeff(1)**4*(1 - x(3)**2/coeff(3)**2 - x(1)**2/coeff(1)**2)) - coe&
+          &ff(2)**2*x(1)**3/(coeff(1)**6*(1 - x(3)**2/coeff(3)**2 - x(1)**2/coeff(1)**&
+          &2)**2))/(coeff(1)**2*sqrt(1 - x(3)**2/coeff(3)**2 - x(1)**2/coeff(1)**2)*(c&
+          &oeff(2)**2*x(3)**2/(coeff(3)**4*(1 - x(3)**2/coeff(3)**2 - x(1)**2/coeff(1)&
+          &**2)) + 1 + coeff(2)**2*x(1)**2/(coeff(1)**4*(1 - x(3)**2/coeff(3)**2 - x(1&
+          &)**2/coeff(1)**2)))**(1.5_r8)) - coeff(2)/(coeff(1)**2*sqrt(1 - x(3)**2/coeff(&
+          &3)**2 - x(1)**2/coeff(1)**2)*sqrt(coeff(2)**2*x(3)**2/(coeff(3)**4*(1 - x(3&
+          &)**2/coeff(3)**2 - x(1)**2/coeff(1)**2)) + 1 + coeff(2)**2*x(1)**2/(coeff(1&
+          &)**4*(1 - x(3)**2/coeff(3)**2 - x(1)**2/coeff(1)**2)))) - coeff(2)*x(1)**2/&
+          &(coeff(1)**4*(1 - x(3)**2/coeff(3)**2 - x(1)**2/coeff(1)**2)**(1.5_r8)*sqrt(co&
+          &eff(2)**2*x(3)**2/(coeff(3)**4*(1 - x(3)**2/coeff(3)**2 - x(1)**2/coeff(1)*&
+          &*2)) + 1 + coeff(2)**2*x(1)**2/(coeff(1)**4*(1 - x(3)**2/coeff(3)**2 - x(1)&
+          &**2/coeff(1)**2))))
+    case(3)
+      ellipsoid_curvature_x = -coeff(3)*x(2)*(-coeff(3)**2*x(2)/(coeff(2)**4*(1 - x(2)&
+          &**2/coeff(2)**2 - x(1)**2/coeff(1)**2)) - coeff(3)**2*x(2)**3/(coeff(2)**6*&
+          &(1 - x(2)**2/coeff(2)**2 - x(1)**2/coeff(1)**2)**2) - coeff(3)**2*x(1)**2*x&
+          &(2)/(coeff(1)**4*coeff(2)**2*(1 - x(2)**2/coeff(2)**2 - x(1)**2/coeff(1)**2&
+          &)**2))/(coeff(2)**2*sqrt(1 - x(2)**2/coeff(2)**2 - x(1)**2/coeff(1)**2)*(1 &
+          &+ coeff(3)**2*x(2)**2/(coeff(2)**4*(1 - x(2)**2/coeff(2)**2 - x(1)**2/coeff&
+          &(1)**2)) + coeff(3)**2*x(1)**2/(coeff(1)**4*(1 - x(2)**2/coeff(2)**2 - x(1)&
+          &**2/coeff(1)**2)))**(1.5_r8)) - coeff(3)/(coeff(2)**2*sqrt(1 - x(2)**2/coeff(2&
+          &)**2 - x(1)**2/coeff(1)**2)*sqrt(1 + coeff(3)**2*x(2)**2/(coeff(2)**4*(1 - &
+          &x(2)**2/coeff(2)**2 - x(1)**2/coeff(1)**2)) + coeff(3)**2*x(1)**2/(coeff(1)&
+          &**4*(1 - x(2)**2/coeff(2)**2 - x(1)**2/coeff(1)**2)))) - coeff(3)*x(2)**2/(&
+          &coeff(2)**4*(1 - x(2)**2/coeff(2)**2 - x(1)**2/coeff(1)**2)**(1.5_r8)*sqrt(1 +&
+          & coeff(3)**2*x(2)**2/(coeff(2)**4*(1 - x(2)**2/coeff(2)**2 - x(1)**2/coeff(&
+          &1)**2)) + coeff(3)**2*x(1)**2/(coeff(1)**4*(1 - x(2)**2/coeff(2)**2 - x(1)*&
+          &*2/coeff(1)**2)))) - coeff(3)*x(1)*(-coeff(3)**2*x(1)*x(2)**2/(coeff(1)**2*&
+          &coeff(2)**4*(1 - x(2)**2/coeff(2)**2 - x(1)**2/coeff(1)**2)**2) - coeff(3)*&
+          &*2*x(1)/(coeff(1)**4*(1 - x(2)**2/coeff(2)**2 - x(1)**2/coeff(1)**2)) - coe&
+          &ff(3)**2*x(1)**3/(coeff(1)**6*(1 - x(2)**2/coeff(2)**2 - x(1)**2/coeff(1)**&
+          &2)**2))/(coeff(1)**2*sqrt(1 - x(2)**2/coeff(2)**2 - x(1)**2/coeff(1)**2)*(1&
+          & + coeff(3)**2*x(2)**2/(coeff(2)**4*(1 - x(2)**2/coeff(2)**2 - x(1)**2/coef&
+          &f(1)**2)) + coeff(3)**2*x(1)**2/(coeff(1)**4*(1 - x(2)**2/coeff(2)**2 - x(1&
+          &)**2/coeff(1)**2)))**(1.5_r8)) - coeff(3)/(coeff(1)**2*sqrt(1 - x(2)**2/coeff(&
+          &2)**2 - x(1)**2/coeff(1)**2)*sqrt(1 + coeff(3)**2*x(2)**2/(coeff(2)**4*(1 -&
+          & x(2)**2/coeff(2)**2 - x(1)**2/coeff(1)**2)) + coeff(3)**2*x(1)**2/(coeff(1&
+          &)**4*(1 - x(2)**2/coeff(2)**2 - x(1)**2/coeff(1)**2)))) - coeff(3)*x(1)**2/&
+          &(coeff(1)**4*(1 - x(2)**2/coeff(2)**2 - x(1)**2/coeff(1)**2)**(1.5_r8)*sqrt(1 &
+          &+ coeff(3)**2*x(2)**2/(coeff(2)**4*(1 - x(2)**2/coeff(2)**2 - x(1)**2/coeff&
+          &(1)**2)) + coeff(3)**2*x(1)**2/(coeff(1)**4*(1 - x(2)**2/coeff(2)**2 - x(1)&
+          &**2/coeff(1)**2))))
+    end select
+
+    ! ellipsoid_curvature_x = -x(3)*sqrt(coeff(1)*coeff(2)*coeff(3))*(-coeff(1)*coeff(&
+    !     &2)*x(3)/(coeff(3)**3*(x(3)**2/coeff(3)**2 + x(2)**2/coeff(2)**2 + x(1)**2/c&
+    !     &oeff(1)**2)) + coeff(1)*coeff(2)*x(3)**3/(coeff(3)**5*(x(3)**2/coeff(3)**2 &
+    !     &+ x(2)**2/coeff(2)**2 + x(1)**2/coeff(1)**2)**2) + coeff(1)*x(2)**2*x(3)/(c&
+    !     &oeff(2)**3*coeff(3)*(x(3)**2/coeff(3)**2 + x(2)**2/coeff(2)**2 + x(1)**2/co&
+    !     &eff(1)**2)**2) + coeff(2)*x(1)**2*x(3)/(coeff(1)**3*coeff(3)*(x(3)**2/coeff&
+    !     &(3)**2 + x(2)**2/coeff(2)**2 + x(1)**2/coeff(1)**2)**2))/(coeff(3)**2*sqrt(&
+    !     &x(3)**2/coeff(3)**2 + x(2)**2/coeff(2)**2 + x(1)**2/coeff(1)**2)*(coeff(1)*&
+    !     &coeff(2)*x(3)**2/(coeff(3)**3*(x(3)**2/coeff(3)**2 + x(2)**2/coeff(2)**2 + &
+    !     &x(1)**2/coeff(1)**2)) + coeff(1)*coeff(3)*x(2)**2/(coeff(2)**3*(x(3)**2/coe&
+    !     &ff(3)**2 + x(2)**2/coeff(2)**2 + x(1)**2/coeff(1)**2)) + coeff(2)*coeff(3)*&
+    !     &x(1)**2/(coeff(1)**3*(x(3)**2/coeff(3)**2 + x(2)**2/coeff(2)**2 + x(1)**2/c&
+    !     &oeff(1)**2)))**(3/2)) - sqrt(coeff(1)*coeff(2)*coeff(3))/(coeff(3)**2*sqrt(&
+    !     &x(3)**2/coeff(3)**2 + x(2)**2/coeff(2)**2 + x(1)**2/coeff(1)**2)*sqrt(coeff&
+    !     &(1)*coeff(2)*x(3)**2/(coeff(3)**3*(x(3)**2/coeff(3)**2 + x(2)**2/coeff(2)**&
+    !     &2 + x(1)**2/coeff(1)**2)) + coeff(1)*coeff(3)*x(2)**2/(coeff(2)**3*(x(3)**2&
+    !     &/coeff(3)**2 + x(2)**2/coeff(2)**2 + x(1)**2/coeff(1)**2)) + coeff(2)*coeff&
+    !     &(3)*x(1)**2/(coeff(1)**3*(x(3)**2/coeff(3)**2 + x(2)**2/coeff(2)**2 + x(1)*&
+    !     &*2/coeff(1)**2)))) + x(3)**2*sqrt(coeff(1)*coeff(2)*coeff(3))/(coeff(3)**4*&
+    !     &(x(3)**2/coeff(3)**2 + x(2)**2/coeff(2)**2 + x(1)**2/coeff(1)**2)**(3/2)*sq&
+    !     &rt(coeff(1)*coeff(2)*x(3)**2/(coeff(3)**3*(x(3)**2/coeff(3)**2 + x(2)**2/co&
+    !     &eff(2)**2 + x(1)**2/coeff(1)**2)) + coeff(1)*coeff(3)*x(2)**2/(coeff(2)**3*&
+    !     &(x(3)**2/coeff(3)**2 + x(2)**2/coeff(2)**2 + x(1)**2/coeff(1)**2)) + coeff(&
+    !     &2)*coeff(3)*x(1)**2/(coeff(1)**3*(x(3)**2/coeff(3)**2 + x(2)**2/coeff(2)**2&
+    !     & + x(1)**2/coeff(1)**2)))) - x(2)*sqrt(coeff(1)*coeff(2)*coeff(3))*(coeff(1&
+    !     &)*x(2)*x(3)**2/(coeff(2)*coeff(3)**3*(x(3)**2/coeff(3)**2 + x(2)**2/coeff(2&
+    !     &)**2 + x(1)**2/coeff(1)**2)**2) - coeff(1)*coeff(3)*x(2)/(coeff(2)**3*(x(3)&
+    !     &**2/coeff(3)**2 + x(2)**2/coeff(2)**2 + x(1)**2/coeff(1)**2)) + coeff(1)*co&
+    !     &eff(3)*x(2)**3/(coeff(2)**5*(x(3)**2/coeff(3)**2 + x(2)**2/coeff(2)**2 + x(&
+    !     &1)**2/coeff(1)**2)**2) + coeff(3)*x(1)**2*x(2)/(coeff(1)**3*coeff(2)*(x(3)*&
+    !     &*2/coeff(3)**2 + x(2)**2/coeff(2)**2 + x(1)**2/coeff(1)**2)**2))/(coeff(2)*&
+    !     &*2*sqrt(x(3)**2/coeff(3)**2 + x(2)**2/coeff(2)**2 + x(1)**2/coeff(1)**2)*(c&
+    !     &oeff(1)*coeff(2)*x(3)**2/(coeff(3)**3*(x(3)**2/coeff(3)**2 + x(2)**2/coeff(&
+    !     &2)**2 + x(1)**2/coeff(1)**2)) + coeff(1)*coeff(3)*x(2)**2/(coeff(2)**3*(x(3&
+    !     &)**2/coeff(3)**2 + x(2)**2/coeff(2)**2 + x(1)**2/coeff(1)**2)) + coeff(2)*c&
+    !     &oeff(3)*x(1)**2/(coeff(1)**3*(x(3)**2/coeff(3)**2 + x(2)**2/coeff(2)**2 + x&
+    !     &(1)**2/coeff(1)**2)))**(3/2)) - sqrt(coeff(1)*coeff(2)*coeff(3))/(coeff(2)*&
+    !     &*2*sqrt(x(3)**2/coeff(3)**2 + x(2)**2/coeff(2)**2 + x(1)**2/coeff(1)**2)*sq&
+    !     &rt(coeff(1)*coeff(2)*x(3)**2/(coeff(3)**3*(x(3)**2/coeff(3)**2 + x(2)**2/co&
+    !     &eff(2)**2 + x(1)**2/coeff(1)**2)) + coeff(1)*coeff(3)*x(2)**2/(coeff(2)**3*&
+    !     &(x(3)**2/coeff(3)**2 + x(2)**2/coeff(2)**2 + x(1)**2/coeff(1)**2)) + coeff(&
+    !     &2)*coeff(3)*x(1)**2/(coeff(1)**3*(x(3)**2/coeff(3)**2 + x(2)**2/coeff(2)**2&
+    !     & + x(1)**2/coeff(1)**2)))) + x(2)**2*sqrt(coeff(1)*coeff(2)*coeff(3))/(coef&
+    !     &f(2)**4*(x(3)**2/coeff(3)**2 + x(2)**2/coeff(2)**2 + x(1)**2/coeff(1)**2)**&
+    !     &(3/2)*sqrt(coeff(1)*coeff(2)*x(3)**2/(coeff(3)**3*(x(3)**2/coeff(3)**2 + x(&
+    !     &2)**2/coeff(2)**2 + x(1)**2/coeff(1)**2)) + coeff(1)*coeff(3)*x(2)**2/(coef&
+    !     &f(2)**3*(x(3)**2/coeff(3)**2 + x(2)**2/coeff(2)**2 + x(1)**2/coeff(1)**2)) &
+    !     &+ coeff(2)*coeff(3)*x(1)**2/(coeff(1)**3*(x(3)**2/coeff(3)**2 + x(2)**2/coe&
+    !     &ff(2)**2 + x(1)**2/coeff(1)**2)))) - x(1)*sqrt(coeff(1)*coeff(2)*coeff(3))*&
+    !     &(coeff(2)*x(1)*x(3)**2/(coeff(1)*coeff(3)**3*(x(3)**2/coeff(3)**2 + x(2)**2&
+    !     &/coeff(2)**2 + x(1)**2/coeff(1)**2)**2) + coeff(3)*x(1)*x(2)**2/(coeff(1)*c&
+    !     &oeff(2)**3*(x(3)**2/coeff(3)**2 + x(2)**2/coeff(2)**2 + x(1)**2/coeff(1)**2&
+    !     &)**2) - coeff(2)*coeff(3)*x(1)/(coeff(1)**3*(x(3)**2/coeff(3)**2 + x(2)**2/&
+    !     &coeff(2)**2 + x(1)**2/coeff(1)**2)) + coeff(2)*coeff(3)*x(1)**3/(coeff(1)**&
+    !     &5*(x(3)**2/coeff(3)**2 + x(2)**2/coeff(2)**2 + x(1)**2/coeff(1)**2)**2))/(c&
+    !     &oeff(1)**2*sqrt(x(3)**2/coeff(3)**2 + x(2)**2/coeff(2)**2 + x(1)**2/coeff(1&
+    !     &)**2)*(coeff(1)*coeff(2)*x(3)**2/(coeff(3)**3*(x(3)**2/coeff(3)**2 + x(2)**&
+    !     &2/coeff(2)**2 + x(1)**2/coeff(1)**2)) + coeff(1)*coeff(3)*x(2)**2/(coeff(2)&
+    !     &**3*(x(3)**2/coeff(3)**2 + x(2)**2/coeff(2)**2 + x(1)**2/coeff(1)**2)) + co&
+    !     &eff(2)*coeff(3)*x(1)**2/(coeff(1)**3*(x(3)**2/coeff(3)**2 + x(2)**2/coeff(2&
+    !     &)**2 + x(1)**2/coeff(1)**2)))**(3/2)) - sqrt(coeff(1)*coeff(2)*coeff(3))/(c&
+    !     &oeff(1)**2*sqrt(x(3)**2/coeff(3)**2 + x(2)**2/coeff(2)**2 + x(1)**2/coeff(1&
+    !     &)**2)*sqrt(coeff(1)*coeff(2)*x(3)**2/(coeff(3)**3*(x(3)**2/coeff(3)**2 + x(&
+    !     &2)**2/coeff(2)**2 + x(1)**2/coeff(1)**2)) + coeff(1)*coeff(3)*x(2)**2/(coef&
+    !     &f(2)**3*(x(3)**2/coeff(3)**2 + x(2)**2/coeff(2)**2 + x(1)**2/coeff(1)**2)) &
+    !     &+ coeff(2)*coeff(3)*x(1)**2/(coeff(1)**3*(x(3)**2/coeff(3)**2 + x(2)**2/coe&
+    !     &ff(2)**2 + x(1)**2/coeff(1)**2)))) + x(1)**2*sqrt(coeff(1)*coeff(2)*coeff(3&
+    !     &))/(coeff(1)**4*(x(3)**2/coeff(3)**2 + x(2)**2/coeff(2)**2 + x(1)**2/coeff(&
+    !     &1)**2)**(3/2)*sqrt(coeff(1)*coeff(2)*x(3)**2/(coeff(3)**3*(x(3)**2/coeff(3)&
+    !     &**2 + x(2)**2/coeff(2)**2 + x(1)**2/coeff(1)**2)) + coeff(1)*coeff(3)*x(2)*&
+    !     &*2/(coeff(2)**3*(x(3)**2/coeff(3)**2 + x(2)**2/coeff(2)**2 + x(1)**2/coeff(&
+    !     &1)**2)) + coeff(2)*coeff(3)*x(1)**2/(coeff(1)**3*(x(3)**2/coeff(3)**2 + x(2&
+    !     &)**2/coeff(2)**2 + x(1)**2/coeff(1)**2))))
+
+    ellipsoid_curvature_x = abs(ellipsoid_curvature_x)
+
+  end function ellipsoid_curvature_x
+
+  real(r8) function ellipsoid_curvature(i, dir, gmesh, coeff)
+    integer, intent(in) :: i, dir
+    type(mesh_geom), intent(in) :: gmesh
+    real(r8), intent(in) :: coeff(:)
+    INSIST(dir >= 1 .and. dir <= 3)
+    ellipsoid_curvature = ellipsoid_curvature_x(dir, gmesh%xc(:,i), coeff)
+  end function ellipsoid_curvature
 
 end module analytic_surface_type_test
