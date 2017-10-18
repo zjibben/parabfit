@@ -50,6 +50,7 @@ contains
         hess_inv(size(x),size(x)), identity(size(x),size(x)), &
         gradfnew(size(x)) !, &
         !xhist(size(x), this%maxitr+1) ! DEBUGGING
+    real(r8), parameter :: pi = 4*atan(1.0_r8)
 
     identity = 0
     do i = 1,size(x)
@@ -57,9 +58,9 @@ contains
     end do
     status = 0
     f = this%f(x)
-    ! WARN: initial guess for a good difference step size here is assumed
-    gradf = this%gradf(x, 1e-7_r8)
-    hess_inv = identity
+    gradf = this%gradf(x, 1e-7_r8) ! pick 1e-7 for differencing step size
+    ! initial guess for hessian guards against very large initial steps
+    hess_inv = identity * min(1.0_r8, pi / maxval(abs(gradf)))
 
     !xhist(:,1) = x
     ! print '(a,2es13.3)', 'x: ', x
@@ -79,7 +80,7 @@ contains
       if (status==1) exit
 
       ! update the hessian inverse and gradient
-      gradfnew = this%gradf(x, 1e-7_r8) ! 1e-7_r8
+      gradfnew = this%gradf(x, 1e-7_r8)
       y = gradfnew - gradf
       gradf = gradfnew
       !gradf = gradf + y
@@ -89,7 +90,7 @@ contains
         hess_inv = hess_inv + outer_product(s,s) / dot_product(y,s)
       end if
 
-      ! print *, i
+      ! print *, 'iter: ', i
       ! print '(a,2es13.3)', 'd: ', d
       ! print '(a,3es13.3)', 's: ', s, norm2(s)
       ! print '(a,2es13.3)', 'x: ', x
