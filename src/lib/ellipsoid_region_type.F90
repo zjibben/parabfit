@@ -34,8 +34,6 @@ contains
   !! constructor for ELLIPSOID_REGION objects
   function ellipsoid_region_value (xc, axes) result(r)
 
-    use array_utils, only: normalize
-
     real(r8), intent(in) :: xc(:), axes(:)
     type(ellipsoid_region) :: r
 

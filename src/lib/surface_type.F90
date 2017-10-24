@@ -32,6 +32,7 @@ module surface_type
     procedure :: write_ply
     procedure :: purge
     procedure :: local_patch
+    procedure :: local_centroid
   end type surface
 
 contains
@@ -259,7 +260,7 @@ contains
   !         is on the order of the mesh spacing, though. This might also add some
   !         complexity by requiring curvature computation in cells containing the
   !         interface first, then looking up the values in a table later.
-  function local_patch (this, cell_id, gmesh, vof)
+  function local_patch (this, cell_id, gmesh, vof, verbose)
 
     use mesh_geom_type
     use set_type
@@ -269,10 +270,12 @@ contains
     type(mesh_geom), intent(in) :: gmesh
     real(r8), intent(in) :: vof(:)
     type(polygon_box), allocatable :: local_patch(:)
+    logical, intent(in), optional :: verbose
 
-    integer :: e, npolygons
+    integer :: e, npolygons, i, j
     integer, allocatable :: neighbor(:), polygon_id(:)
     type(set_integer) :: ngbr
+    logical :: verboseh
 
     ! get the neighboring cell ids
     !neighbor = pack(gmesh%cneighbor(:,cell_id), mask=gmesh%cneighbor(:,cell_id)>0) ! face neighbors
@@ -304,6 +307,46 @@ contains
     ! return the local patch
     local_patch = this%element(polygon_id(:npolygons))
 
+    verboseh = .false.
+    if (present(verbose)) verboseh = verbose
+    if (verboseh) then
+      print *, 'RECONSTRUCTION POLYGON IDs'
+      do e = 1,npolygons
+        print *, e, this%cell_id(polygon_id(e)), local_patch(e)%n_elements
+      end do
+    end if
+
   end function local_patch
+
+  ! return the centroid of the polygon box in this cell
+  function local_centroid(this, cell_id) result(xc)
+
+    use logging_services
+
+    class(surface), intent(in) :: this
+    integer, intent(in) :: cell_id
+    real(r8) :: xc(3)
+
+    integer :: e, i
+    real(r8) :: area, a
+
+    ! TODO: currently naive search. could do a binary search.
+    do e = 1,size(this%cell_id)
+      if (this%cell_id(e) == cell_id) then
+        xc = 0; area = 0
+        do i = 1,this%element(e)%n_elements
+          a = this%element(e)%elements(i)%area2()
+          xc = xc + this%element(e)%elements(i)%centroid2() * a
+          area = area + a
+        end do
+        xc = xc / area
+        exit
+      end if
+    end do
+
+    if (e > size(this%cell_id)) &
+        call LS_fatal ("could not find polygon in this cell")
+
+  end function local_centroid
 
 end module surface_type

@@ -17,6 +17,7 @@ module lvira_normals
   contains
     procedure :: init => lvira_error_init
     procedure :: f => lvira_error_f
+    procedure :: dump_error_field
   end type lvira_error
 
 contains
@@ -85,8 +86,10 @@ contains
 
     ! find the normal that minimizes the lvira error function
     call norm_error%init(i, vof, mesh, gmesh)
+    !call norm_error%dump_error_field() ! DEBUGGING
 
     call norm_error%find_minimum(sphn, ierr)
+    !print *, 'ierr: ', ierr
     !if (ierr /= 0) call LS_Fatal("lvira error")
 
     ! convert spherical coordinates of normal back to physical coordinates
@@ -95,6 +98,39 @@ contains
     int_norm(3) = cos(sphn(1))
 
   end subroutine interface_normal_lvira
+
+  subroutine dump_error_field(this)
+
+    class(lvira_error), intent(inout) :: this
+
+    integer :: fh, i, j, n
+    real(r8) :: smin(2), smax(2), s(2), ds(2)
+    real(r8), parameter :: pi = 3.141592653_r8
+
+    open (newunit=fh, file="err_contour.txt")
+    n = 200
+    smin = [0.0_r8, -pi]
+    smax = [pi, pi]
+    ! smin = [0.4_r8*pi, 0.4_r8*pi]
+    ! smax = [0.6_r8*pi, 0.5_r8*pi]
+    ds = (smax - smin) / (n-1)
+
+    write(fh, '(es20.10)') smin(1)
+    write(fh, '(es20.10)') smin(2)
+    write(fh, '(es20.10)') smax(1)
+    write(fh, '(es20.10)') smax(2)
+    write(fh, '(i0)') n
+
+    do i = 1,n
+      do j = 1,n
+        s = smin + [(i-1)*ds(1), (j-1)*ds(2)]
+        write(fh,'(es20.10)'), this%f(s)
+      end do
+    end do
+
+    close(fh)
+
+  end subroutine dump_error_field
 
   subroutine lvira_error_init(this, i, vof, mesh, gmesh)
 
@@ -151,8 +187,6 @@ contains
     real(r8) :: n(3), lvira_vof
     type(plane) :: interface_plane
 
-    !call start_timer("lvira error")
-
     ! get the normal vector from the input angles in spherical coordinates
     n(1) = sin(x(1))*cos(x(2))
     n(2) = sin(x(1))*sin(x(2))
@@ -175,9 +209,7 @@ contains
       !     print '(i4,2es13.3)', c, this%vof(c), (lvira_vof - this%vof(c))**2
     end do
 
-    ! print *, 'f: ',lvira_error_f
-    ! stop
-    !call stop_timer("lvira error")
+    !print '(a,e20.10)', 'error: ', lvira_error_f
 
   end function lvira_error_f
 

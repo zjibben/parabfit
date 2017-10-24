@@ -120,41 +120,56 @@ contains
     curvature_from_patch = surf%curvature(xc)
     !curvature_from_patch = surf%curvature(interface_reconstructions(1)%elements(1)%centroid())
 
-    ! if (verboseh) then
-    !   ! do i = 1,size(interface_reconstructions)
-    !   !   !print '(a,3es20.10)', 'x: ', pts(:,i)
-    !   !   print '(3(a,es20.10),a)', '[',pts(1,i),',',pts(2,i),',',pts(3,i),'],'
-    !   ! end do
-    !   ! print *
-    !   ! do i = 1,size(interface_reconstructions)
-    !   !   print '(a,es20.10)', 'd: ', abs(norm2(pts(:2,i)) - 0.35_r8)
-    !   ! end do
+    if (verboseh) then
+      ! do i = 1,size(interface_reconstructions)
+      !   !print '(a,3es20.10)', 'x: ', pts(:,i)
+      !   print '(3(a,es20.10),a)', '[',pts(1,i),',',pts(2,i),',',pts(3,i),'],'
+      ! end do
+      ! print *
+      ! do i = 1,size(interface_reconstructions)
+      !   print '(a,es20.10)', 'd: ', abs(norm2(pts(:2,i)) - 0.35_r8)
+      ! end do
 
-    !   print *
-    !   do i = 1,size(interface_reconstructions)
-    !     !print '(a,3es20.10)', 'x: ', pts(:,i)
-    !     print '(3es20.10)', interface_reconstructions(i)%centroid2()
-    !   end do
-    !   print *
-    !   do i = 1,size(interface_reconstructions)
-    !     !print '(a,3es20.10)', 'x: ', pts(:,i)
-    !     print '(3es20.10)', norm2(interface_reconstructions(i)%centroid2() - pts(:,i))
-    !   end do
+      ! print *
+      ! do i = 1,size(interface_reconstructions)
+      !   !print '(a,3es20.10)', 'x: ', pts(:,i)
+      !   print '(3es20.10)', interface_reconstructions(i)%centroid2()
+      ! end do
 
-    !   print '(a,3es18.8)', 'n:  ', normal
-    !   print '(a,3es18.8)', 'n2: ', surf%normal(interface_reconstructions(1)%centroid())
-    !   print '(a,f10.4)', 'curvature0 ', curvature_from_patch
-    !   print '(a,f10.4)', 'curvature1 ', surf%curvatureQdrtc(interface_reconstructions(1)%centroid())
-    !   print '(dt)', surf
+      print *, 'RECONSTRUCTION POLYGONS'
+      do i = 1,size(interface_reconstructions)
+        do j = 1,interface_reconstructions(i)%n_elements
+          do in = 1,size(interface_reconstructions(i)%elements(j)%x, dim=2)
+            print '(3es20.10)', &
+                matmul(surf%rot, interface_reconstructions(i)%elements(j)%x(:,in) - surf%offset)
+          end do
+          print *
+        end do
+      end do
 
-    !   call interface_reconstructions(1)%print_data()
+      print '(dt)', surf
 
-    !   print *
-    !   call surf%volumetricFit(interface_reconstructions)
-    !   print '(a,f10.4, es20.10)', 'curvature2 ', &
-    !       surf%curvature(interface_reconstructions(1)%centroid()), &
-    !       abs(surf%curvature(interface_reconstructions(1)%centroid()) + 1/0.35_r8) * 0.35_r8
-    ! end if
+      print *, 'RECONSTRUCTION POLYGON NORMALS'
+      do i = 1,size(interface_reconstructions)
+        print *, i, interface_reconstructions(i)%n_elements
+        do j = 1,interface_reconstructions(i)%n_elements
+          print '(3es20.10)', interface_reconstructions(i)%elements(j)%norm
+        end do
+        print *
+      end do
+
+      print '(a,3es18.8)', 'n:  ', normal
+      print '(a,3es18.8)', 'n2: ', surf%normal(xc)
+      print '(a,2f10.4)', 'curvature0 ', curvature_from_patch, surf%curvatureQdrtc(xc)
+
+      ! call interface_reconstructions(1)%print_data()
+
+      ! print *
+      ! call surf%volumetricFit(interface_reconstructions)
+      ! print '(a,f10.4, es20.10)', 'curvature2 ', &
+      !     surf%curvature(interface_reconstructions(1)%centroid()), &
+      !     abs(surf%curvature(interface_reconstructions(1)%centroid()) + 1/0.35_r8) * 0.35_r8
+    end if
 
     call stop_timer ("fit curvature")
 

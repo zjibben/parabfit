@@ -21,7 +21,7 @@ module paraboloid_type
     private
     ! perhaps use a mpoly_scalar_func_type here
     real(r8), allocatable :: coeff(:), cr(:)
-    real(r8) :: rot(3,3), offset(3)
+    real(r8), public :: rot(3,3), offset(3)
     logical :: initialized
     integer :: lwork
   contains
@@ -531,7 +531,6 @@ contains
   ! calculate the curvature at a point x
   real(r8) function curvature (this,x)
 
-    use consts, only: alittle
     use array_utils, only: clip
 
     class(paraboloid), intent(in) :: this

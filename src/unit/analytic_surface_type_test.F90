@@ -58,11 +58,11 @@ contains
     write (fh1, '(a)') '# dx l1 l2 l3'
     write (fh2, '(a)') '# dx l1 l2 l3'
 
-    do i = 1,1
+    do i = 1,4
       ncell = 10 * 2**i
       !call mesh_2d_test (ncell, 'cylinder.json', lnormFT, lnormHF)
-      !call mesh_3d_test (ncell, 'ellipsoid.json', lnormFT, lnormHF)
-      call mesh_unstr_test (ncell, 'ellipsoid.json', lnormFT, lnormHF)
+      call mesh_3d_test (ncell, 'ellipsoid.json', lnormFT, lnormHF)
+      !call mesh_unstr_test (ncell, 'ellipsoid.json', lnormFT, lnormHF)
       write (fh1, '(4es15.5)') 1.0_r8 / ncell, lnormFT
       write (fh2, '(4es15.5)') 1.0_r8 / ncell, lnormHF
     end do
@@ -476,6 +476,8 @@ contains
     use array_utils, only: normalize, isZero
     use curvature_hf
     use vof_io
+    use mixed_cell_subset_constructor
+    use mesh_subset_type
     use vof_init_ex_circle
 
     integer, intent(in) :: mesh_size
@@ -487,8 +489,10 @@ contains
     character(30) :: tmp
     type(unstr_mesh) :: mesh
     type(mesh_geom) :: gmesh
+    type(mesh_subset) :: mixed_cells
     type(parameter_list), pointer :: plist
-    real(r8) :: curvature_ex, vof(2,mesh_size*mesh_size*thck), curvature(mesh_size*mesh_size*thck), &
+    real(r8), allocatable :: curvature_ex(:)
+    real(r8) :: vof(2,mesh_size*mesh_size*thck), curvature(mesh_size*mesh_size*thck), &
         vofex(2,mesh_size*mesh_size*thck)
     real(r8), allocatable :: int_norm(:,:,:)
     integer :: infile
@@ -523,12 +527,15 @@ contains
     !call compare_vof_fields(vof, vofex)
     vof = vofex
 
+    ! get mixed cells subset
+    mixed_cells = mixed_cell_subset(vof, mesh)
+
     ! get the interface reconstructions
     int_norm = interface_normal (vof, mesh, gmesh, .false.)
 
     ! calculate errors for FT and HF curvature methods
-    curvature_ex = 1 / 0.35_r8 ! cylinder
-    lnormFT = ft_mesh_test ('reg', vof, int_norm, mesh, gmesh, curvature_ex)
+    !curvature_ex = 1 / 0.35_r8 ! cylinder
+    lnormFT = ft_mesh_test ('reg', vof, int_norm, mesh, gmesh, mixed_cells, curvature_ex)
     lnormHF = hf_mesh_test (vof, int_norm, mesh, gmesh, curvature_ex)
 
     print '(i5, 2(a,3es10.2))', mesh_size, '  FT L1,L2,Linf = ',lnormFT, &
@@ -551,6 +558,8 @@ contains
     use array_utils, only: normalize, isZero
     use curvature_hf
     use vof_io
+    use mixed_cell_subset_constructor
+    use mesh_subset_type
 
     integer, intent(in) :: mesh_size
     character(*), intent(in) :: shape_filename
@@ -560,9 +569,10 @@ contains
     character(30) :: tmp
     type(unstr_mesh) :: mesh
     type(mesh_geom) :: gmesh
+    type(mesh_subset) :: mixed_cells
     type(parameter_list), pointer :: plist
-    real(r8) :: curvature_ex, vof(2,mesh_size**3), curvature(mesh_size**3)
-    real(r8), allocatable :: int_norm(:,:,:)
+    real(r8), target :: vof(2,mesh_size**3)
+    real(r8), allocatable :: int_norm(:,:,:), curvature_ex(:)
     integer :: infile
 
     ! create a regular 2D mesh
@@ -593,12 +603,15 @@ contains
     deallocate(plist)
     print '(a)', 'vof initialized'
 
+    ! get mixed cells subset
+    mixed_cells = mixed_cell_subset(vof, mesh)
+
     ! get the interface reconstructions
     int_norm = interface_normal (vof, mesh, gmesh, .false.)
 
     ! calculate errors for FT and HF curvature methods
-    curvature_ex = 2 / 0.35_r8 ! sphere
-    lnormFT = ft_mesh_test ('reg', vof, int_norm, mesh, gmesh, curvature_ex)
+    !curvature_ex = 2 / 0.35_r8 ! sphere
+    lnormFT = ft_mesh_test ('reg', vof, int_norm, mesh, gmesh, mixed_cells, curvature_ex)
     lnormHF = hf_mesh_test (vof, int_norm, mesh, gmesh, curvature_ex)
 
     print '(i5, 2(a,3es10.2))', mesh_size, '  FT L1,L2,Linf = ',lnormFT, &
@@ -621,6 +634,8 @@ contains
     use array_utils, only: normalize, isZero
     use curvature_hf
     use vof_io
+    use mixed_cell_subset_constructor
+    use mesh_subset_type
 
     integer, intent(in) :: mesh_size
     character(*), intent(in) :: shape_filename
@@ -630,9 +645,10 @@ contains
     character(30) :: tmp
     type(unstr_mesh) :: mesh
     type(mesh_geom) :: gmesh
+    type(mesh_subset) :: mixed_cells
     type(parameter_list), pointer :: plist
-    real(r8) :: curvature_ex
-    real(r8), allocatable :: vof(:,:), curvature(:)
+    real(r8), allocatable, target :: vof(:,:)
+    real(r8), allocatable :: curvature(:), curvature_ex(:)
     integer :: infile
 
     ! create a regular 2D mesh
@@ -667,16 +683,20 @@ contains
     end if
     !deallocate(plist)
 
+    ! get mixed cells subset
+    mixed_cells = mixed_cell_subset(vof, mesh)
+
     ! calculate errors for FT and HF curvature methods
-    curvature_ex = 2 / 0.35_r8 ! sphere
-    lnormFT = ft_unstr_mesh_test(cell_type, vof, mesh, gmesh, curvature_ex)
+    !curvature_ex = 2 / 0.35_r8 ! sphere
+    lnormFT = ft_unstr_mesh_test(cell_type, vof, mesh, gmesh, mixed_cells, curvature_ex)
     lnormHF = 0
 
     print '(i8,a,3es10.2)', mesh%ncell, '  FT L1,L2,Linf = ',lnormFT
 
   end subroutine mesh_unstr_test
 
-  function ft_mesh_test (cell_type, vof, int_norm, mesh, gmesh, curvature_ex) result(lnorm)
+  function ft_mesh_test (cell_type, vof, int_norm, mesh, gmesh, mixed_cells, curvature_ex) &
+      result(lnorm)
 
     use consts, only: cutvof
     use surface_type
@@ -689,21 +709,23 @@ contains
     use lvira_normals
     use fit_normals
     use vof_io
+    use mesh_subset_type
 
     character(*), intent(in) :: cell_type
     real(r8), intent(in) :: vof(:,:), int_norm(:,:,:)
     type(unstr_mesh), intent(in) :: mesh
     type(mesh_geom), intent(in) :: gmesh
-    real(r8), intent(inout) :: curvature_ex
+    type(mesh_subset), intent(in) :: mixed_cells
+    real(r8), allocatable, intent(inout) :: curvature_ex(:)
     real(r8) :: lnorm(3)
 
     character(:), allocatable :: filename
     character(30) :: tmp
-    integer :: i, nvofcell, ierr, imax, w, fh
+    integer :: i, nvofcell, ierr, imax, w, fh, c
     type(surface) :: intrec
     type(multimat_cell) :: cell
     real(r8) :: int_norm_local(3,2), err, curvature(mesh%ncell), wgt_scale, totvolume
-    real(r8), allocatable :: int_norm_lvira(:,:,:) !,weight_scales(:)
+    real(r8), allocatable :: int_norm_lvira(:,:,:), interface_centroid(:,:) !,weight_scales(:)
 
     !call heightFunction (throwaway, int_norm_hf, vof(1,:), int_norm(:,1,:), mesh, gmesh)
 
@@ -734,10 +756,13 @@ contains
     !   end if
     ! end do
 
+    allocate(interface_centroid(3,mixed_cells%ncell))
+
     ! get the interface reconstructions
     lnorm = 0; nvofcell = 0; totvolume = 0
-    do i = 1,mesh%ncell
-      if (vof(1,i) > 1-cutvof .or. vof(1,i) < cutvof) cycle
+    do c = 1,mixed_cells%ncell
+      i = mixed_cells%cell_id(c)
+
       call cell%init (ierr, i, mesh, gmesh, tesselate=.false.)
       ! call cell%init (ierr, mesh%x(:,mesh%cnode(:,i)), hex_f, hex_e, gmesh%outnorm(:,:,i), &
       !     mesh%volume(i), tesselate=.false.)
@@ -753,6 +778,8 @@ contains
 
       call intrec%append (cell%interface_polygons(1), i)
 
+      interface_centroid(:,c) = cell%interface_polygons(1)%centroid()
+
       err = abs(vof(1,i) - cell%mat_poly(1)%volume() / mesh%volume(i))
       totvolume = totvolume + mesh%volume(i)
       lnorm(1) = lnorm(1) + err * mesh%volume(i)
@@ -764,6 +791,9 @@ contains
     !print '(a,3es10.2)', 'VOF L1,L2,Linf = ',lnorm
 
     call intrec%write_ply("ft_test.ply")
+
+    call compute_exact_curvature_field(curvature_ex, interface_centroid, int_norm_lvira, &
+        mesh, mixed_cells)
 
     ! get the curvature
     !weight_scales = [0.0_r8, 1.0_r8, 2.0_r8, 3.0_r8, 1.0_r8 / 2, 1.0_r8 / 3, 1.0_r8 / 4, 1.0_r8 / 8]
@@ -787,9 +817,9 @@ contains
           if (isZero(curvature(i))) cycle
 
           ! append to norms
-          curvature_ex = ellipsoid_curvature(i, maxloc(abs(int_norm_lvira(:,1,i)),1), gmesh, &
-              [0.7_r8, 0.5_r8, 0.3_r8])
-          err = abs((curvature(i) - curvature_ex) / curvature_ex)
+          ! curvature_ex = ellipsoid_curvature_x(maxloc(abs(int_norm_lvira(:,1,i)),1), gmesh%xc(:,i), &
+          !     [0.7_r8, 0.5_r8, 0.3_r8])
+          err = abs((curvature(i) - curvature_ex(i)) / curvature_ex(i))
           if (err > lnorm(3)) imax = i
           totvolume = totvolume + mesh%volume(i)
           lnorm(1) = lnorm(1) + err * mesh%volume(i)
@@ -892,7 +922,7 @@ contains
 
   end function ft_mesh_test
 
-  function ft_unstr_mesh_test (cell_type, vof, mesh, gmesh, curvature_ex) result(lnorm)
+  function ft_unstr_mesh_test (cell_type, vof, mesh, gmesh, mixed_cells, curvature_ex) result(lnorm)
 
     use consts, only: cutvof
     use surface_type
@@ -906,22 +936,25 @@ contains
     use fit_normals
     use vof_io
     use polygon_type
+    use mesh_subset_type
+    use int_norm_module ! DEBUGGING
 
     character(*), intent(in) :: cell_type
     real(r8), intent(in) :: vof(:,:)
     type(unstr_mesh), intent(in) :: mesh
     type(mesh_geom), intent(in) :: gmesh
-    real(r8), intent(inout) :: curvature_ex
+    type(mesh_subset), intent(in) :: mixed_cells
+    real(r8), allocatable, intent(inout) :: curvature_ex(:)
     real(r8) :: lnorm(3)
 
     character(:), allocatable :: filename
     character(30) :: tmp
-    integer :: i, ierr, imax
+    integer :: i, ierr, imax, c
     type(surface) :: intrec
     type(multimat_cell) :: cell
     type(polygon_box), allocatable :: intrec_patch(:)
     real(r8) :: err, curvature(mesh%ncell), totvolume
-    real(r8), allocatable :: int_norm_lvira(:,:,:)
+    real(r8), allocatable :: int_norm_lvira(:,:,:), interface_centroid(:,:)
 
     write (tmp, '(a,i0,3a)') "normals_unstr_", mesh%ncell, "_", cell_type, ".dat"
     filename = trim(adjustl(tmp))
@@ -934,6 +967,12 @@ contains
     end if
     print '(a)', 'normals calculated'
     !call interface_normals_fit(int_norm_lvira, vof, mesh, gmesh)
+
+    ! i = 435791
+    ! int_norm_lvira(:,:,i) = interface_normal_cell(vof, i, mesh, gmesh, .false.)
+    ! call interface_normal_lvira(int_norm_lvira(:,1,i), i, vof(1,:), mesh, gmesh)
+    ! print '(a,3es20.10)', 'normal: ',int_norm_lvira(:,1,i)
+    ! stop
 
     ! get the interface reconstructions
     lnorm = 0; totvolume = 0
@@ -949,8 +988,11 @@ contains
     ! int_norm_lvira(:,2,i) = -int_norm_lvira(:,1,i)
     ! ! ##################
 
-    do i = 1,mesh%ncell
-      if (vof(1,i) > 1-cutvof .or. vof(1,i) < cutvof) cycle
+    allocate(interface_centroid(3,mixed_cells%ncell))
+
+    do c = 1,mixed_cells%ncell
+      i = mixed_cells%cell_id(c)
+
       !print *, 'here0'
       call cell%init (ierr, i, mesh, gmesh)
       ! call cell%init (ierr, mesh%x(:,mesh%cnode(:,i)), hex_f, hex_e, gmesh%outnorm(:,:,i), &
@@ -969,6 +1011,8 @@ contains
       call intrec%append (cell%interface_polygons(1), i)
       !print *, 'here3'
 
+      interface_centroid(:,c) = cell%interface_polygons(1)%centroid()
+
       err = abs(vof(1,i) - cell%mat_poly(1)%volume() / mesh%volume(i))
       totvolume = totvolume + mesh%volume(i)
       lnorm(1) = lnorm(1) + err * mesh%volume(i)
@@ -984,6 +1028,9 @@ contains
 
     call intrec%write_ply("ft_test.ply")
 
+    call compute_exact_curvature_field(curvature_ex, interface_centroid, int_norm_lvira, &
+        mesh, mixed_cells)
+
     ! get the curvature
     curvature = 0; lnorm = 0; totvolume = 0
     do i = 1,mesh%ncell
@@ -997,22 +1044,24 @@ contains
         if (isZero(curvature(i))) cycle
 
         ! append to norms
-        ! curvature_ex = ellipsoid_curvature(i, maxloc(abs(int_norm_lvira(:,1,i)),1), gmesh, &
+        ! curvature_ex = ellipsoid_curvature_x(maxloc(abs(int_norm_lvira(:,1,i)),1), &
+        !     intrec_patch(1)%elements(1)%centroid2(), &
         !     [0.7_r8, 0.5_r8, 0.3_r8])
-        curvature_ex = ellipsoid_curvature_x(maxloc(abs(int_norm_lvira(:,1,i)),1), &
-            intrec_patch(1)%elements(1)%centroid2(), &
-            [0.7_r8, 0.5_r8, 0.3_r8])
-        err = abs((curvature(i) - curvature_ex) / curvature_ex)
+        err = abs((curvature(i) - curvature_ex(i)) / curvature_ex(i))
         if (err > lnorm(3)) imax = i
         totvolume = totvolume + mesh%volume(i)
         lnorm(1) = lnorm(1) + err * mesh%volume(i)
         lnorm(2) = lnorm(2) + err**2 * mesh%volume(i)
         lnorm(3) = max(lnorm(3),err)
 
-        if (err > 7e-1_r8) then
-          print '(i6, 3es14.4)', i, curvature(i), curvature_ex, err !, c_new_line
-          call LS_fatal ("large curvature error")
-        end if
+        ! if (err > 2e0_r8) then
+        !   intrec_patch = intrec%local_patch(i,gmesh, vof(1,:), verbose=.true.)
+        !   curvature(i) = abs(curvature_from_patch (intrec_patch, &
+        !       0.0_r8, int_norm_lvira(:,1,i), vof(1,:), mesh, gmesh, i, verbose=.true.))
+
+        !   print '(i6, 3es14.4)', i, curvature(i), curvature_ex, err !, c_new_line
+        !   call LS_fatal ("large curvature error")
+        ! end if
       end if
     end do
     lnorm(1) = lnorm(1) / totvolume
@@ -1029,7 +1078,7 @@ contains
     real(r8), intent(in) :: vof(:,:), int_norm(:,:,:)
     type(unstr_mesh), intent(in) :: mesh
     type(mesh_geom), intent(in) :: gmesh
-    real(r8), intent(inout) :: curvature_ex
+    real(r8), intent(in) :: curvature_ex(:)
     real(r8) :: lnorm(3)
 
     integer :: i, nvofcell, ierr, imax
@@ -1044,11 +1093,11 @@ contains
       if (any(gmesh%cneighbor(:,i)<1)) cycle ! WARN: skipping boundaries. BCs might be automatic?
 
       ! TODO: this really should be in any cell neighboring a cell containing the interface
-      if (vof(1,i) > cutvof .and. vof(1,i) < 1-cutvof .and. .not.isZero(curvature(i))) then
+      if (vof(1,i) > 1e-2_r8 .and. vof(1,i) < 1-1e-2_r8 .and. .not.isZero(curvature(i))) then
         ! append to norms
-        curvature_ex = ellipsoid_curvature(i, maxloc(abs(int_norm(:,1,i)),1), gmesh, &
-            [0.7_r8, 0.5_r8, 0.3_r8])
-        err = abs((curvature(i) - curvature_ex) / curvature_ex)
+        ! curvature_ex = ellipsoid_curvature_x(maxloc(abs(int_norm(:,1,i)),1), gmesh%xc(:,i), &
+        !     [0.7_r8, 0.5_r8, 0.3_r8])
+        err = abs((curvature(i) - curvature_ex(i)) / curvature_ex(i))
         if (err > lnorm(3)) imax = i
         nvofcell = nvofcell + 1
         lnorm(1) = lnorm(1) + err
@@ -1115,11 +1164,6 @@ contains
 
     integer, intent(in) :: dir
     real(r8), intent(in) :: x(:), coeff(:)
-
-    ! print *, x
-    ! print *, norm2(x/coeff), dir
-    ! print *, (x/coeff)**2
-    ! print *
 
     select case(dir)
     case(1)
@@ -1292,12 +1336,31 @@ contains
 
   end function ellipsoid_curvature_x
 
-  real(r8) function ellipsoid_curvature(i, dir, gmesh, coeff)
-    integer, intent(in) :: i, dir
-    type(mesh_geom), intent(in) :: gmesh
-    real(r8), intent(in) :: coeff(:)
-    INSIST(dir >= 1 .and. dir <= 3)
-    ellipsoid_curvature = ellipsoid_curvature_x(dir, gmesh%xc(:,i), coeff)
-  end function ellipsoid_curvature
+  subroutine compute_exact_curvature_field(curvature_ex, interface_centroid, int_norm, mesh, &
+      mixed_cells)
+
+    use mesh_subset_type
+    use mixed_cell_subset_constructor
+
+    real(r8), allocatable, intent(out) :: curvature_ex(:)
+    real(r8), intent(in) :: interface_centroid(:,:), int_norm(:,:,:)
+    type(unstr_mesh), intent(in) :: mesh
+    type(mesh_subset), intent(in) :: mixed_cells
+
+    integer :: c, i
+
+    if (allocated(curvature_ex)) deallocate(curvature_ex)
+    allocate(curvature_ex(mesh%ncell))
+    curvature_ex = 0
+
+    do c = 1,mixed_cells%ncell
+      i = mixed_cells%cell_id(c)
+
+      curvature_ex(i) = ellipsoid_curvature_x(maxloc(abs(int_norm(:,1,i)),1), &
+          interface_centroid(:,c), &
+          [0.7_r8, 0.5_r8, 0.3_r8])
+    end do
+
+  end subroutine compute_exact_curvature_field
 
 end module analytic_surface_type_test
