@@ -268,7 +268,7 @@ contains
       ! end do
 
       curvature = abs(curvature_from_patch (intrec%local_patch(j,gmesh, vof(1,:)), &
-        0.0_r8, int_norm(:,1,j), vof(1,:), mesh, gmesh, j, verboseh))
+        0.0_r8, int_norm(:,1,j), vof(1,:), mesh, gmesh, j, verbose=verboseh))
 
       print '(a,es15.5)', 'curvature: ', curvature
       print '(a,es15.5)', 'error:     ', error

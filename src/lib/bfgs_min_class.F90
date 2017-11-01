@@ -104,7 +104,7 @@ contains
 
     this%numitr = i
     if (this%numitr > this%maxitr) then
-      !print *, "too many iterations in bfgs", i
+      print *, "too many iterations in bfgs", i
       status = 1
     end if
 
@@ -197,7 +197,7 @@ contains
     end do
 
     if (i > this%line_search_max) then
-      !print *, "too many backtracks in line search"
+      print *, "too many backtracks in line search"
       status = 1
     end if
     ! print *

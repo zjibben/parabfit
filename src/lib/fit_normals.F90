@@ -24,8 +24,8 @@ contains
     integer :: iter
 
     ! calculate the initial guess via Youngs' method
-    !int_norm = interface_normal(vof, mesh, gmesh, .false.)
-    call interface_normals_lvira(int_norm, vof, mesh, gmesh)
+    int_norm = interface_normal(vof, mesh, gmesh, .false.)
+    !call interface_normals_lvira(int_norm, vof, mesh, gmesh)
 
     ! iterate
     do iter = 1,iter_max

@@ -5,7 +5,7 @@
                 "region": {
                     "type": "ellipsoid",
     		    "center": [0.0, 0.0, 0.0],
-    		    "axes": [0.7, 0.5, 0.3]
+    		    "axes": [0.35, 0.3, 0.2]
                 }
     	    },
 	    "mat1": {

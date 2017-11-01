@@ -90,7 +90,7 @@ contains
       call this%init_tet (ierr, mesh%x(:,mesh%cnode(:,i)), gmesh%outnorm(:,:,i), mesh%volume(i))
     case ('HEX')
       call this%init (ierr, mesh%x(:,mesh%cnode(:,i)), hex_f, hex_e, gmesh%outnorm(:,:,i), &
-          mesh%volume(i), tesselate)
+          mesh%volume(i), tesselate=.false.) ! WARN: don't set tesselate=.false. in general
     case default
       call LS_fatal ('polyhedron_type: unknown mesh type')
     end select

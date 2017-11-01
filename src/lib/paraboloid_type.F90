@@ -38,12 +38,14 @@ module paraboloid_type
     procedure, private :: Dl
     procedure, private :: optimalWorkSize
     procedure, private :: localCoords
+    procedure, private :: globalCoords
     procedure :: curvature
     procedure :: normal
     procedure :: normal_average
     procedure :: curvatureQdrtc
     procedure :: Fstr
     procedure :: fstr_rot
+    procedure :: point_on_surface
     procedure, private :: print_uf
     procedure, private :: print_f
 #ifndef NAGFOR
@@ -528,6 +530,20 @@ contains
 
   end function Dl
 
+  function point_on_surface(this, x) result(xr)
+
+    class(paraboloid), intent(in) :: this
+    real(r8), intent(in) :: x(:)
+    real(r8) :: xr(3)
+
+    xr = this%localCoords(x)
+    xr(3) = 0
+    xr(3) = sum(this%cr*this%l(xr))
+
+    xr = this%globalCoords(xr)
+
+  end function point_on_surface
+
   ! calculate the curvature at a point x
   real(r8) function curvature (this,x)
 
@@ -651,14 +667,18 @@ contains
   end function normal_average
 
   function localCoords(this, x) result(xr)
-
     class(paraboloid), intent(in) :: this
     real(r8), intent(in) :: x(:)
     real(r8) :: xr(3)
-
     xr = matmul(this%rot, x - this%offset)
-
   end function localCoords
+
+  function globalCoords(this, xr) result(x)
+    class(paraboloid), intent(in) :: this
+    real(r8), intent(in) :: xr(:)
+    real(r8) :: x(3)
+    x = matmul(transpose(this%rot), xr) + this%offset
+  end function globalCoords
 
   ! calculate the curvature at a point x
   real(r8) function curvatureQdrtc (this,x)

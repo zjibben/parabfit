@@ -236,6 +236,8 @@ contains
 
     use consts, only: cutvof
     use lvira_normals
+    use mixed_cell_subset_constructor
+    use mesh_subset_type
 
     real(r8), intent(in) :: vof(:,:), int_norm(:,:)
     type(unstr_mesh), intent(in) :: mesh
@@ -243,11 +245,13 @@ contains
     real(r8), intent(in) :: norm_ex(3)
     real(r8) :: lnorm(3)
 
+    type(mesh_subset) :: mixed_cells
     integer :: i, nvofcell, ierr, imax
     real(r8) :: err
     real(r8), allocatable :: int_norm_lvira(:,:,:)
 
-    call interface_normals_lvira(int_norm_lvira, vof, mesh, gmesh)
+    mixed_cells = mixed_cell_subset(vof, mesh)
+    call interface_normals_lvira(int_norm_lvira, vof, mesh, gmesh, mixed_cells)
 
     lnorm = 0; nvofcell = 0
     do i = 1,mesh%ncell

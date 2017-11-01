@@ -22,21 +22,22 @@ module lvira_normals
 
 contains
 
-  subroutine interface_normals_lvira(int_norm, vof, mesh, gmesh)
+  subroutine interface_normals_lvira(int_norm, vof, mesh, gmesh, mixed_cells)
 
     use int_norm_module
     use timer_tree_type
     use unstr_mesh_type
     use mesh_geom_type
-    use consts, only: cutvof
+    use mesh_subset_type
     use curvature_hf, only: HFCell ! DEBUGGING
 
     real(r8), allocatable, intent(out) :: int_norm(:,:,:)
     real(r8), intent(in) :: vof(:,:)
     type(unstr_mesh), intent(in) :: mesh
     type(mesh_geom), intent(in) :: gmesh
+    type(mesh_subset), intent(in) :: mixed_cells
 
-    integer :: i, m, ierr
+    integer :: c, i, m, ierr
 
     call start_timer("lvira normals")
 
@@ -47,8 +48,9 @@ contains
     ! Dynamically schedule since only a few cells are mixed
     ! and they take the vast majority of the runtime.
 
-    !$omp parallel do schedule(dynamic,100)
-    do i = 1,mesh%ncell
+    !$omp parallel do schedule(dynamic,100) private(i)
+    do c = 1,mixed_cells%ncell
+      i = mixed_cells%cell_id(c)
       call interface_normal_lvira(int_norm(:,m,i), i, vof(m,:), mesh, gmesh)
     end do
     !$omp end parallel do
