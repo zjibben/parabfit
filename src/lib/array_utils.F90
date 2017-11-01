@@ -20,7 +20,7 @@ module array_utils
   public :: first_true_loc,last_true_loc,xrange,reorder,insertion_sort,int2str,&
       indexSort, &
       containsPair, containsValue, containsPoint, pointIndex, signs, &
-      reverse,invert,isZero, index_of, clip, &
+      reverse,invert,isZero, index_of, clip, minmag, &
       meanArithmetic, meanHarmonic, &
       outer_product, &
       magnitude, magnitude2, normalize, normalizeIfNonzero, projectOnto, crossProduct, &
@@ -670,5 +670,12 @@ contains
     end if
 
   end function rotationMatrix
+
+  ! return the argument with the minimum absolute value
+  real(r8) pure function minmag(a,b)
+    real(r8), intent(in) :: a, b
+    minmag = a
+    if (abs(a) > abs(b)) minmag = b
+  end function minmag
 
 end module array_utils

@@ -13,6 +13,8 @@ module analytic_surface_type_test
 
   public :: analytic_surface_test_suite, curvature_test_suite
 
+  real(r8), parameter :: pi = 3.141592653589793238462643383279502884_r8
+
 contains
 
   subroutine analytic_surface_test_suite ()
@@ -780,6 +782,10 @@ contains
     lnorm(1) = lnorm(1) / totvolume
     lnorm(2) = sqrt(lnorm(2) / totvolume)
     !print '(a,3es10.2)', 'VOF L1,L2,Linf = ',lnorm
+
+    !totvolume = (4*pi/3) * 0.35_r8**3
+    totvolume = (4*pi/3) * 0.35_r8*0.3_r8*0.2_r8
+    print '(a,es10.2)', 'VOF err = ', abs(sum(vof(2,:)*mesh%volume) - totvolume)/totvolume
 
     call intrec%write_ply("ft_test.ply")
 

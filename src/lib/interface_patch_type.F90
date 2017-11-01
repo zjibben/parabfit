@@ -27,7 +27,7 @@ module interface_patch_type
 contains
 
   real(r8) function curvature_from_patch(interface_reconstructions, weight_scale, normal, vof, &
-      mesh, gmesh, cid, verbose)
+      mesh, gmesh, cid, centroid, verbose)
 
     use analytic_surface_type
     use paraboloid_type
@@ -44,6 +44,7 @@ contains
     type(unstr_mesh), intent(in) :: mesh
     type(mesh_geom), intent(in) :: gmesh
     integer, intent(in) :: cid
+    real(r8), intent(out), optional :: centroid(:)
     logical, intent(in), optional :: verbose
 
     integer :: i
@@ -119,6 +120,8 @@ contains
     call surf%volumetricFit(interface_reconstructions)
     curvature_from_patch = surf%curvature(xc)
     !curvature_from_patch = surf%curvature(interface_reconstructions(1)%elements(1)%centroid())
+
+    if (present(centroid)) centroid = surf%point_on_surface(xc)
 
     if (verboseh) then
       ! do i = 1,size(interface_reconstructions)

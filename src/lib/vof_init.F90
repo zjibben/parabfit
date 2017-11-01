@@ -45,7 +45,7 @@ module vof_init
   public :: vof_initialize
 
   ! TODO: make these user-specified parameters
-  integer , parameter :: cell_vof_recursion_limit = 6
+  integer, parameter :: cell_vof_recursion_limit = 5 ! 6, 8
 
 contains
 
@@ -152,7 +152,7 @@ contains
     type(material_geometry), intent(in) :: matl_init_geometry
     real(r8) :: cell_vof(nmat)
 
-    integer :: ierr, v
+    integer :: ierr
     type(dnc_cell) :: cell
 
     call cell%init (ierr, matl_init_geometry, i, mesh, gmesh, tesselate=.false.)
@@ -181,26 +181,20 @@ contains
 
     ! if the cell contains an interface (and therefore has at least two materials
     ! and we haven't yet hit our recursion limit, divide the hex and repeat
-    if (this%contains_interface(matl_geometry) .and. depth < cell_vof_recursion_limit) then
+    if (depth < cell_vof_recursion_limit .and. this%contains_interface(matl_geometry)) then
       ! tally the vof from sub-cells
       call this%set_division_variables(subcell, matl_geometry)
       hex_vof = 0; sum_vol = 0
       do i = 1,this%ntets
         call this%get_subcell(subcell, matl_geometry, i)
-        if (any(subcell%matl_at_node==0) .or. .not.allocated(subcell%geom%parent%x) &
-            .or. subcell%geom%volume()==0) then
-          print *, depth
-          print *, subcell%matl_at_node
-          call LS_Fatal("invalid subcell")
-        end if
         hex_vof = hex_vof + subcell%vof(matl_geometry,nmat,depth+1) * subcell%geom%volume()
         sum_vol = sum_vol + subcell%geom%volume()
       end do
       hex_vof = hex_vof / sum_vol
-      if (.not.isZero(sum_vol - this%geom%volume())) then
-        print *, sum_vol, this%geom%volume(), sum_vol - this%geom%volume()
-        call LS_Fatal("volumes don't match")
-      end if
+      ! if (.not.isZero(sum_vol - this%geom%volume())) then
+      !   print *, sum_vol, this%geom%volume(), sum_vol - this%geom%volume()
+      !   call LS_Fatal("volumes don't match")
+      ! end if
     else
       ! if we are past the recursion limit
       ! or the cell does not contain an interface, calculate
@@ -208,21 +202,21 @@ contains
       hex_vof = this%vof_from_nodes(matl_geometry, nmat)
     end if
 
-    if (any(ieee_is_nan(hex_vof)) .or. abs(sum(hex_vof) - 1) > 1e-10_r8) then
-      print *, hex_vof, sum(hex_vof)
-      print *, depth, sum_vol
-      print *, this%geom%volume()
-      this%geom%parent%vol = 0
-      print *, this%geom%volume()
-      subcell = this
-      subcell%geom%parent%vol = 0
-      call subcell%geom%tesselate()
-      print *, subcell%geom%volume(), sum_vol * this%geom%volume() / subcell%geom%volume()
-      print *, this%contains_interface(matl_geometry) .and. depth < cell_vof_recursion_limit
-      print *, this%matl_at_node
-      print *, hex_vof
-      call LS_Fatal("invalid init vof")
-    end if
+    ! if (any(ieee_is_nan(hex_vof)) .or. abs(sum(hex_vof) - 1) > 1e-10_r8) then
+    !   print *, hex_vof, sum(hex_vof)
+    !   print *, depth, sum_vol
+    !   print *, this%geom%volume()
+    !   this%geom%parent%vol = 0
+    !   print *, this%geom%volume()
+    !   subcell = this
+    !   subcell%geom%parent%vol = 0
+    !   call subcell%geom%tesselate()
+    !   print *, subcell%geom%volume(), sum_vol * this%geom%volume() / subcell%geom%volume()
+    !   print *, this%contains_interface(matl_geometry) .and. depth < cell_vof_recursion_limit
+    !   print *, this%matl_at_node
+    !   print *, hex_vof
+    !   call LS_Fatal("invalid init vof")
+    ! end if
 
   end function vof
 
@@ -230,31 +224,100 @@ contains
   ! and determines if it contains an interface for a given material.
   ! This is done by checking if every vertex lies within the material, or not.
   pure logical function contains_interface(this, matl_geometry)
-
     class(dnc_cell),     intent(in) :: this
     class(base_region), intent(in) :: matl_geometry
-
     contains_interface = any(this%matl_at_node /= this%matl_at_node(1))
-
   end function contains_interface
 
-  ! the material at each node contributes 1/8th of the vof in the given hex
+  ! calculate the volume fraction from nodes. used at the bottom depth
+  !
+  ! If we have >2 materials in this simulation, we need to calculate the vof
+  ! from nodes only, using the average of the node materials. If we
+  ! have 2 materials, we can reconstruct
+  ! a plane from the signed distance function. Reconstructing the plane
+  ! gives us much greater accuracy, which allows us to go to a lower depth
+  ! and save significantly on computational cost.
+  !
+  ! TODO: We could switch this dynamically, so instead of looking at how many
+  !       materials are in the entire simulation, we look at how many are in
+  !       this cell. Then we can change the depth required for 2-phase cells,
+  !       vs many-material cells.
   function vof_from_nodes (this, matl_geometry, nmat)
 
-    class(dnc_cell),     intent(in) :: this
+    use plane_type
+    use array_utils, only: normalize
+    use cell_geometry, only: cross_product
+
+    class(dnc_cell), intent(inout) :: this
     class(base_region), intent(in) :: matl_geometry
-    integer,            intent(in) :: nmat
-    real(r8)                       :: vof_from_nodes(nmat)
+    integer, intent(in) :: nmat
+    real(r8) :: vof_from_nodes(nmat)
 
-    integer :: m
+    integer :: m, ierr, i, e
+    real(r8) :: x(3,3), s1, s2
+    type(plane) :: P
+    type(polyhedron) :: poly
 
-    !if (any(this%matl_at_node==0)) call LS_fatal("node materials unset")
+    if (nmat > 2 .or. .not.this%contains_interface(matl_geometry)) then
+      vof_from_nodes = 0
+      do m = 1,nmat
+        vof_from_nodes(m) = count(this%matl_at_node == m)
+      end do
+      vof_from_nodes = vof_from_nodes / this%geom%parent%nVerts
+    else
+      ! get 3 points intersecting the edges of this cell
+      i = 0
+      do e = 1,this%geom%parent%nEdges
+        if (this%matl_at_node(this%geom%parent%edge_vid(1,e)) /= &
+            this%matl_at_node(this%geom%parent%edge_vid(2,e))) then
+          s1 = matl_geometry%signed_distance(this%geom%parent%x(:,this%geom%parent%edge_vid(1,e)))
+          s2 = matl_geometry%signed_distance(this%geom%parent%x(:,this%geom%parent%edge_vid(2,e)))
 
-    vof_from_nodes = 0
-    do m = 1,nmat
-      vof_from_nodes(m) = count(this%matl_at_node == m)
-    end do
-    vof_from_nodes = vof_from_nodes / this%geom%parent%nVerts
+          i = i + 1
+          x(:,i) = this%geom%parent%x(:,this%geom%parent%edge_vid(1,e)) + &
+              s1/(s1-s2) * (this%geom%parent%x(:,this%geom%parent%edge_vid(2,e)) - &
+              this%geom%parent%x(:,this%geom%parent%edge_vid(1,e)))
+          if (i == 3) exit
+        end if
+      end do
+      ASSERT(e <= this%geom%parent%nEdges)
+      if (e <= this%geom%parent%nEdges) then
+        ! construct a plane from the 3 points
+        P%normal = normalize(cross_product(x(:,2) - x(:,1), x(:,3) - x(:,1)))
+        P%rho = dot_product(x(:,1), P%normal)
+
+        ! find a node that is guaranteed not to intersect the interface
+        ! flip the plane normal if it is outside the halfspace but inside the material
+        do i = 1,this%geom%parent%nVerts
+          s1 = P%signed_distance(this%geom%parent%x(:,i))
+
+          if (abs(s1) > 0) then
+            ! WARN: right now this is hardwired for material 2 being the "droplet"
+            !       we will need to fix this
+            if ((s1 > 0 .and. this%matl_at_node(i) == 2) .or. &
+                (s1 < 0 .and. this%matl_at_node(i) /= 2)) then
+              P%normal = -P%normal
+              P%rho = -P%rho
+            end if
+            exit
+          end if
+        end do
+
+        ! get the volume fraction behind the plane in this cell
+        ! copy into new polyhedron structure because face normals
+        ! aren't calculated at each level of the initialization
+        ! maybe a better way of getting around this?
+        ! WARN: the hardwiring for material 2 as the droplet is also here
+        call poly%init(ierr, this%geom%parent%x)
+        vof_from_nodes(2) = poly%volume_behind_plane(P, ierr) / this%geom%volume()
+        vof_from_nodes(1) = 1 - vof_from_nodes(2)
+      else
+        ! interface doesn't actually intersect this subcell
+        ! could happen if it just barely touches an edge
+        vof_from_nodes = 0
+        vof_from_nodes(this%matl_at_node(1)) = 1
+      end if
+    end if
 
   end function vof_from_nodes
 
@@ -347,50 +410,21 @@ contains
     class(base_region), intent(in) :: matl_geometry
     integer, intent(in) :: i
 
-    real(r8) :: xtmp(3,8)
-    integer :: matl_at_node(8), ierr
-
     integer :: nV, f, v, feid, e, edge_side
-    !integer :: t, ff, ee
 
     ! get face, face_edge_id, and edge_side of this tet
     ! assume all faces have the same number of nodes/edges
     ! i = (f-1)*2*nV + (feid-1)*2 + edge_side
+    ! WARN: assumes all faces have the same number of vertices.
+    !       good for bricks and tets, not prisms.
     nV = count(this%geom%parent%face_vid(:,1) > 0)
-
-    ! t = 0
-    ! do ff = 1,this%geom%parent%nFaces
-    !   do ee = 1,nV
-    !     t = t+1
-
-    !     f = (t-1) / (2*nV) + 1
-    !     feid = (t - 1 - (f-1)*2*nV) / 2 + 1
-    !     edge_side = t - (f-1)*2*nV - (feid-1)*2
-    !     print *, ff, ee, 1
-    !     print *, f, feid, edge_side
-    !     print *, f==ff .and. ee==feid .and. edge_side==1
-    !     print *
-
-
-    !     t = t+1
-
-    !     f = (t-1) / (2*nV) + 1
-    !     feid = (t - 1 - (f-1)*2*nV) / 2 + 1
-    !     edge_side = t - (f-1)*2*nV - (feid-1)*2
-    !     print *, ff, ee, 2
-    !     print *, f, feid, edge_side
-    !     print *, f==ff .and. ee==feid .and. edge_side==2
-    !     print *
-    !   end do
-    ! end do
 
     f = (i-1) / (2*nV) + 1
     feid = (i - 1 - (f-1)*2*nV) / 2 + 1
     edge_side = i - (f-1)*2*nV - (feid-1)*2
-    ! print *, i, f, feid, edge_side
-    ! stop
     e = this%geom%parent%face_eid(feid,f)
 
+    ! node geometry
     subcell%geom%parent%x(:,1) = this%cellc
     subcell%geom%parent%x(:,2) = this%facec(:,f)
     if (edge_side==1) then
@@ -398,9 +432,12 @@ contains
       subcell%geom%parent%x(:,4) = this%edgec(:,e)
     else
       subcell%geom%parent%x(:,3) = this%edgec(:,e)
-      subcell%geom%parent%x(:,4) = this%geom%parent%x(:,this%geom%parent%face_vid(modulo(feid,nV)+1,f))
+      subcell%geom%parent%x(:,4) = &
+          this%geom%parent%x(:,this%geom%parent%face_vid(modulo(feid,nV)+1,f))
     end if
+    subcell%geom%parent%vol = tet_volume(subcell%geom%parent%x)
 
+    ! materials at nodes
     subcell%matl_at_node(1) = this%mcellc
     subcell%matl_at_node(2) = this%mfacec(f)
     if (edge_side==1) then
@@ -411,191 +448,13 @@ contains
       subcell%matl_at_node(4) = this%matl_at_node(this%geom%parent%face_vid(modulo(feid,nV)+1,f))
     end if
 
-    !call subcell%init (ierr, xtmp(:,:4), set_face_normals=.false.)
-    ! subcell%x = xtmp(:,:4)
-    ! subcell%matl_at_node = matl_at_node(:4)
-    subcell%geom%parent%vol = tet_volume(subcell%geom%parent%x)
-
-    ! print *, 'here0', allocated(subcell%x), subcell%tesselated
-
-    ! print *, i, f, feid, edge_side, e
-
-    ! print *, xtmp(:,:4)
-    ! call subcell%print_data()
-    ! print *, 'here1', allocated(subcell%x), subcell%tesselated
-
-    ! ! set subhex node positions
-    ! select case(i)
-    ! case(1)
-    !   xtmp(:,1) = this%x(:,1)
-    !   xtmp(:,2) = this%edgec(:,1)
-    !   xtmp(:,3) = this%facec(:,5)
-    !   xtmp(:,4) = this%edgec(:,4)
-    !   xtmp(:,5) = this%edgec(:,5)
-    !   xtmp(:,6) = this%facec(:,2)
-    !   xtmp(:,7) = this%cellc(:)
-    !   xtmp(:,8) = this%facec(:,3)
-
-    !   matl_at_node(1) = this%matl_at_node(1)
-    !   matl_at_node(2) = this%medgec(1)
-    !   matl_at_node(3) = this%mfacec(5)
-    !   matl_at_node(4) = this%medgec(4)
-    !   matl_at_node(5) = this%medgec(5)
-    !   matl_at_node(6) = this%mfacec(2)
-    !   matl_at_node(7) = this%mcellc
-    !   matl_at_node(8) = this%mfacec(3)
-
-    ! case(2)
-    !   xtmp(:,1) = this%edgec(:,1)
-    !   xtmp(:,2) = this%x(:,2)
-    !   xtmp(:,3) = this%edgec(:,2)
-    !   xtmp(:,4) = this%facec(:,5)
-    !   xtmp(:,5) = this%facec(:,2)
-    !   xtmp(:,6) = this%edgec(:,6)
-    !   xtmp(:,7) = this%facec(:,4)
-    !   xtmp(:,8) = this%cellc(:)
-
-    !   matl_at_node(1) = this%medgec(1)
-    !   matl_at_node(2) = this%matl_at_node(2)
-    !   matl_at_node(3) = this%medgec(2)
-    !   matl_at_node(4) = this%mfacec(5)
-    !   matl_at_node(5) = this%mfacec(2)
-    !   matl_at_node(6) = this%medgec(6)
-    !   matl_at_node(7) = this%mfacec(4)
-    !   matl_at_node(8) = this%mcellc
-
-    ! case(3)
-    !   xtmp(:,1) = this%facec(:,5)
-    !   xtmp(:,2) = this%edgec(:,2)
-    !   xtmp(:,3) = this%x(:,3)
-    !   xtmp(:,4) = this%edgec(:,3)
-    !   xtmp(:,5) = this%cellc(:)
-    !   xtmp(:,6) = this%facec(:,4)
-    !   xtmp(:,7) = this%edgec(:,7)
-    !   xtmp(:,8) = this%facec(:,1)
-
-    !   matl_at_node(1) = this%mfacec(5)
-    !   matl_at_node(2) = this%medgec(2)
-    !   matl_at_node(3) = this%matl_at_node(3)
-    !   matl_at_node(4) = this%medgec(3)
-    !   matl_at_node(5) = this%mcellc
-    !   matl_at_node(6) = this%mfacec(4)
-    !   matl_at_node(7) = this%medgec(7)
-    !   matl_at_node(8) = this%mfacec(1)
-
-    ! case(4)
-    !   xtmp(:,1) = this%edgec(:,4)
-    !   xtmp(:,2) = this%facec(:,5)
-    !   xtmp(:,3) = this%edgec(:,3)
-    !   xtmp(:,4) = this%x(:,4)
-    !   xtmp(:,5) = this%facec(:,3)
-    !   xtmp(:,6) = this%cellc(:)
-    !   xtmp(:,7) = this%facec(:,1)
-    !   xtmp(:,8) = this%edgec(:,8)
-
-    !   matl_at_node(1) = this%medgec(4)
-    !   matl_at_node(2) = this%mfacec(5)
-    !   matl_at_node(3) = this%medgec(3)
-    !   matl_at_node(4) = this%matl_at_node(4)
-    !   matl_at_node(5) = this%mfacec(3)
-    !   matl_at_node(6) = this%mcellc
-    !   matl_at_node(7) = this%mfacec(1)
-    !   matl_at_node(8) = this%medgec(8)
-
-    ! case(5)
-    !   xtmp(:,1) = this%edgec(:,5)
-    !   xtmp(:,2) = this%facec(:,2)
-    !   xtmp(:,3) = this%cellc(:)
-    !   xtmp(:,4) = this%facec(:,3)
-    !   xtmp(:,5) = this%x(:,5)
-    !   xtmp(:,6) = this%edgec(:,9)
-    !   xtmp(:,7) = this%facec(:,6)
-    !   xtmp(:,8) = this%edgec(:,12)
-
-    !   matl_at_node(1) = this%medgec(5)
-    !   matl_at_node(2) = this%mfacec(2)
-    !   matl_at_node(3) = this%mcellc
-    !   matl_at_node(4) = this%mfacec(3)
-    !   matl_at_node(5) = this%matl_at_node(5)
-    !   matl_at_node(6) = this%medgec(9)
-    !   matl_at_node(7) = this%mfacec(6)
-    !   matl_at_node(8) = this%medgec(12)
-
-    ! case(6)
-    !   xtmp(:,1) = this%facec(:,2)
-    !   xtmp(:,2) = this%edgec(:,6)
-    !   xtmp(:,3) = this%facec(:,4)
-    !   xtmp(:,4) = this%cellc(:)
-    !   xtmp(:,5) = this%edgec(:,9)
-    !   xtmp(:,6) = this%x(:,6)
-    !   xtmp(:,7) = this%edgec(:,10)
-    !   xtmp(:,8) = this%facec(:,6)
-
-    !   matl_at_node(1) = this%mfacec(2)
-    !   matl_at_node(2) = this%medgec(6)
-    !   matl_at_node(3) = this%mfacec(4)
-    !   matl_at_node(4) = this%mcellc
-    !   matl_at_node(5) = this%medgec(9)
-    !   matl_at_node(6) = this%matl_at_node(6)
-    !   matl_at_node(7) = this%medgec(10)
-    !   matl_at_node(8) = this%mfacec(6)
-
-    ! case(7)
-    !   xtmp(:,1) = this%cellc(:)
-    !   xtmp(:,2) = this%facec(:,4)
-    !   xtmp(:,3) = this%edgec(:,7)
-    !   xtmp(:,4) = this%facec(:,1)
-    !   xtmp(:,5) = this%facec(:,6)
-    !   xtmp(:,6) = this%edgec(:,10)
-    !   xtmp(:,7) = this%x(:,7)
-    !   xtmp(:,8) = this%edgec(:,11)
-
-    !   matl_at_node(1) = this%mcellc
-    !   matl_at_node(2) = this%mfacec(4)
-    !   matl_at_node(3) = this%medgec(7)
-    !   matl_at_node(4) = this%mfacec(1)
-    !   matl_at_node(5) = this%mfacec(6)
-    !   matl_at_node(6) = this%medgec(10)
-    !   matl_at_node(7) = this%matl_at_node(7)
-    !   matl_at_node(8) = this%medgec(11)
-
-    ! case(8)
-    !   xtmp(:,1) = this%facec(:,3)
-    !   xtmp(:,2) = this%cellc(:)
-    !   xtmp(:,3) = this%facec(:,1)
-    !   xtmp(:,4) = this%edgec(:,8)
-    !   xtmp(:,5) = this%edgec(:,12)
-    !   xtmp(:,6) = this%facec(:,6)
-    !   xtmp(:,7) = this%edgec(:,11)
-    !   xtmp(:,8) = this%x(:,8)
-
-    !   matl_at_node(1) = this%mfacec(3)
-    !   matl_at_node(2) = this%mcellc
-    !   matl_at_node(3) = this%mfacec(1)
-    !   matl_at_node(4) = this%medgec(8)
-    !   matl_at_node(5) = this%medgec(12)
-    !   matl_at_node(6) = this%mfacec(6)
-    !   matl_at_node(7) = this%medgec(11)
-    !   matl_at_node(8) = this%matl_at_node(8)
-    ! case default
-    !   call LS_fatal("requested invalid subhex")
-    ! end select
-
-    ! call subcell%init (ierr, xtmp, hex_f, hex_e, tesselate=.false.)
-    ! subcell%matl_at_node = matl_at_node
-
-    ! for nonorthogonal meshes, sub-cell volumes are
-    ! not equal, so the weight is the ratio of volumes
-    !subcell%weight = subcell%volume() / this%volume()
-    !subcell%weight = 1.0_r8 / 8.0_r8
-
     !if (subcell%weight==0) call LS_fatal("zero weight")
     if (any(subcell%matl_at_node==0)) call LS_fatal("node materials unset")
+    if (.not.allocated(subcell%geom%parent%x)) call LS_Fatal("invalid subcell")
     if (subcell%geom%volume()==0) then
       call this%geom%print_data()
       call LS_fatal("zero subcell volume")
     end if
-    !print *, subcell%matl_at_node
 
   end subroutine get_subcell
 

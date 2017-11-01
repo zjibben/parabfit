@@ -24,6 +24,7 @@ module cylinder_region_type
     real(r8)              :: radius, halfheight
   contains
     procedure :: location_is_inside
+    procedure :: signed_distance
   end type cylinder_region
 
   interface cylinder_region
@@ -62,8 +63,31 @@ contains
     d = dot_product(xt,this%axis)
     r = norm2(xt - d*this%axis)
 
-    location_is_inside = r <= this%radius .and. abs(d) <= this%halfheight
+    location_is_inside = r < this%radius .and. abs(d) < this%halfheight
 
   end function location_is_inside
+
+  real(r8) function signed_distance(this, x)
+
+    class(cylinder_region), intent(in) :: this
+    real(r8), intent(in) :: x(:)
+
+    real(r8) :: xt(ndim), d, r
+
+    ! get distance from cylinder origin both along and orthogonal to the axis
+    xt = x - this%center
+    d = dot_product(xt,this%axis)
+    r = norm2(xt - d*this%axis)
+
+    signed_distance = r - this%radius
+
+    ! distance from the caps
+    r = d - this%halfheight
+    if (abs(signed_distance) > abs(r)) signed_distance = r
+
+    r = d + this%halfheight
+    if (abs(signed_distance) > abs(r)) signed_distance = r
+
+  end function signed_distance
 
 end module cylinder_region_type

@@ -49,14 +49,14 @@ contains
 
     ! set up the cylinder geometry
     call alloc_cylinder_region (rgn(1)%r, [0.0_r8, 0.0_r8, 0.0_r8], [0.0_r8, 0.0_r8, 1.0_r8], &
-        0.25_r8, 1.0_r8)
+        0.25_r8, 3.0_r8)
     call alloc_fill_region (rgn(2)%r)
 
     call alloc_const_scalar_func (subfunc(1)%f, 1.0_r8)
     call alloc_const_scalar_func (subfunc(2)%f, 2.0_r8)
 
     call alloc_piecewise_scalar_func (matl_index, subfunc, rgn)
-    call matl_geom%init (matl_index)
+    call matl_geom%init (matl_index, rgn)
 
     ! set up cell
     x(:,1) = xc + 0.5_r8 * dx * [-1.0_r8, -1.0_r8, -1.0_r8]

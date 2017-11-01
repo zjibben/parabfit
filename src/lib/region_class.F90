@@ -17,6 +17,7 @@ module region_class
   type, abstract, public :: region
   contains
     procedure(location_is_inside_region), deferred :: location_is_inside
+    procedure(signed_distance_to_surface), deferred :: signed_distance
   end type region
 
   abstract interface
@@ -25,10 +26,16 @@ module region_class
       class(region), intent(in) :: this
       real(r8), intent(in) :: x(:)
     end function location_is_inside_region
+
+    real(r8) function signed_distance_to_surface(this, x)
+      import :: region, r8
+      class(region), intent(in) :: this
+      real(r8), intent(in) :: x(:)
+    end function signed_distance_to_surface
   end interface
 
   type, public :: region_box
     class(region), allocatable :: r
   end type region_box
-  
+
 end module region_class
