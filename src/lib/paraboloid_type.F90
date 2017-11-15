@@ -46,6 +46,7 @@ module paraboloid_type
     procedure :: Fstr
     procedure :: fstr_rot
     procedure :: point_on_surface
+    procedure :: point_along_line
     procedure, private :: print_uf
     procedure, private :: print_f
 #ifndef NAGFOR
@@ -543,6 +544,36 @@ contains
     xr = this%globalCoords(xr)
 
   end function point_on_surface
+
+  ! given a point and a direction, find the point on
+  ! the surface on that line closest to the given point
+  function point_along_line(this, xo, do) result(xr)
+
+    class(paraboloid), intent(in) :: this
+    real(r8), intent(in) :: xo(:), do(:)
+    real(r8) :: xr(3)
+
+    real(r8) :: l, t, a, b, c, x(3), d(3)
+
+    ! convert to rotated coordinate space
+    x = this%localCoords(xo)
+    d = matmul(this%rot, do)
+
+    ! get quadratic coefficients
+    a = this%cr(5)*d(1)**2 + this%cr(6)*d(1)*d(2) + this%cr(7)*d(2)**2
+    b = this%cr(2)*d(1) + this%cr(3)*d(2) + 2*this%cr(5)*x(1)*d(1) + this%cr(6)*x(2)*d(1) &
+        + this%cr(6)*x(1)*d(2) + 2*this%cr(7)*x(2)*d(2) - d(3)
+    c = sum(this%cr * this%l(x))
+
+    ! looking for the nearest point, so minimum absolute l
+    l = -b + sqrt(b**2 - 4*a*c)
+    t = -b - sqrt(b**2 - 4*a*c)
+    if (abs(t) < abs(l)) l = t
+    l = l / (2*a)
+
+    xr = xo + l*do
+
+  end function point_along_line
 
   ! calculate the curvature at a point x
   real(r8) function curvature (this,x)

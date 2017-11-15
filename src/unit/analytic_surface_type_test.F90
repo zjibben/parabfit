@@ -14,6 +14,7 @@ module analytic_surface_type_test
   public :: analytic_surface_test_suite, curvature_test_suite
 
   real(r8), parameter :: pi = 3.141592653589793238462643383279502884_r8
+  real(r8), parameter :: error_cutoff = 1e-2_r8
 
 contains
 
@@ -553,7 +554,6 @@ contains
     use parameter_list_type
     use parameter_list_json
     use int_norm_module
-    use interface_patch_type
     use vof_init
     use multimat_cell_type
     use array_utils, only: normalize, isZero
@@ -576,7 +576,7 @@ contains
     real(r8), allocatable :: int_norm(:,:,:), curvature_ex(:)
     integer :: infile
 
-    ! create a regular 2D mesh
+    ! create a regular 3D mesh
     mesh = new_unstr_mesh ([-0.5_r8, -0.5_r8, -0.5_r8], &
         [0.5_r8, 0.5_r8, 0.5_r8], [mesh_size,mesh_size,mesh_size])
     call gmesh%init (mesh)
@@ -628,7 +628,6 @@ contains
     use parameter_list_type
     use parameter_list_json
     use int_norm_module
-    use interface_patch_type
     use vof_init
     use multimat_cell_type
     use array_utils, only: normalize, isZero
@@ -651,8 +650,8 @@ contains
     real(r8), allocatable :: curvature(:), curvature_ex(:)
     integer :: infile
 
-    ! create a regular 2D mesh
-    cell_type = 'tet' ! rnd, tet
+    ! read in mesh file
+    cell_type = 'rnd' ! rnd, tet
     write (tmp, '(a,i0,3a)') "cube_", mesh_size, "_", cell_type, ".exo"
     mesh_filename = trim(adjustl(tmp))
     mesh = new_unstr_mesh (mesh_filename)
@@ -810,7 +809,7 @@ contains
         ! TODO: this really should be in any cell neighboring a cell containing the interface
         !if (vof(1,i) > cutvof .and. vof(1,i) < 1-cutvof) then !.and. .not.isZero(curvature(i))) then
         err = 0
-        if (vof(1,i) > 1e-2_r8 .and. vof(1,i) < 1-1e-2_r8) then
+        if (vof(1,i) > error_cutoff .and. vof(1,i) < 1-error_cutoff) then
           curvature(i) = abs(curvature_from_patch (intrec%local_patch(i,gmesh, vof(1,:)), &
               wgt_scale, int_norm_lvira(:,1,i), vof(1,:), mesh, gmesh, i, centroid=xc))
           if (isZero(curvature(i))) cycle
@@ -826,7 +825,7 @@ contains
           lnorm(2) = lnorm(2) + err**2 * mesh%volume(i)
           lnorm(3) = max(lnorm(3),err)
 
-          ! if (err > 6.5e-2_r8) then
+          ! if (err > 5e-2_r8) then
           ! !if (i==47291 .or. i==47131) then
           ! !if (i==47131) then
           ! !if (i==72891) then
@@ -839,15 +838,15 @@ contains
           ! !   curvature(i) = abs(curvature_from_patch (intrec%local_patch(i,gmesh, vof(1,:)), &
           ! !       wgt_scale, int_norm_hf2(:,1,i), vof(1,:), mesh, gmesh, i, .true.))
           ! !   print *
-          !   print '(i6, 3es14.4)', i, curvature(i), curvature_ex, err !, c_new_line
+          !   print '(i6, 3es14.4)', i, curvature(i), curvature_ex(i), err !, c_new_line
           !   print '(2es15.5)', vof(1,i), 1 - vof(1,i)
           !   print '(2es15.5)', gmesh%xc(1:2,i)
           !   print '(2es15.5)', minval(mesh%x(1,mesh%cnode(:,i))), minval(mesh%x(2,mesh%cnode(:,i)))
-          !   print *, 'nvofs: ', vof(1,gmesh%cneighbor(:,i))
+          !   print *, 'nvofs: ', vof(1,gmesh%caneighbor(i)%elements)
           !   ! print '(a, 3es14.4)', 'yn: ', int_norm(:,1,i)
           !   ! print '(a, 3es14.4)', 'hn: ', int_norm_hf2(:,1,i)
           !   print *
-          !   !call LS_fatal ("large curvature error")
+          !   call LS_fatal ("large curvature error")
           ! end if
         end if
         !write (fh, '(2(es15.5,a),es15.5)') gmesh%xc(1,i),',', gmesh%xc(2,i),',', err
@@ -1039,7 +1038,7 @@ contains
       if (any(gmesh%cneighbor(:,i)<1)) cycle ! WARN: skipping boundaries. BCs might be automatic?
 
       err = 0
-      if (vof(1,i) > 1e-2_r8 .and. vof(1,i) < 1-1e-2_r8) then
+      if (vof(1,i) > error_cutoff .and. vof(1,i) < 1-error_cutoff) then
         intrec_patch = intrec%local_patch(i,gmesh, vof(1,:))
         curvature(i) = abs(curvature_from_patch (intrec_patch, &
             0.0_r8, int_norm_lvira(:,1,i), vof(1,:), mesh, gmesh, i, centroid=xc))
@@ -1095,7 +1094,8 @@ contains
       if (any(gmesh%cneighbor(:,i)<1)) cycle ! WARN: skipping boundaries. BCs might be automatic?
 
       ! TODO: this really should be in any cell neighboring a cell containing the interface
-      if (vof(1,i) > 1e-2_r8 .and. vof(1,i) < 1-1e-2_r8 .and. .not.isZero(curvature(i))) then
+      if (vof(1,i) > error_cutoff .and. vof(1,i) < 1-error_cutoff .and. &
+          .not.isZero(curvature(i))) then
         ! append to norms
         ! curvature_ex = ellipsoid_curvature_x(maxloc(abs(int_norm(:,1,i)),1), gmesh%xc(:,i), &
         !     [0.7_r8, 0.5_r8, 0.3_r8])
@@ -1106,9 +1106,12 @@ contains
         lnorm(2) = lnorm(2) + err**2
         lnorm(3) = max(lnorm(3),err)
 
-        ! if (err > 4e-1_r8) then
-        !   print '(i6, 3es14.4)', i, curvature(i), curvature_ex, err !, c_new_line
-        !   call LS_fatal ("large curvature error")
+        ! if (err > 5e-1_r8) then
+        !   print '(i8, 4es14.4)', i, err, curvature(i), curvature_ex(i), vof(1,i)
+        !   print '(3es14.4)', int_norm(:,1,i)
+        !   print '(3es14.4)', gmesh%xc(:,i)
+        !   print *
+        !   !call LS_fatal ("large curvature error")
         ! end if
       end if
     end do
@@ -1351,10 +1354,13 @@ contains
     type(mesh_subset), intent(in) :: mixed_cells
 
     integer :: c, i
+    real(r8) :: coeff(3)
 
     if (allocated(curvature_ex)) deallocate(curvature_ex)
     allocate(curvature_ex(mesh%ncell))
     curvature_ex = 0
+
+    coeff = [0.35_r8, 0.3_r8, 0.2_r8]
 
     do c = 1,mixed_cells%ncell
       i = mixed_cells%cell_id(c)
@@ -1362,11 +1368,38 @@ contains
       !curvature_ex(i) = 1 / 0.35_r8 ! cylinder
       !curvature_ex(i) = 2 / 0.35_r8 ! sphere
       curvature_ex(i) = ellipsoid_curvature_x(maxloc(abs(int_norm(:,1,i)),1), &
+          !nearest_ellipsoid_point(interface_centroid(:,c), int_norm(:,1,i), coeff), &
+          !nearest_ellipsoid_point(gmesh%xc(:,i), int_norm(:,1,i), coeff), &
           !interface_centroid(:,c), &
-          gmesh%xc(:,i), &
-          [0.35_r8, 0.3_r8, 0.2_r8])
+          !gmesh%xc(:,i), &
+          coeff)
     end do
 
   end subroutine compute_exact_curvature_field
+
+  ! find the closest on-ellipsoid point to x, along the direction n
+  function nearest_ellipsoid_point(x, n, coeff) result(xr)
+
+    real(r8), intent(in) :: x(:), n(:), coeff(:)
+    real(r8) :: xr(3)
+
+    real(r8) :: l, t, a, b, c
+
+    ! coefficients in quadratic formula for the parameter l
+    a = sum(n**2 / coeff**2)
+    b = 2 * sum(x * n / coeff**2)
+    c = sum(x**2 / coeff**2) - 1
+
+    ! parameter l is the smallest (absolute value) solution to the quadratic
+    ! unless we are seriously underresolved, one solution will be much smaller
+    ! than the others and there will be no imaginary component
+    l = -b + sqrt(b**2 - 4*a*c)
+    t = -b - sqrt(b**2 - 4*a*c)
+    if (abs(t) < abs(l)) l = t
+    l = l / (2*a)
+
+    xr = x + l*n
+
+  end function nearest_ellipsoid_point
 
 end module analytic_surface_type_test

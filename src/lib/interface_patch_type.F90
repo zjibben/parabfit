@@ -49,7 +49,7 @@ contains
 
     integer :: i
     real(r8) :: pts(ndim,3*size(interface_reconstructions)), wgt(3*size(interface_reconstructions))
-    real(r8) :: xc(ndim), area, a
+    real(r8) :: xc(ndim), area, a, d(3)
     !type(analytic_surface) :: surf
     type(paraboloid) :: surf
     logical :: verboseh
@@ -106,20 +106,27 @@ contains
     ! !call surf%bestParaboloidFit (pts)
     ! call surf%bestFit (pts, wgt, normal)
 
-    ! get centroid
-    xc = 0; area = 0
-    do i = 1,interface_reconstructions(1)%n_elements
-      a = interface_reconstructions(1)%elements(i)%area2()
-      xc = xc + interface_reconstructions(1)%elements(i)%centroid2() * a
-      area = area + a
-    end do
-    xc = xc / area
+    xc = interface_reconstructions(1)%centroid()
 
     ! patch_polygons = flat_polygon_box(interface_reconstructions)
     ! call surf%volumetricFit(patch_polygons%elements)
     call surf%volumetricFit(interface_reconstructions)
     curvature_from_patch = surf%curvature(xc)
-    !curvature_from_patch = surf%curvature(interface_reconstructions(1)%elements(1)%centroid())
+
+    ! ! height function style curvature point ############
+    ! d = 0
+    ! d(maxloc(abs(normal),1)) = 1
+    ! xc = surf%point_along_line(gmesh%xc(:,cid), d)
+    ! !xc = gmesh%xc(:,cid)
+
+    ! ! call cell%init(ierr, cid, mesh, gmesh)
+    ! ! if (cell%is_inside(xc)) then
+    !   !xc = interface_reconstructions(1)%centroid()
+    !   curvature_from_patch = surf%curvature(xc)
+    ! ! else
+    ! !   curvature_from_patch = 0
+    ! ! end if
+    ! ! ############################################
 
     if (present(centroid)) centroid = surf%point_on_surface(xc)
 
