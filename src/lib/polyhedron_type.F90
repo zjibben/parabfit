@@ -43,6 +43,7 @@ module polyhedron_type
     procedure :: volume_behind_plane
     procedure :: print_data
     procedure :: tesselate
+    procedure :: is_inside
     procedure, private :: tesselated_split
     procedure, private :: tesselated_volume_behind_plane
   end type polyhedron
@@ -249,6 +250,28 @@ contains
     end if
 
   end function volume_behind_plane
+
+  ! check if the given point is inside the polyhedron
+  logical function is_inside(this, x)
+
+    class(polyhedron), intent(in) :: this
+    real(r8), intent(in) :: x(:)
+
+    integer :: t
+
+    if (this%nchildren > 0) then
+      is_inside = .false.
+      do t = 1,this%nchildren
+        if (this%convex_polyhedron(t)%is_inside(x)) then
+          is_inside = .true.
+          exit
+        end if
+      end do
+    else
+      is_inside = this%parent%is_inside(x)
+    end if
+
+  end function is_inside
 
   subroutine print_data (this,normalized)
     class(polyhedron), intent(in) :: this

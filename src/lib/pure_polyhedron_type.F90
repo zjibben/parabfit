@@ -38,6 +38,7 @@ module pure_polyhedron_type
     procedure :: intersection_verts
     procedure :: split
     procedure :: volume_behind_plane
+    procedure :: is_inside
     procedure :: print_data
     procedure :: tesselated
     ! procedure, private :: face_is_nonplanar
@@ -1385,6 +1386,24 @@ contains
   !   end do
 
   ! end subroutine tesselate_nonplanar_faces
+
+  ! check if the given point is inside the polyhedron
+  logical function is_inside(this, x)
+
+    class(pure_polyhedron), intent(in) :: this
+    real(r8), intent(in) :: x(:)
+
+    integer :: f
+
+    ! check that the point is behind each face
+    is_inside = .true.
+    do f = 1,this%nFaces
+      is_inside = is_inside .and. &
+          dot_product(this%face_normal(:,f), x - this%x(:,this%face_vid(1,f))) <= 0
+      if (.not.is_inside) exit
+    end do
+
+  end function is_inside
 
   logical function face_is_nonplanar(this, f)
 
