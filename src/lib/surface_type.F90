@@ -21,6 +21,7 @@ module surface_type
   ! a surface is defined as a collection of polygons
   type, public :: surface
     private
+    integer :: nelements
     type(polygon_box), public, allocatable :: element(:)
     integer, public, allocatable :: cell_id(:)
   contains
@@ -44,23 +45,27 @@ contains
     integer,        intent(in)    :: cell_id
 
     type(polygon_box), allocatable :: tmp(:)
-    integer,       allocatable :: tmp2(:)
-    integer                    :: N
+    integer, allocatable :: tmp2(:)
+    integer, parameter :: block_size = 100
 
     !if (new_element%nVerts < 3) return ! TODO: throw error here?
     if (new_element%n_elements < 1) return
 
     if (allocated(this%element)) then
-      N = size(this%element)
-      allocate(tmp(N+1), tmp2(N+1))
+      ! if needed, extend our arrays
+      if (this%nelements == size(this%element)) then
+        allocate(tmp(this%nelements+block_size), tmp2(this%nelements+block_size))
 
-      tmp(:N) = this%element
-      tmp(N+1) = new_element
-      call move_alloc(tmp, this%element)
+        tmp(:this%nelements) = this%element
+        tmp2(:this%nelements) = this%cell_id
 
-      tmp2(:N) = this%cell_id
-      tmp2(N+1) = cell_id
-      call move_alloc(tmp2, this%cell_id)
+        call move_alloc(tmp, this%element)
+        call move_alloc(tmp2, this%cell_id)
+      end if
+
+      this%nelements = this%nelements + 1
+      this%element(this%nelements) = new_element
+      this%cell_id(this%nelements) = cell_id
     else
       allocate(this%element(1), this%cell_id(1))
       this%element(1) = new_element
@@ -203,7 +208,7 @@ contains
 
     Nelements = sum(this%element(:)%n_elements)
     Nverts = 0
-    do i = 1,size(this%element)
+    do i = 1,this%nelements
       Nverts = Nverts + sum(this%element(i)%elements(:)%nVerts)
     end do
 
@@ -223,7 +228,7 @@ contains
 
     ! write polygon data
     ! vertices
-    do e = 1,size(this%element)
+    do e = 1,this%nelements
       do k = 1,this%element(e)%n_elements
         do j = 1,this%element(e)%elements(k)%nVerts
           write(fh,'(3f20.10)') this%element(e)%elements(k)%x(:,j)
@@ -233,7 +238,7 @@ contains
 
     ! faces
     j = 0
-    do e = 1,size(this%element)
+    do e = 1,this%nelements
       do k = 1,this%element(e)%n_elements
         write(fh,'(i9)',advance='no') this%element(e)%elements(k)%nVerts
         do i = j,j+this%element(e)%elements(k)%nVerts-1
@@ -293,7 +298,7 @@ contains
     ! get polygons from these cells
     ! the order doesn't matter as long as the polygon associated with cell_id is first
     npolygons = 1
-    do e = 1,size(this%cell_id)
+    do e = 1,this%nelements
       if (any(this%cell_id(e) == neighbor) .and. this%cell_id(e) /= cell_id) then
         !if (vof(this%cell_id(e)) < 1e-3_r8 .or. vof(this%cell_id(e)) > 1-1e-3_r8) cycle ! WARN?
         npolygons = npolygons + 1
@@ -331,7 +336,7 @@ contains
     real(r8) :: area, a
 
     ! TODO: currently naive search. could do a binary search.
-    do e = 1,size(this%cell_id)
+    do e = 1,this%nelements
       if (this%cell_id(e) == cell_id) then
         xc = 0; area = 0
         do i = 1,this%element(e)%n_elements
@@ -344,7 +349,7 @@ contains
       end if
     end do
 
-    if (e > size(this%cell_id)) &
+    if (e > this%nelements) &
         call LS_fatal ("could not find polygon in this cell")
 
   end function local_centroid
