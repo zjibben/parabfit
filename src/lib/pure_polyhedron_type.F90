@@ -648,18 +648,23 @@ contains
     xtet(:,1) = sum(this%x, dim=2) / this%nVerts
 
     ! for each vertex on each edge of each face, we create a tet
-    allocate(tesselated(2*count(this%face_vid>0)))
+    allocate(tesselated(count(this%face_vid>0)))
     t = 0
     do f = 1,this%nFaces
       nV = count(this%face_vid(:,f) > 0)
       xtet(:,2) = sum(this%x(:,this%face_vid(:nV,f)), dim=2) / nV
       do v = 1,nV
-        xtet(:,3) = this%x(:,this%face_vid(v,f))
-        xtet(:,4) = sum(this%x(:,this%face_vid([v,modulo(v,nV)+1],f)), dim=2) / 2
-        t = t+1
-        call tesselated(t)%init_tet(ierr, xtet)
+        ! xtet(:,3) = this%x(:,this%face_vid(v,f))
+        ! xtet(:,4) = sum(this%x(:,this%face_vid([v,modulo(v,nV)+1],f)), dim=2) / 2
+        ! t = t+1
+        ! call tesselated(t)%init_tet(ierr, xtet)
 
-        xtet(:,3) = xtet(:,4)
+        ! xtet(:,3) = xtet(:,4)
+        ! xtet(:,4) = this%x(:,this%face_vid(modulo(v,nV)+1,f))
+        ! t = t+1
+        ! call tesselated(t)%init_tet(ierr, xtet)
+
+        xtet(:,3) = this%x(:,this%face_vid(v,f))
         xtet(:,4) = this%x(:,this%face_vid(modulo(v,nV)+1,f))
         t = t+1
         call tesselated(t)%init_tet(ierr, xtet)
