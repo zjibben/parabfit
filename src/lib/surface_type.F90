@@ -48,8 +48,8 @@ contains
     integer, allocatable :: tmp2(:)
     integer, parameter :: block_size = 100
 
-    !if (new_element%nVerts < 3) return ! TODO: throw error here?
     if (new_element%n_elements < 1) return
+    if (new_element%elements(1)%nVerts < 3) return ! TODO: throw error here?
 
     if (allocated(this%element)) then
       ! if needed, extend our arrays
@@ -68,6 +68,7 @@ contains
       this%cell_id(this%nelements) = cell_id
     else
       allocate(this%element(1), this%cell_id(1))
+      this%nelements = 1
       this%element(1) = new_element
       this%cell_id(1) = cell_id
     end if
