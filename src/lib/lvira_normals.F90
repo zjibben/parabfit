@@ -9,6 +9,8 @@ module lvira_normals
 
   public :: interface_normals_lvira, interface_normal_lvira
 
+  ! TODO: would Powell's method work better? No derivatives required.
+  !       see Sec. 10.5 in Numerical Recipies.
   type, extends(bfgs_min) :: lvira_error
     private
     integer :: ncell

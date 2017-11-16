@@ -13,8 +13,8 @@ module analytic_surface_type_test
 
   public :: analytic_surface_test_suite, curvature_test_suite
 
-  real(r8), parameter :: pi = 3.141592653589793238462643383279502884_r8
-  real(r8), parameter :: error_cutoff = 1e-2_r8
+  real(r8), parameter :: pi = 4*atan(1.0_r8)
+  real(r8), parameter :: error_cutoff = 1e-5_r8
 
 contains
 
@@ -64,8 +64,8 @@ contains
     do i = 1,4
       ncell = 10 * 2**i
       !call mesh_2d_test (ncell, 'cylinder.json', lnormFT, lnormHF)
-      call mesh_3d_test (ncell, 'ellipsoid.json', lnormFT, lnormHF)
-      !call mesh_unstr_test (ncell, 'ellipsoid.json', lnormFT, lnormHF)
+      !call mesh_3d_test (ncell, 'ellipsoid.json', lnormFT, lnormHF)
+      call mesh_unstr_test (ncell, 'sphere.json', lnormFT, lnormHF)
       write (fh1, '(4es15.5)') 1.0_r8 / ncell, lnormFT
       write (fh2, '(4es15.5)') 1.0_r8 / ncell, lnormHF
     end do
@@ -1366,13 +1366,13 @@ contains
       i = mixed_cells%cell_id(c)
 
       !curvature_ex(i) = 1 / 0.35_r8 ! cylinder
-      !curvature_ex(i) = 2 / 0.35_r8 ! sphere
-      curvature_ex(i) = ellipsoid_curvature_x(maxloc(abs(int_norm(:,1,i)),1), &
-          !nearest_ellipsoid_point(interface_centroid(:,c), int_norm(:,1,i), coeff), &
-          !nearest_ellipsoid_point(gmesh%xc(:,i), int_norm(:,1,i), coeff), &
-          !interface_centroid(:,c), &
-          !gmesh%xc(:,i), &
-          coeff)
+      curvature_ex(i) = 2 / 0.35_r8 ! sphere
+      ! curvature_ex(i) = ellipsoid_curvature_x(maxloc(abs(int_norm(:,1,i)),1), &
+      !     !nearest_ellipsoid_point(interface_centroid(:,c), int_norm(:,1,i), coeff), &
+      !     !nearest_ellipsoid_point(gmesh%xc(:,i), int_norm(:,1,i), coeff), &
+      !     !interface_centroid(:,c), &
+      !     gmesh%xc(:,i), &
+      !     coeff)
     end do
 
   end subroutine compute_exact_curvature_field

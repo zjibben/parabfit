@@ -235,6 +235,9 @@ contains
     integer :: i, n_rec, ierr, v, vn, ipiv(6), lwork, p, r
     real(r8), allocatable :: work(:)
 
+    ASSERT(size(interface_reconstruction_collection) > 3)
+    ASSERT(size(interface_reconstruction_collection(1)%elements) > 0)
+
     ! xcen = 0
     ! do r = 1,interface_reconstruction_collection(1)%n_elements
     !   xcen = xcen + interface_reconstruction_collection(1)%elements(r)%centroid2()

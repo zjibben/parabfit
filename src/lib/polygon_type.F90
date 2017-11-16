@@ -142,6 +142,7 @@ contains
     use consts, only: ndim
     class(polygon), intent(in) :: this
     real(r8) :: centroid(ndim)
+    ASSERT(allocated(this%x))
     centroid = sum(this%x, dim=2) / this%nVerts
   end function centroid
 

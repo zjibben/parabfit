@@ -67,6 +67,8 @@ contains
 
     call start_timer ("fit curvature")
 
+    ASSERT(size(interface_reconstructions(1)%elements) > 0)
+
     ! npts = 1
     ! pts(:,1) = interface_reconstructions(1)%centroid2()
     ! do in = 1,gmesh%caneighbor(cid)%n_elements

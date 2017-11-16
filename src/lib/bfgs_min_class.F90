@@ -59,8 +59,8 @@ contains
     status = 0
     f = this%f(x)
     gradf = this%gradf(x, 1e-7_r8) ! pick 1e-7 for differencing step size
-    ! initial guess for hessian guards against very large initial steps
-    hess_inv = identity * min(1.0_r8, pi / maxval(abs(gradf)))
+    ! initial guess for hessian guards against too large initial steps
+    hess_inv = identity * min(1.0_r8, pi/4 / maxval(abs(gradf)))
 
     !xhist(:,1) = x
     ! print '(a,2es13.3)', 'x: ', x
@@ -104,7 +104,7 @@ contains
 
     this%numitr = i
     if (this%numitr > this%maxitr) then
-      print *, "too many iterations in bfgs", i
+      print *, "too many iterations in bfgs"
       status = 1
     end if
 

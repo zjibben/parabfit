@@ -45,7 +45,7 @@ module vof_init
   public :: vof_initialize
 
   ! TODO: make these user-specified parameters
-  integer, parameter :: cell_vof_recursion_limit = 5 ! 6, 8
+  integer, parameter :: cell_vof_recursion_limit = 5
 
 contains
 
