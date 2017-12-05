@@ -45,6 +45,7 @@ module polygon_type
     type(polygon), allocatable :: elements(:)
   contains
     procedure :: centroid => polygon_box_centroid
+    procedure :: area => polygon_box_area
   end type polygon_box
 
   public :: flat_polygon_box
@@ -184,7 +185,7 @@ contains
       xj = this%x(:,j) - xc
 
       tmp = dot_product(cross_product(xi, xj), this%norm)
-      centroid = centroid + dot_product(xi + xj, this%norm) * tmp
+      centroid = centroid + (xi + xj) * tmp
       area = area + tmp
     end do
     area = area / 2
@@ -485,5 +486,18 @@ contains
     xc = xc / area
 
   end function polygon_box_centroid
+
+  real(r8) function polygon_box_area(this)
+
+    class(polygon_box), intent(in) :: this
+
+    integer :: i
+
+    polygon_box_area = 0
+    do i = 1,this%n_elements
+      polygon_box_area = polygon_box_area + this%elements(i)%area2()
+    end do
+
+  end function polygon_box_area
 
 end module polygon_type
