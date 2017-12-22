@@ -1,0 +1,17 @@
+{
+    "initial-vof": {
+    	    "mat2": {
+    		"material-id": 2,
+                "region": {
+                    "type": "sinusoid",
+    		    "coeffs": [0.0, 0.125, 2.5, 0.2, 0.125, 2.5, 0.2]
+                }
+    	    },
+	    "mat1": {
+    		"material-id": 1,
+                "region": {
+                    "type": "fill"
+                }
+            }
+    }
+}

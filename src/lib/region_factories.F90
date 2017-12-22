@@ -51,6 +51,13 @@ contains
     allocate(r, source=cylinder_region(xc, axis, radius, halfheight))
   end subroutine alloc_cylinder_region
 
+  subroutine alloc_sinusoid_region (r, coeffs)
+    use sinusoid_region_type
+    class(region), allocatable, intent(out) :: r
+    real(r8), intent(in) :: coeffs(:)
+    allocate(r, source=sinusoid_region(coeffs))
+  end subroutine alloc_sinusoid_region
+
   subroutine alloc_fill_region (r)
     use fill_region_type
     class(region), allocatable, intent(out) :: r
@@ -89,6 +96,11 @@ contains
       if (stat /= 0) call LS_fatal (context//errmsg)
       ASSERT(size(x)==3)
       call alloc_ellipsoid_region (r, x, axis)
+    case ('sinusoid')
+      call params%get ('coeffs', x, stat=stat, errmsg=errmsg)
+      if (stat /= 0) call LS_fatal (context//errmsg)
+      ASSERT(size(x)==7)
+      call alloc_sinusoid_region (r, x)
     case ('plane')
       call params%get ('normal', normal, stat=stat, errmsg=errmsg)
       if (stat /= 0) call LS_fatal (context//errmsg)

@@ -38,8 +38,8 @@ program unit_test
   ! call polyhedron_unit_test ()
   ! call surface_unit_test ()
 
-  ! nested dissection locate plane
-  !call locate_plane_nd_unit_test_suite ()
+  ! ! nested dissection locate plane
+  ! call locate_plane_nd_unit_test_suite ()
   ! call multimat_cell_unit_test_suite ()
   ! call volume_track_nd_unit_test ()
 
@@ -47,8 +47,8 @@ program unit_test
   ! call parallel_interfaces_test ()
   ! call intersecting_interfaces_test ()
 
-  ! analytic surface
-  !call analytic_surface_test_suite ()
+  ! ! analytic surface
+  ! call analytic_surface_test_suite ()
 
   call curvature_test_suite ()
   !call normal_vector_test_suite()

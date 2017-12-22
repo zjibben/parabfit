@@ -14,7 +14,7 @@ module analytic_surface_type_test
   public :: analytic_surface_test_suite, curvature_test_suite
 
   real(r8), parameter :: pi = 4*atan(1.0_r8)
-  real(r8), parameter :: error_cutoff = 1e-5_r8
+  real(r8), parameter :: error_cutoff = 1e-3_r8
 
 contains
 
@@ -64,10 +64,10 @@ contains
     do i = 1,4
       ncell = 10 * 2**i
       !call mesh_2d_test (ncell, 'cylinder.json', lnormFT, lnormHF)
-      !call mesh_3d_test (ncell, 'ellipsoid.json', lnormFT, lnormHF)
-      call mesh_unstr_test (ncell, 'sphere.json', lnormFT, lnormHF)
-      write (fh1, '(4es15.5)') 1.0_r8 / ncell, lnormFT
-      write (fh2, '(4es15.5)') 1.0_r8 / ncell, lnormHF
+      call mesh_3d_test (ncell, 'sinusoid.json', lnormFT, lnormHF)
+      !call mesh_unstr_test (ncell, 'sinusoid.json', lnormFT, lnormHF)
+      write (fh1, '(i10,3es15.5)') ncell**3, lnormFT
+      write (fh2, '(i10,3es15.5)') ncell**3, lnormHF
     end do
 
     close(fh1); close(fh2)
@@ -719,7 +719,7 @@ contains
 
     character(:), allocatable :: filename
     character(30) :: tmp
-    integer :: i, nvofcell, ierr, imax, w, fh, c
+    integer :: i, nvofcell, ierr, imax, w, fh, fh2, c
     type(surface) :: intrec
     type(multimat_cell) :: cell
     real(r8) :: int_norm_local(3,2), err, curvature(mesh%ncell), wgt_scale, totvolume, xc(3)
@@ -796,6 +796,7 @@ contains
     ! get the curvature
     !weight_scales = [0.0_r8, 1.0_r8, 2.0_r8, 3.0_r8, 1.0_r8 / 2, 1.0_r8 / 3, 1.0_r8 / 4, 1.0_r8 / 8]
     open(newunit=fh, file="curv_err.txt")
+    open(newunit=fh2, file="errors.txt")
     do w = 1,1
       !wgt_scale = (2.0_r8 ** (w - 1) - 1) * 3.0_r8 / 2.0_r8 ** 19
       wgt_scale = 0
@@ -803,7 +804,11 @@ contains
       curvature = 0; lnorm = 0; nvofcell = 0; totvolume = 0
       !i = 18178
       do i = 1,mesh%ncell
-        if (any(gmesh%cneighbor(:,i)<1)) cycle ! WARN: skipping boundaries. BCs might be automatic?
+        !if (any(gmesh%cneighbor(:,i)<1)) cycle ! WARN: skipping boundaries. BCs might be automatic?
+
+        if (any(gmesh%cneighbor(:,&
+            pack(gmesh%cneighbor(:,i), mask=gmesh%cneighbor(:,i)>0))&
+            < 1)) cycle ! WARN: skipping boundaries. BCs might be automatic?
         !if (.not.isZero(gmesh%xc(3,i))) cycle ! WARN: 2d
 
         ! TODO: this really should be in any cell neighboring a cell containing the interface
@@ -812,20 +817,24 @@ contains
         if (vof(1,i) > error_cutoff .and. vof(1,i) < 1-error_cutoff) then
           curvature(i) = abs(curvature_from_patch (intrec%local_patch(i,gmesh, vof(1,:)), &
               wgt_scale, int_norm_lvira(:,1,i), vof(1,:), mesh, gmesh, i, centroid=xc))
-          if (isZero(curvature(i))) cycle
+          !if (isZero(curvature(i))) cycle
 
           ! curvature_ex(i) = ellipsoid_curvature_x(maxloc(abs(int_norm_lvira(:,1,i)),1), &
           !     xc, [0.7_r8, 0.5_r8, 0.3_r8])
 
+          ! curvature_ex(i) = abs(sinusoid_curvature_x(maxloc(abs(int_norm(:,1,i)),1), &
+          !     xc, [0.0_r8, 0.125_r8, 2.5_r8, 0.2_r8, 0.125_r8, 2.5_r8, 0.2_r8]))
+
           ! append to norms
-          err = abs((curvature(i) - curvature_ex(i)) / curvature_ex(i))
+          !err = abs((curvature(i) - curvature_ex(i)) / curvature_ex(i))
+          err = abs(curvature(i) - curvature_ex(i))
           if (err > lnorm(3)) imax = i
           totvolume = totvolume + mesh%volume(i)
           lnorm(1) = lnorm(1) + err * mesh%volume(i)
           lnorm(2) = lnorm(2) + err**2 * mesh%volume(i)
           lnorm(3) = max(lnorm(3),err)
 
-          ! if (err > 5e-2_r8) then
+          ! if (err > 4e0_r8) then
           ! !if (i==47291 .or. i==47131) then
           ! !if (i==47131) then
           ! !if (i==72891) then
@@ -838,7 +847,7 @@ contains
           ! !   curvature(i) = abs(curvature_from_patch (intrec%local_patch(i,gmesh, vof(1,:)), &
           ! !       wgt_scale, int_norm_hf2(:,1,i), vof(1,:), mesh, gmesh, i, .true.))
           ! !   print *
-          !   print '(i6, 3es14.4)', i, curvature(i), curvature_ex(i), err !, c_new_line
+          !   print '(i0, 3es14.4)', i, curvature(i), curvature_ex(i), err !, c_new_line
           !   print '(2es15.5)', vof(1,i), 1 - vof(1,i)
           !   print '(2es15.5)', gmesh%xc(1:2,i)
           !   print '(2es15.5)', minval(mesh%x(1,mesh%cnode(:,i))), minval(mesh%x(2,mesh%cnode(:,i)))
@@ -852,10 +861,11 @@ contains
         !write (fh, '(2(es15.5,a),es15.5)') gmesh%xc(1,i),',', gmesh%xc(2,i),',', err
         write (fh, '(2(es15.5,a),es15.5)') &
             minval(mesh%x(1,mesh%cnode(:,i))),',', minval(mesh%x(2,mesh%cnode(:,i))),',', err
+        write(fh2,'(3es20.10)') err, vof(1,i), 0.0_r8 !reconstruction_area(c)
       end do
       lnorm(1) = lnorm(1) / totvolume
       lnorm(2) = sqrt(lnorm(2) / totvolume)
-      close(fh)
+      close(fh); close(fh2)
 
       !print '(es10.2, a,3es10.2)', wgt_scale, '  FT L1,L2,Linf = ',lnorm
     end do
@@ -948,12 +958,12 @@ contains
 
     character(:), allocatable :: filename
     character(30) :: tmp
-    integer :: i, ierr, imax, c
+    integer :: i, ierr, imax, c, fh
     type(surface) :: intrec
     type(multimat_cell) :: cell
     type(polygon_box), allocatable :: intrec_patch(:)
     real(r8) :: err, curvature(mesh%ncell), totvolume, xc(3)
-    real(r8), allocatable :: int_norm_lvira(:,:,:), interface_centroid(:,:)
+    real(r8), allocatable :: int_norm_lvira(:,:,:), interface_centroid(:,:), reconstruction_area(:)
 
     write (tmp, '(a,i0,3a)') "normals_unstr_", mesh%ncell, "_", cell_type, ".dat"
     filename = trim(adjustl(tmp))
@@ -987,7 +997,7 @@ contains
     ! int_norm_lvira(:,2,i) = -int_norm_lvira(:,1,i)
     ! ! ##################
 
-    allocate(interface_centroid(3,mixed_cells%ncell))
+    allocate(interface_centroid(3,mixed_cells%ncell), reconstruction_area(mixed_cells%ncell))
 
     do c = 1,mixed_cells%ncell
       i = mixed_cells%cell_id(c)
@@ -1011,6 +1021,7 @@ contains
       !print *, 'here3'
 
       interface_centroid(:,c) = cell%interface_polygons(1)%centroid()
+      reconstruction_area(c) = cell%interface_polygons(1)%area()
 
       err = abs(vof(1,i) - cell%mat_poly(1)%volume() / mesh%volume(i))
       totvolume = totvolume + mesh%volume(i)
@@ -1033,8 +1044,10 @@ contains
     ! curvature_ex = 0
 
     ! get the curvature
+    open(newunit=fh, file="errors.txt")
     curvature = 0; lnorm = 0; totvolume = 0
-    do i = 1,mesh%ncell
+    do c = 1,mixed_cells%ncell
+      i = mixed_cells%cell_id(c)
       if (any(gmesh%cneighbor(:,i)<1)) cycle ! WARN: skipping boundaries. BCs might be automatic?
 
       err = 0
@@ -1048,12 +1061,15 @@ contains
         !     xc, [0.7_r8, 0.5_r8, 0.3_r8])
 
         ! append to norms
-        err = abs((curvature(i) - curvature_ex(i)) / curvature_ex(i))
+        !err = abs((curvature(i) - curvature_ex(i)) / curvature_ex(i))
+        err = abs(curvature(i) - curvature_ex(i))
         if (err > lnorm(3)) imax = i
         totvolume = totvolume + mesh%volume(i)
         lnorm(1) = lnorm(1) + err * mesh%volume(i)
         lnorm(2) = lnorm(2) + err**2 * mesh%volume(i)
         lnorm(3) = max(lnorm(3),err)
+
+        write(fh,'(3es20.10)') err, vof(1,i), reconstruction_area(c)
 
         ! if (err > 2e0_r8) then
         !   intrec_patch = intrec%local_patch(i,gmesh, vof(1,:), verbose=.true.)
@@ -1067,6 +1083,8 @@ contains
     end do
     lnorm(1) = lnorm(1) / totvolume
     lnorm(2) = sqrt(lnorm(2) / totvolume)
+
+    close(fh)
 
   end function ft_unstr_mesh_test
 
@@ -1097,21 +1115,20 @@ contains
       if (vof(1,i) > error_cutoff .and. vof(1,i) < 1-error_cutoff .and. &
           .not.isZero(curvature(i))) then
         ! append to norms
-        ! curvature_ex = ellipsoid_curvature_x(maxloc(abs(int_norm(:,1,i)),1), gmesh%xc(:,i), &
-        !     [0.7_r8, 0.5_r8, 0.3_r8])
         err = abs((curvature(i) - curvature_ex(i)) / curvature_ex(i))
+        err = abs(curvature(i) - curvature_ex(i))
         if (err > lnorm(3)) imax = i
         nvofcell = nvofcell + 1
         lnorm(1) = lnorm(1) + err
         lnorm(2) = lnorm(2) + err**2
         lnorm(3) = max(lnorm(3),err)
 
-        ! if (err > 5e-1_r8) then
+        ! if (err > 5e0_r8) then
         !   print '(i8, 4es14.4)', i, err, curvature(i), curvature_ex(i), vof(1,i)
         !   print '(3es14.4)', int_norm(:,1,i)
         !   print '(3es14.4)', gmesh%xc(:,i)
         !   print *
-        !   !call LS_fatal ("large curvature error")
+        !   call LS_fatal ("large curvature error")
         ! end if
       end if
     end do
@@ -1155,15 +1172,6 @@ contains
     print '(a)', 'done'
 
   end subroutine recalculate_mesh_volumes
-
-  real(r8) function sinusoid_curvature(x, coeff)
-    real(r8), intent(in) :: x(:), coeff(:)
-    sinusoid_curvature = -(coeff(2)*coeff(3)**2*(coeff(4)**2*coeff(5)**2*sin(coeff(5&
-        &)*x(2))**2 + 1)*cos(coeff(3)*x(1)) + coeff(4)*coeff(5)**2*(coeff(2)**2*coef&
-        &f(3)**2*sin(coeff(3)*x(1))**2 + 1)*cos(coeff(5)*x(2)))*(coeff(2)**2*coeff(3&
-        &)**2*sin(coeff(3)*x(1))**2 + coeff(4)**2*coeff(5)**2*sin(coeff(5)*x(2))**2 &
-        &+ 1)**(-1.5_r8)
-  end function sinusoid_curvature
 
   real(r8) function ellipsoid_curvature_x(dir, x, coeff)
 
@@ -1341,6 +1349,17 @@ contains
 
   end function ellipsoid_curvature_x
 
+  real(r8) function sinusoid_curvature_x(dir, x, coeff)
+    integer, intent(in) :: dir
+    real(r8), intent(in) :: x(:), coeff(:)
+    sinusoid_curvature_x = -pi**2*(coeff(2)*coeff(3)**2*(pi**2*coeff(5)**2*coeff(6)*&
+        &*2*sin(pi*coeff(6)*(coeff(7) - x(2)))**2 + 1)*cos(pi*coeff(3)*(coeff(4) - x&
+        &(1))) + coeff(5)*coeff(6)**2*(pi**2*coeff(2)**2*coeff(3)**2*sin(pi*coeff(3)&
+        &*(coeff(4) - x(1)))**2 + 1)*cos(pi*coeff(6)*(coeff(7) - x(2))))*(pi**2*coef&
+        &f(2)**2*coeff(3)**2*sin(pi*coeff(3)*(coeff(4) - x(1)))**2 + pi**2*coeff(5)*&
+        &*2*coeff(6)**2*sin(pi*coeff(6)*(coeff(7) - x(2)))**2 + 1)**(-1.5_r8)
+  end function sinusoid_curvature_x
+
   subroutine compute_exact_curvature_field(curvature_ex, interface_centroid, int_norm, mesh, &
       gmesh, mixed_cells)
 
@@ -1354,7 +1373,7 @@ contains
     type(mesh_subset), intent(in) :: mixed_cells
 
     integer :: c, i
-    real(r8) :: coeff(3)
+    real(r8), allocatable :: coeff(:)
 
     if (allocated(curvature_ex)) deallocate(curvature_ex)
     allocate(curvature_ex(mesh%ncell))
@@ -1366,13 +1385,24 @@ contains
       i = mixed_cells%cell_id(c)
 
       !curvature_ex(i) = 1 / 0.35_r8 ! cylinder
-      curvature_ex(i) = 2 / 0.35_r8 ! sphere
+      !curvature_ex(i) = 2 / 0.35_r8 ! sphere
       ! curvature_ex(i) = ellipsoid_curvature_x(maxloc(abs(int_norm(:,1,i)),1), &
       !     !nearest_ellipsoid_point(interface_centroid(:,c), int_norm(:,1,i), coeff), &
       !     !nearest_ellipsoid_point(gmesh%xc(:,i), int_norm(:,1,i), coeff), &
       !     !interface_centroid(:,c), &
       !     gmesh%xc(:,i), &
       !     coeff)
+
+      ! sinusoid
+      coeff = [0.0_r8, 0.125_r8, 2.5_r8, 0.2_r8, 0.125_r8, 2.5_r8, 0.2_r8]
+      curvature_ex(i) = sinusoid_curvature_x(maxloc(abs(int_norm(:,1,i)),1), &
+          !nearest_ellipsoid_point(interface_centroid(:,c), int_norm(:,1,i), coeff), &
+          !nearest_ellipsoid_point(gmesh%xc(:,i), int_norm(:,1,i), coeff), &
+          !interface_centroid(:,c), &
+          gmesh%xc(:,i), &
+          coeff)
+
+      curvature_ex(i) = abs(curvature_ex(i)) ! WARN TODO REMOVE!
     end do
 
   end subroutine compute_exact_curvature_field
