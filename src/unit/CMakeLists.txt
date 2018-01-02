@@ -1,9 +1,4 @@
-project(Pececillo-unit-tests)
-
-include_directories(${Pececillo_SOURCE_DIR}/src/lib)
-include_directories(${Pececillo_MODULE_DIR} ${Petaca_MODULE_DIR})
-
-set(SOURCE_FILES
+set(SRC
   vof_io.F90
   vof_init_test.F90
   analytic_surface_type_test.F90
@@ -21,25 +16,26 @@ set(SOURCE_FILES
   bfgs_min_class_test.F90
   unit_test.F90)
 
-# Create a library (so we can unit test)
-add_library(libpececillo-unit ${SOURCE_FILES})
-target_link_libraries(libpececillo-unit pececillo)
+add_library(pec_parabfit ${SRC})
+add_library(pececillo::parabfit ALIAS pec_parabfit)
 
-# Add Support for OpenMP.  This needs to be present in the CMakeFile
-# that controls linking of the final executable.
-# find_package(OpenMP)
-# if (OPENMP_FOUND)
-#     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
-#     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
-#     set (CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} ${OpenMP_C_FLAGS}")
-# endif()
+set(LIB_MOD_DIR ${CMAKE_CURRENT_BINARY_DIR}/mod_files/)
+set_target_properties(pec_parabfit PROPERTIES Fortran_MODULE_DIRECTORY ${LIB_MOD_DIR})
+target_link_libraries(pec_parabfit pececillo::core petaca)
 
+target_include_directories(pec_parabfit PUBLIC
+    $<BUILD_INTERFACE:${LIB_MOD_DIR}>
+    $<INSTALL_INTERFACE:include>
+)
 
-# unit test driver
-add_executable(pececillo-unit unit_test.F90)
-target_link_libraries(pececillo-unit libpececillo-unit)
+install(TARGETS pec_parabfit
+        EXPORT  pec_parabfit
+        LIBRARY DESTINATION lib
+        ARCHIVE DESTINATION lib
+)
+install(DIRECTORY ${LIB_MOD_DIR} DESTINATION include)
 
-#add_subdirectory(test)
-
-install(TARGETS pececillo-unit DESTINATION lib)
-install(TARGETS pececillo-unit DESTINATION bin)
+# Parabfit solver program
+add_executable(pececillo-parabfit unit_test.F90)
+target_link_libraries(pececillo-parabfit pececillo::parabfit)
+install(TARGETS pececillo-parabfit DESTINATION bin)

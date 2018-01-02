@@ -1,2 +1,0 @@
-add_executable (json_input_example json_input_example.F90)
-target_link_libraries(json_input_example petaca)

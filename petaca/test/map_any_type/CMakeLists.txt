@@ -1,3 +1,0 @@
-add_executable (test_map_any_type test_map_any_type.F90)
-target_link_libraries(test_map_any_type petaca)
-add_test(map_any test_map_any_type)

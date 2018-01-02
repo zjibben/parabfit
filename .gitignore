@@ -1,7 +1,7 @@
 build/*
-external/*
 
 *~
 *.ply
 *gmv*
 *TAGS
+*txt

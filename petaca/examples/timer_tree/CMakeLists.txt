@@ -1,2 +1,0 @@
-add_executable (timer_tree_example timer_tree_example.F90)
-target_link_libraries(timer_tree_example petaca)

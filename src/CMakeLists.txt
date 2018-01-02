@@ -1,13 +1,5 @@
-# This is the core Pececillo library.
-add_subdirectory(lib)
+add_subdirectory(petaca) # the petaca library
+add_subdirectory(lib)    # core pececillo library
+add_subdirectory(unit)   # unit tests
 
-# This is the basic heat conduction solver.
-add_subdirectory(hc)
-
-# This is the basic flow solver.
-add_subdirectory(flow)
-
-# A unit test executable
-add_subdirectory(unit)
-
-install(DIRECTORY ${CMAKE_Fortran_MODULE_DIRECTORY} DESTINATION include)
+#install(DIRECTORY ${CMAKE_Fortran_MODULE_DIRECTORY} DESTINATION include)

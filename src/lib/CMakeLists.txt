@@ -1,13 +1,4 @@
-project(Pececillo-Lib)
-
-# # This contains utilities for the flow solver
-# add_subdirectory(flow)
-
-include_directories(${Pececillo_SOURCE_DIR}/src/lib)
-include_directories(${Pececillo_MODULE_DIR} ${Petaca_MODULE_DIR})
-include_directories(${HYPRE_INCLUDE_DIRS})
-
-set(Pececillo_SOURCE_FILES
+set(SRC
 # General utilities
     f90_assert.F90
     kinds.F90
@@ -133,9 +124,30 @@ set(Pececillo_SOURCE_FILES
     unstr_mesh_gmv.F90
     )
 
-add_library(pececillo ${Pececillo_SOURCE_FILES})
-add_dependencies(pececillo hypre)
-target_link_libraries(pececillo petaca ${HYPRE_LIBRARIES} exodus lapack)
-install(TARGETS pececillo DESTINATION lib)
+set(HEADERS f90_assert.fpp)
 
-add_subdirectory(test)
+add_library(pec_core ${SRC} ${HEADERS})
+add_library(pececillo::core ALIAS pec_core)
+
+set(LIB_MOD_DIR ${CMAKE_CURRENT_BINARY_DIR}/mod_files/)
+set_target_properties(pec_core PROPERTIES Fortran_MODULE_DIRECTORY ${LIB_MOD_DIR})
+
+target_link_libraries(pec_core petaca hypre exodus lapack)
+
+target_include_directories(pec_core PUBLIC
+    $<BUILD_INTERFACE:${LIB_MOD_DIR}>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+    $<INSTALL_INTERFACE:include>
+)
+
+install(TARGETS pec_core
+        EXPORT  pec_core
+        LIBRARY DESTINATION lib
+        ARCHIVE DESTINATION lib
+)
+install(DIRECTORY ${LIB_MOD_DIR} DESTINATION include)
+install(FILES ${HEADERS} DESTINATION include)
+
+# if(ENABLE_TESTS)
+#   add_subdirectory(test)
+# endif()

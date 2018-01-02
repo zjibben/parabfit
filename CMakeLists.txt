@@ -1,8 +1,10 @@
-cmake_minimum_required(VERSION 2.8.11)
+cmake_minimum_required(VERSION 3.5)
 
 set(CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH}"
                       "${CMAKE_SOURCE_DIR}/cmake/Modules"
                       "${CMAKE_SOURCE_DIR}/cmake/Utils")
+
+include(NoInSourceBuild)
 
 project(Pececillo Fortran C)
 
@@ -22,8 +24,6 @@ endif()
 # ---------------------------------------------------------------------------- #
 
 option(ENABLE_TESTS "Build test programs" ON)
-
-# Build the tests
 if (ENABLE_TESTS)
   enable_testing()
 endif()
@@ -38,19 +38,12 @@ endif()
 
 message(STATUS "CMAKE_Fortran_COMPILER_ID=${CMAKE_Fortran_COMPILER_ID}")
 if (CMAKE_Fortran_COMPILER_ID STREQUAL "NAG")
-  set (CMAKE_Fortran_FLAGS_RELEASE "$-u -O3 -w=uda -DNDEBUG")
   # note: need to disable openmp below for traceback support
+  set (CMAKE_Fortran_FLAGS_RELEASE "-u -O3 -w=uda -DNDEBUG")
   set (CMAKE_Fortran_FLAGS_DEBUG   "-g90 -g -gline -O0 -w=uda -C=all")
-  #set (CMAKE_Fortran_FLAGS_DEBUG "-O3 -Oassumed=contig -w=uda -DNDEBUG")
 elseif (CMAKE_Fortran_COMPILER_ID STREQUAL "Intel")
   set (CMAKE_Fortran_FLAGS_RELEASE "-O3 -g -DNDEBUG -assume realloc_lhs")
   set (CMAKE_Fortran_FLAGS_DEBUG   "-g -assume realloc_lhs -traceback -fp-stack-check -ftrapuv -check bounds,uninit,noarg-temp-created,pointer")
-  #set (CMAKE_Fortran_FLAGS_DEBUG   "-g -traceback -assume realloc_lhs -fp-stack-check -ftrapuv -check bounds,uninit,noarg-temp-created,pointer -warn all")
-  # set (CMAKE_Fortran_FLAGS_DEBUG   "-g -O0 -traceback -assume realloc_lhs -ftrapuv -fp-stack-check -check all -warn all -WB")
-  set (CMAKE_Fortran_FLAGS_RELEASE "-O3 -g -assume realloc_lhs -traceback")
-  #set (CMAKE_Fortran_FLAGS_RELEASE "-O3 -g -assume realloc_lhs -traceback -fp-stack-check -ftrapuv -check bounds,uninit,noarg-temp-created,pointer")
-  #set (CMAKE_Fortran_FLAGS_RELEASE "-O3 -g -assume realloc_lhs -traceback -fp-stack-check -ftrapuv -check all")
- #message(STATUS "${CMAKE_Fortran_COMPILER_VERSION}")
 endif()
 
 find_package(OpenMP)
@@ -63,39 +56,77 @@ if (OPENMP_FOUND)
 endif (OPENMP_FOUND)
 
 #-------------------------------------------------------------------------------
-# TPLs
+# External dependencies
 #-------------------------------------------------------------------------------
 
-# Find and/or build the required TPLs.
-add_subdirectory(external)
+set(CMAKE_PREFIX_PATH ${PECECILLO_TPL_DIR})
 
-# We need to incorporate netcdf and exodus into the TPL build process, but for
-# now we require them to be prebuilt and installed someplace.  EXODUS_LIB_DIR
-# must be set on the command line to the directory containing the libraries.
-# Source tarballs for the packages are in external/tarballs.
-find_library(EXODUS_LIBRARY exoIIv2c)
-find_library(NETCDF_LIBRARY netcdf)
-if(EXODUS_LIBRARY STREQUAL "EXODUS_LIBRARY-NOTFOUND" OR
-   NETCDF_LIBRARY STREQUAL "NETCDF_LIBRARY-NOTFOUND")
-  message(FATAL_ERROR "ERROR! Could not find the netcdf and/or exoIIv2c "
-          "libraries in EXODUS_LIB_DIR=${EXODUS_LIB_DIR}")
+# HYPRE library
+find_package(HYPRE 2.9.0)
+if(HYPRE_FOUND)
+  if(HYPRE_IS_PARALLEL)
+    set(HYPRE_FOUND False)
+    message(STATUS "Require serial HYPRE library but found unsuitable parallel library")
+  endif()
 endif()
-add_library(exodus STATIC IMPORTED)
-set_target_properties(exodus PROPERTIES
-    IMPORTED_LOCATION ${EXODUS_LIBRARY}
-    IMPORTED_LINK_INTERFACE_LIBRARIES ${NETCDF_LIBRARY})
-message(STATUS "NETCDF_LIBRARY=${NETCDF_LIBRARY}")
+if(NOT HYPRE_FOUND)
+  message(FATAL_ERROR "Could NOT find a suitable Hypre installation")
+endif()
 
+# HDF5 library
+find_package(HDF5 "1.8.8" COMPONENTS C HL)
+if(HDF5_FOUND)
+  if(HDF5_IS_PARALLEL)
+    set(HDF5_FOUND False)
+    message(STATUS "Require serial HDF5 library but found unsuitable parallel library")
+  endif()
+endif()
+if(HDF5_FOUND)
+  add_library(hdf5 INTERFACE)
+  target_link_libraries(hdf5 INTERFACE ${HDF5_LIBRARIES})
+  target_include_directories(hdf5 INTERFACE ${HDF5_INCLUDE_DIRS})
+  target_compile_definitions(hdf5 INTERFACE ${HDF5_DEFINITIONS})
+else()
+  message(FATAL_ERROR "Could NOT find a suitable HDF5 installation")
+endif()
+
+# NetCDF library
+find_package(NetCDF "4.1.3")
+if(NETCDF_FOUND)
+  if(NOT NETCDF_HAS_NC4)
+    message(STATUS "Found unsuitable NetCDF without the required netcdf-4 feature")
+    set(NETCDF_FOUND False)
+  endif()
+endif()
+if(NOT NETCDF_FOUND)
+  message(FATAL_ERROR "Could NOT find a suitable NetCDF installation")
+endif()
+
+# ExodusII library
+find_package(Exodus "602" EXACT)
+if(NOT EXODUS_FOUND)
+  message(FATAL_ERROR "Could NOT find a suitable Exodus installation")
+endif()
+
+# YAJL library
+find_package(YAJL)
+if(NOT YAJL_FOUND)
+  message(FATAL_ERROR "Could NOT find a suitable YAJL library")
+endif()
+
+# LAPACK library
 find_package(LAPACK)
-
+if(NOT LAPACK_FOUND)
+  message(FATAL_ERROR "Could NOT find a suitable LAPACK library")
+endif()
 
 #-------------------------------------------------------------------------------
 # Installation Definitions
 #-------------------------------------------------------------------------------
 
-add_subdirectory(petaca)
-set(Petaca_MODULE_DIR ${Petaca_BINARY_DIR}/mod_files/)
+# RPATH handling for installed shared libraries and dynamically-linked
+# executables.  See http://www.cmake.org/Wiki/CMake_RPATH_handling
+set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 
-set(Pececillo_MODULE_DIR ${Pececillo_BINARY_DIR}/mod_files/)
-set(CMAKE_Fortran_MODULE_DIRECTORY ${Pececillo_MODULE_DIR})
 add_subdirectory(src)
