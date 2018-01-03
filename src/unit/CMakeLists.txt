@@ -1,7 +1,6 @@
 set(SRC
   vof_io.F90
   vof_init_test.F90
-  analytic_surface_type_test.F90
   normal_vector_test.F90
   interface_point_test.F90
   polygon_type_test.F90
@@ -14,7 +13,8 @@ set(SRC
   volume_track_nd_test.F90
   vof_solver_type_test.F90
   bfgs_min_class_test.F90
-  unit_test.F90)
+  curvature_tests.F90
+  parabfit_main.F90)
 
 add_library(pec_parabfit ${SRC})
 add_library(pececillo::parabfit ALIAS pec_parabfit)
@@ -35,7 +35,7 @@ install(TARGETS pec_parabfit
 )
 install(DIRECTORY ${LIB_MOD_DIR} DESTINATION include)
 
-# Parabfit solver program
-add_executable(pececillo-parabfit unit_test.F90)
+# Paraboloid fitting program
+add_executable(pececillo-parabfit parabfit_main.F90)
 target_link_libraries(pececillo-parabfit pececillo::parabfit)
 install(TARGETS pececillo-parabfit DESTINATION bin)
