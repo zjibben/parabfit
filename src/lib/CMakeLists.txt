@@ -47,7 +47,6 @@ set(SRC
     fptr_scalar_func_type.F90
     piecewise_scalar_func_type.F90
     scalar_func_factories.F90
-    analytic_surface_type.F90
     paraboloid_type.F90
 
 # Mesh function modules
@@ -83,7 +82,6 @@ set(SRC
     matl_props_type.F90
     prescribed_velocity_fields.F90
     velocity_to_faces_func.F90
-    flow/body_force_module.F90
     predictor_module.F90
     fischer_guess_type.F90
     projection_module.F90
@@ -100,7 +98,6 @@ set(SRC
     bfgs_min_class.F90
     int_norm_module.F90
     lvira_normals.F90
-    fit_normals.F90
     curvature_hf.F90
     curvature.F90
     curvature_fit_func.F90
