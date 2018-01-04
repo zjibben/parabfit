@@ -8,6 +8,8 @@ module curvature_tests
   private
 
   public :: curvature_grid_refinement_study
+  public :: mesh_test
+  public :: SPHERE, ELLIPSOID, SINUSOID, REG, RND, TET
 
   real(r8), parameter :: pi = 4*atan(1.0_r8)
 
@@ -21,7 +23,7 @@ module curvature_tests
       RND = 2, &
       TET = 3
 
-  type :: curvature_test
+  type, public :: curvature_test
     integer :: mesh_type, shape_type
     character(:), allocatable :: mesh_name, shape_name, shape_filename
     real(r8) :: error_cutoff
@@ -47,7 +49,7 @@ contains
     print '(3a)', test_params%shape_name, ' ', test_params%mesh_name
     print '(a)', '===================================================='
 
-    ! TODO: create conv directory
+    ! TODO: create conv and fields directories
     write(filename, '(5a)') "conv/ft_conv_", test_params%shape_name, &
         "_", test_params%mesh_name, ".txt"
     open(newunit=fh_fit, file=trim(adjustl(filename)))
@@ -64,7 +66,7 @@ contains
 
     do i = 1,4
       ncell = 10 * 2**i
-      call mesh_test (test_params, ncell, lnormFT, lnormHF, fh_fit, fh_hf)
+      call mesh_test(test_params, ncell, lnormFT, lnormHF, fh_fit, fh_hf)
     end do
 
     close(fh_fit)
@@ -142,7 +144,7 @@ contains
           [mesh_size,mesh_size,mesh_size])
     else
       ! read in exodus mesh
-      write (tmp, '(a,i0,3a)') "data/meshes/cube_", mesh_size, "_", test_params%mesh_name, ".exo"
+      write (tmp, '(a,i0,3a)') "meshes/cube_", mesh_size, "_", test_params%mesh_name, ".exo"
       filename = trim(adjustl(tmp))
       mesh = new_unstr_mesh (filename)
     end if
@@ -152,7 +154,6 @@ contains
     print '(a)', 'mesh initialized'
 
     ! initialize shape type
-    ! TODO: initialize without parameter_list_type or without JSON file
     open(newunit=infile,file=test_params%shape_filename,action='read',access='stream')
     call parameter_list_from_json_stream (infile, plist, errmsg)
     if (.not.associated(plist)) call LS_fatal ("error reading input file:" // C_NEW_LINE // errmsg)
@@ -160,7 +161,7 @@ contains
 
     plist => plist%sublist('initial-vof')
 
-    write (tmp, '(2a,i0,5a)') "data/fields/", &
+    write (tmp, '(2a,i0,5a)') "fields/", &
         "vof_", mesh%ncell, "_", test_params%mesh_name, "_", test_params%shape_name, ".dat"
     filename = trim(adjustl(tmp))
     if (file_exists(filename)) then
@@ -178,13 +179,13 @@ contains
 
     ! calculate errors for FT and HF curvature methods
     lnormFT = ft_mesh_test(test_params, vof, mesh, gmesh, mixed_cells, curvature_ex)
-    write (fh_fit, '(i12,3es15.5)') mesh%ncell, lnormFT
+    if (fh_fit /= 0) write (fh_fit, '(i12,3es15.5)') mesh%ncell, lnormFT
     if (test_params%mesh_type == REG) then
       lnormHF = hf_mesh_test(test_params, vof, mesh, gmesh, curvature_ex)
 
       print '(i8, 2(a,3es10.2))', mesh%ncell, '  FT L1,L2,Linf = ',lnormFT, &
           ',  HF L1,L2,Linf = ',lnormHF
-      write (fh_hf, '(i12,3es15.5)') mesh%ncell, lnormHF
+      if (fh_hf /= 0) write (fh_hf, '(i12,3es15.5)') mesh%ncell, lnormHF
     else
       lnormHF = 0
 
@@ -218,7 +219,7 @@ contains
     real(r8) :: err, curvature(mesh%ncell), totvolume, xc(3)
     real(r8), allocatable :: int_norm(:,:,:), interface_centroid(:,:), reconstruction_area(:)
 
-    write (tmp, '(2a,i0,5a)') "data/fields/", &
+    write (tmp, '(2a,i0,5a)') "fields/", &
         "normals_", mesh%ncell, "_", test_params%mesh_name, "_", test_params%shape_name, ".dat"
     filename = trim(adjustl(tmp))
     if (file_exists(filename)) then
