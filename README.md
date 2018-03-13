@@ -22,7 +22,9 @@ $ ../build/src/parabfit/pececillo-parabfit
 
 By default, this will calculate the curvature error norms for the ellipsoid test case on the coarsest tetrahedral mesh, which should take 5-20 minutes, depending on your hardware.
 
-To reproduce all results in the paper, you must first download all tetrahedral and distorted hexahedral meshes from [here](??) and unpack them in the run directory. Then, execute `$ ../build/src/parabfit/pececillo-parabfit full`. This will take days to weeks to calculate on a single workstation, due to the high cost of initializing volume fraction fields, and to a lesser extent calculating normal vectors via LVIRA. You can speed this up by instead downloading volume fraction fields and normal vectors from ??, unpacking them in the run directory. By reading in these fields, all paper results will be calculated in a few hours.
+To reproduce all results in the paper, you must first download all tetrahedral and distorted hexahedral meshes from [here](https://zenodo.org/record/1135295/files/meshes.tar.gz) and unpack them in the run directory. Then, execute `$ ../build/src/parabfit/pececillo-parabfit full`. This will take days to weeks to calculate on a single workstation, due to the high cost of initializing volume fraction fields, and to a lesser extent calculating normal vectors via LVIRA. You can speed this up by instead downloading volume fraction fields and normal vectors from [here](https://zenodo.org/record/1135295/files/fields.tar.gz), unpacking them in the run directory. By reading in these fields, all paper results will be calculated in a few hours.
+
+Both the fields and meshes tarballs are identified by [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.1135295.svg)](https://doi.org/10.5281/zenodo.1135295).
 
 ## Paraboloid Fitting Algorithm in the Source
 
