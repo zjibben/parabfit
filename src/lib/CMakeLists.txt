@@ -84,6 +84,7 @@ set(SRC
     velocity_to_faces_func.F90
     predictor_module.F90
     fischer_guess_type.F90
+    body_force_module.F90
     projection_module.F90
 
 # Vof modules

@@ -29,7 +29,7 @@ contains
   real(r8) function curvature_from_patch(interface_reconstructions, weight_scale, normal, vof, &
       mesh, gmesh, cid, centroid, verbose)
 
-    use analytic_surface_type
+    !use analytic_surface_type
     use paraboloid_type
     use timer_tree_type
     use locate_plane_nd_module
@@ -189,7 +189,7 @@ contains
 
   function normal_from_patch (interface_reconstructions, weight_scale, normal, verbose)
 
-    use analytic_surface_type
+    !use analytic_surface_type
     use paraboloid_type
     use timer_tree_type
 

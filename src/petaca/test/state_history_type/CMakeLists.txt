@@ -1,0 +1,3 @@
+add_executable (test_state_history_type test_state_history_type.F90)
+target_link_libraries(test_state_history_type petaca)
+add_test(state_history test_state_history_type)
